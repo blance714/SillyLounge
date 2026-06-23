@@ -1,0 +1,20 @@
+{
+    "name": "sillytavern-chatui",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "build": "node ./scripts/build.mjs",
+        "dev": "node ./scripts/dev.mjs",
+        "runtime": "pnpm run build && node ./scripts/runtime.mjs",
+        "typecheck": "tsc --noEmit",
+        "watch": "node ./scripts/build.mjs --watch"
+    },
+    "dependencies": {
+        "preact": "^10.29.2"
+    },
+    "devDependencies": {
+        "esbuild": "^0.28.1",
+        "typescript": "^5.9.3"
+    },
+    "packageManager": "pnpm@10.33.0"
+}
