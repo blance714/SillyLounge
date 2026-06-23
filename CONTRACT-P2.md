@@ -1,5 +1,17 @@
 # SillyTavern-ChatUI · Phase 2 Build Contract (Message / Content Area)
 
+> ⚠️ **SUPERSEDED / HISTORICAL — archived 2026-06-23.**
+> This contract governed the retired Phase 2 approach: injecting `cui-` nodes
+> into SillyTavern's native `#chat .mes` DOM (identity headers, action rows,
+> swipe/code/reasoning chrome, floating buttons). That path has been removed.
+> The visible message surface is now the Preact root app (`ui/components/`,
+> `MessageItem.tsx` + `message/*.tsx`), driven by Store DTOs rather than ST DOM.
+> The modules this contract specified — `message-layout.js`,
+> `message-actions.js`, `message-extras.js`, `chat-chrome.js` — have been
+> deleted. Kept only as a record of the original design and the SillyTavern
+> event/DOM semantics it captured. Current architecture: `ARCHITECTURE.md`,
+> `STATUS.md`.
+
 > Authoritative source of truth for all agents writing Phase 2 files in this directory.
 > DESIGN.md §5 is the product spec; this CONTRACT translates it into unambiguous decisions.
 > CONTRACT.md (Phase 1) remains in force — all its rules carry over. This file adds Phase 2 specifics only.
