@@ -1,10 +1,12 @@
 export {
     continueChatuiGeneration,
+    dismissChatuiToast,
     getChatuiPendingAttachments,
     getChatuiSelectedSelector,
     getChatuiSelectorOptions,
     impersonateChatui,
     listChatuiWandItems,
+    notifyChatui,
     openChatuiAttachmentPicker,
     openChatuiMessageFile,
     openChatuiMessageMedia,

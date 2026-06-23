@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
     getChatuiSelectorOptions,
+    notifyChatui,
     selectChatuiSelector,
     subscribeChatuiSelectorSync,
 } from '../actions.js';
@@ -34,6 +35,7 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
             await selectChatuiSelector(kind, value);
         } catch (error) {
             console.error('[ChatUI] selector select failed', error);
+            notifyChatui('error', '切换失败');
         }
     };
 

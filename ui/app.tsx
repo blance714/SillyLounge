@@ -12,6 +12,7 @@ import { ensureChatuiRoot } from '../shield/st-dom-shield.js';
 import { Composer, GeneratingIndicator } from './components/Composer.js';
 import { MessageItem } from './components/MessageItem.js';
 import { ShellDrawer } from './components/ShellDrawer.js';
+import { Toaster } from './components/Toaster.js';
 import { useChatuiSnapshot, useRootDomEnhancements } from './hooks.js';
 import type { ChatuiMessage, RootApi } from './types.js';
 
@@ -73,6 +74,7 @@ function ChatuiApp(): ComponentChild {
                 No messages
             </div>
             <Composer isGenerating={state.chat.isGenerating} />
+            <Toaster />
         </section>
     );
 }
