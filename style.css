@@ -668,8 +668,8 @@ body.chatui-active .cui-root-composer {
     position: sticky;
     bottom: 0;
     display: flex;
-    align-items: flex-end;
-    gap: 0.45rem;
+    flex-direction: column;
+    gap: 0.35rem;
     width: min(100%, 58rem);
     margin: 0.35rem auto 0;
     padding: 0.5rem 0 0.15rem;
@@ -679,6 +679,13 @@ body.chatui-active .cui-root-composer {
         var(--SmartThemeBlurTintColor) 35%
     );
     box-sizing: border-box;
+}
+
+body.chatui-active .cui-root-composer-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.45rem;
+    width: 100%;
 }
 
 body.chatui-active .cui-root-composer-input {
@@ -728,5 +735,324 @@ body.chatui-active .cui-root-composer-btn:disabled {
 
 body.chatui-active .cui-root-composer-stop {
     background-color: color-mix(in srgb, #d84747 22%, transparent);
+}
+
+/* ---------------------------------------------------------------------------
+   4. Composer + menu  (the + button in the root composer)
+   Mobile-first: half-sheet from the bottom. Desktop: popup above the button.
+   --------------------------------------------------------------------------- */
+body.chatui-active .cui-root-plus {
+    position: relative;
+    flex: 0 0 auto;
+    display: flex;
+}
+
+body.chatui-active .cui-root-plus-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.45rem;
+    height: 2.45rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.75rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-size: calc(var(--mainFontSize) * 0.95);
+}
+
+body.chatui-active .cui-root-plus-btn:hover,
+body.chatui-active .cui-root-plus-btn:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    outline: 1px solid var(--interactable-outline-color-faint);
+}
+
+body.chatui-active .cui-root-plus-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--cui-sheet-z) - 1);
+    border: none;
+    background-color: var(--cui-overlay-bg);
+    cursor: default;
+}
+
+body.chatui-active .cui-root-plus-menu {
+    position: fixed;
+    z-index: var(--cui-sheet-z);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 70vh;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 1rem 1rem 0 0;
+    background-color: var(--SmartThemeBlurTintColor);
+    box-shadow: 0 -6px 24px var(--SmartThemeShadowColor);
+    animation: cui-plus-sheet-in var(--animation-duration-2x) ease forwards;
+}
+
+@keyframes cui-plus-sheet-in {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+}
+
+body.chatui-active .cui-root-plus-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.35rem 0.5rem 0.5rem;
+}
+
+body.chatui-active .cui-root-plus-title {
+    font-weight: 700;
+    opacity: 0.75;
+    font-size: calc(var(--mainFontSize) * 0.9);
+}
+
+body.chatui-active .cui-root-plus-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+}
+
+body.chatui-active .cui-root-plus-close:hover,
+body.chatui-active .cui-root-plus-close:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+}
+
+body.chatui-active .cui-root-plus-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+body.chatui-active .cui-root-plus-tool {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    width: 100%;
+    min-height: 2.6rem;
+    border: none;
+    border-radius: 0.5rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.95);
+    padding: 0 0.7rem;
+    text-align: left;
+}
+
+body.chatui-active .cui-root-plus-tool i {
+    width: 1.3rem;
+    text-align: center;
+    opacity: 0.8;
+}
+
+body.chatui-active .cui-root-plus-tool:hover,
+body.chatui-active .cui-root-plus-tool:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    outline: none;
+}
+
+@media (min-width: 769px) {
+    body.chatui-active .cui-root-plus-backdrop {
+        z-index: calc(var(--cui-popup-z) - 1);
+        background-color: transparent;
+    }
+
+    body.chatui-active .cui-root-plus-menu {
+        position: absolute;
+        z-index: var(--cui-popup-z);
+        left: 0;
+        right: auto;
+        bottom: calc(100% + 0.4rem);
+        min-width: 13rem;
+        max-height: 60vh;
+        padding: 0.35rem;
+        border: 1px solid var(--SmartThemeBorderColor);
+        border-radius: 0.6rem;
+        box-shadow: 0 6px 22px var(--SmartThemeShadowColor);
+        animation: none;
+    }
+
+    body.chatui-active .cui-root-plus-header {
+        display: none;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+   5. Wand items · attachment chips · selector chips
+   --------------------------------------------------------------------------- */
+body.chatui-active .cui-root-plus-divider {
+    height: 1px;
+    margin: 0.35rem 0.25rem;
+    background-color: var(--SmartThemeBorderColor);
+}
+
+body.chatui-active .cui-root-plus-wand-icon {
+    width: 1.3rem;
+    text-align: center;
+    opacity: 0.8;
+}
+
+body.chatui-active .cui-root-plus-wand-icon > * {
+    pointer-events: none;
+}
+
+body.chatui-active .cui-root-attachment-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    width: 100%;
+}
+
+body.chatui-active .cui-root-attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 16rem;
+    padding: 0.2rem 0.3rem 0.2rem 0.55rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 999px;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
+    font-size: calc(var(--mainFontSize) * 0.82);
+}
+
+body.chatui-active .cui-root-attachment-chip-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-attachment-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    opacity: 0.7;
+    flex-shrink: 0;
+}
+
+body.chatui-active .cui-root-attachment-chip-remove:hover,
+body.chatui-active .cui-root-attachment-chip-remove:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 14%, transparent);
+}
+
+body.chatui-active .cui-root-selchips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    width: 100%;
+}
+
+body.chatui-active .cui-root-selchip {
+    position: relative;
+}
+
+body.chatui-active .cui-root-selchip-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    max-width: 14rem;
+    min-height: 1.85rem;
+    padding: 0 0.55rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 999px;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.82);
+    opacity: 0.85;
+}
+
+body.chatui-active .cui-root-selchip-btn:hover,
+body.chatui-active .cui-root-selchip-btn:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-selchip-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-selchip-caret {
+    font-size: 0.7em;
+    opacity: 0.6;
+}
+
+body.chatui-active .cui-root-selchip-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--cui-popup-z) - 1);
+    border: none;
+    background: transparent;
+    cursor: default;
+}
+
+body.chatui-active .cui-root-selchip-menu {
+    position: absolute;
+    z-index: var(--cui-popup-z);
+    left: 0;
+    bottom: calc(100% + 0.35rem);
+    margin: 0;
+    padding: 0.25rem;
+    list-style: none;
+    min-width: 11rem;
+    max-width: 18rem;
+    max-height: 50vh;
+    overflow-y: auto;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.6rem;
+    background-color: var(--SmartThemeBlurTintColor);
+    box-shadow: 0 6px 22px var(--SmartThemeShadowColor);
+}
+
+body.chatui-active .cui-root-selchip-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    padding: 0.4rem 0.55rem;
+    border-radius: 0.45rem;
+    cursor: pointer;
+    font-size: calc(var(--mainFontSize) * 0.9);
+}
+
+body.chatui-active .cui-root-selchip-item:hover {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+}
+
+body.chatui-active .cui-root-selchip-item.is-selected {
+    font-weight: 600;
+}
+
+body.chatui-active .cui-root-selchip-empty {
+    padding: 0.4rem 0.55rem;
+    opacity: 0.6;
+    font-size: calc(var(--mainFontSize) * 0.88);
 }
 
