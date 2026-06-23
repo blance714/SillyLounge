@@ -8,6 +8,10 @@
 
 import { eventSource, event_types, isGenerating, messageEdit, messageFormatting, sendTextareaMessage } from '../../../../../script.js';
 import { getContext } from '../../../../st-context.js';
+import { setUserAvatar, getUserAvatars, user_avatar } from '../../../../personas.js';
+import { copyText } from '../../../../utils.js';
+import { branchChat, createNewBookmark } from '../../../../bookmarks.js';
+import { hideChatMessage, unhideChatMessage } from '../../../../chats.js';
 
 export const stEventKeys = Object.freeze({
     CHARACTER_MESSAGE_RENDERED: 'CHARACTER_MESSAGE_RENDERED',
@@ -23,6 +27,10 @@ export const stEventKeys = Object.freeze({
     GENERATION_ENDED: 'GENERATION_ENDED',
     STREAM_TOKEN_RECEIVED: 'STREAM_TOKEN_RECEIVED',
     STREAM_REASONING_DONE: 'STREAM_REASONING_DONE',
+    PRESET_CHANGED: 'PRESET_CHANGED',
+    OAI_PRESET_CHANGED_AFTER: 'OAI_PRESET_CHANGED_AFTER',
+    CONNECTION_PROFILE_LOADED: 'CONNECTION_PROFILE_LOADED',
+    PERSONA_CHANGED: 'PERSONA_CHANGED',
 });
 
 /**
@@ -61,17 +69,6 @@ function _dispatchClick(button) {
 }
 
 /**
- * @param {Element} button
- * @returns {void}
- */
-function _dispatchPointerUp(button) {
-    const event = typeof PointerEvent === 'function'
-        ? new PointerEvent('pointerup', { bubbles: true, cancelable: true })
-        : new Event('pointerup', { bubbles: true, cancelable: true });
-    button.dispatchEvent(event);
-}
-
-/**
  * @param {string} key
  * @param {(...args: any[]) => boolean} predicate
  * @param {number} timeoutMs
@@ -103,6 +100,9 @@ function _waitForEvent(key, predicate, timeoutMs = 5000) {
 
 /** @type {ReturnType<typeof setTimeout>|null} */
 let _attachmentAcceptRestoreTimer = null;
+
+/** @type {(() => void)|null} */
+let _attachmentAcceptRestore = null;
 
 /**
  * @param {Element} mesEl
@@ -349,15 +349,11 @@ function triggerOverflowAction(original) {
  * @returns {void}
  */
 function copyMessage(mesEl) {
-    const copyBtn = mesEl.querySelector('.mes_copy');
-    if (copyBtn) {
-        _dispatchPointerUp(copyBtn);
-        return;
-    }
-
     const msg = getMessageByElement(mesEl);
     const text = typeof msg?.mes === 'string' ? msg.mes : '';
-    navigator.clipboard?.writeText?.(text)?.catch(() => {});
+    Promise.resolve(copyText(text))
+        .then(() => globalThis.toastr?.info?.('Copied!', '', { timeOut: 2000 }))
+        .catch(error => console.error('[ChatUI/adapter] copy failed', error));
 }
 
 /**
@@ -437,13 +433,9 @@ async function saveMessageEditById(mesId, text) {
  * @returns {void}
  */
 function createBranch(mesEl) {
-    const $mes = _getJQueryMessage(mesEl);
-    if ($mes) {
-        $mes.find('.mes_create_branch').trigger('click');
-        return;
-    }
-    const button = mesEl.querySelector('.mes_create_branch');
-    if (button) _dispatchClick(button);
+    const mesId = _getMessageId(mesEl);
+    if (!Number.isFinite(mesId)) return;
+    branchChat(mesId).catch(error => console.error('[ChatUI/adapter] branchChat failed', error));
 }
 
 /**
@@ -451,13 +443,9 @@ function createBranch(mesEl) {
  * @returns {void}
  */
 function createCheckpoint(mesEl) {
-    const $mes = _getJQueryMessage(mesEl);
-    if ($mes) {
-        $mes.find('.mes_create_bookmark').trigger('click');
-        return;
-    }
-    const button = mesEl.querySelector('.mes_create_bookmark');
-    if (button) _dispatchClick(button);
+    const mesId = _getMessageId(mesEl);
+    if (!Number.isFinite(mesId)) return;
+    createNewBookmark(mesId).catch(error => console.error('[ChatUI/adapter] createNewBookmark failed', error));
 }
 
 /**
@@ -465,24 +453,13 @@ function createCheckpoint(mesEl) {
  * @returns {void}
  */
 function toggleHideMessage(mesEl) {
-    const $mes = _getJQueryMessage(mesEl);
-    if ($mes) {
-        const $unhide = $mes.find('.mes_unhide');
-        if ($unhide.is(':visible')) {
-            $unhide.trigger('click');
-        } else {
-            $mes.find('.mes_hide').trigger('click');
-        }
-        return;
-    }
-
-    const unhide = mesEl.querySelector('.mes_unhide:not(.displayNone)');
-    const hide = mesEl.querySelector('.mes_hide');
-    if (unhide) {
-        _dispatchClick(unhide);
-    } else if (hide) {
-        _dispatchClick(hide);
-    }
+    const mesId = _getMessageId(mesEl);
+    const msg = getMessageById(mesId);
+    if (!msg) return;
+    // Source of truth is the message flag (is_system), not native button
+    // visibility — reading the DOM could pick the wrong direction.
+    const action = msg.is_system === true ? unhideChatMessage(mesId) : hideChatMessage(mesId);
+    action.catch(error => console.error('[ChatUI/adapter] toggle hide failed', error));
 }
 
 /**
@@ -626,6 +603,10 @@ function clearAttachmentPickerRestore() {
         clearTimeout(_attachmentAcceptRestoreTimer);
         _attachmentAcceptRestoreTimer = null;
     }
+    if (_attachmentAcceptRestore) {
+        window.removeEventListener('focus', _attachmentAcceptRestore);
+        _attachmentAcceptRestore = null;
+    }
 }
 
 /**
@@ -636,19 +617,23 @@ function openAttachmentPicker(accept = null) {
     const input = /** @type {HTMLInputElement|null} */ (document.getElementById('file_form_input'));
 
     if (input && accept !== null) {
-        const prev = input.accept;
+        // Capture the original accept only when no restore cycle is pending, so a
+        // second narrowed open before the picker closes still restores to the true
+        // default rather than the first call's temporary filter.
+        if (!_attachmentAcceptRestore) {
+            const prev = input.accept;
+            // ST's #attachFile handler does $fileInput.off('change'), which strips
+            // any change-listener added here — so restore the accept filter when the
+            // OS picker closes (the window regains focus), with a timer as a backstop.
+            const restore = () => {
+                clearAttachmentPickerRestore();
+                input.accept = prev;
+            };
+            _attachmentAcceptRestore = restore;
+            window.addEventListener('focus', restore, { once: true });
+            _attachmentAcceptRestoreTimer = setTimeout(restore, 60000);
+        }
         input.accept = accept;
-        clearAttachmentPickerRestore();
-
-        input.addEventListener('change', () => {
-            clearAttachmentPickerRestore();
-            input.accept = prev;
-        }, { once: true });
-
-        _attachmentAcceptRestoreTimer = setTimeout(() => {
-            _attachmentAcceptRestoreTimer = null;
-            input.accept = prev;
-        }, 60000);
     }
 
     const attachButton = document.querySelector('#attachFile');
@@ -778,6 +763,260 @@ function openMessageFile(messageId, fileIndex) {
     if (button) _dispatchClick(button);
 }
 
+// ── Wand / extension tools (proxy ST's #extensionsMenu items) ──────────────────
+
+/** @type {Map<string, HTMLElement>} */
+const _wandItemMap = new Map();
+
+/**
+ * Enumerate visible wand items from ST's #extensionsMenu. Rebuilds the internal
+ * id->liveElement map each call (ST rebuilds items on chat change). The live
+ * elements stay private to the adapter; the UI only ever sees plain DTOs.
+ *
+ * @returns {{ id: string, label: string, iconHtml: string }[]}
+ */
+function listWandItems() {
+    _wandItemMap.clear();
+    const wandMenu = document.getElementById('extensionsMenu');
+    if (!wandMenu) return [];
+
+    const out = [];
+    let seq = 0;
+    const consider = (el) => {
+        if (!(el instanceof HTMLElement)) return;
+        if (el.classList.contains('displayNone')) return;
+        if (window.getComputedStyle(el).display === 'none') return;
+        const label = (el.querySelector('span')?.textContent || el.textContent || '').trim();
+        const iconEl = el.querySelector('.extensionsMenuExtensionButton, [class*="fa-"]');
+        const id = `wand-${seq++}`;
+        _wandItemMap.set(id, el);
+        out.push({ id, label, iconHtml: iconEl ? iconEl.outerHTML : '' });
+    };
+
+    // Primary: items inside each .extension_container.
+    wandMenu.querySelectorAll('.extension_container').forEach(container => {
+        Array.from(container.children).forEach(consider);
+    });
+    // Fallback: items appended directly to #extensionsMenu (e.g. gallery).
+    Array.from(wandMenu.children).forEach(child => {
+        if (child instanceof HTMLElement && child.classList.contains('extension_container')) return;
+        consider(child);
+    });
+    return out;
+}
+
+/**
+ * Proxy a click onto the live mapped wand element (never a clone).
+ *
+ * @param {string} id opaque id from listWandItems()
+ * @returns {boolean}
+ */
+function triggerWandItem(id) {
+    const el = _wandItemMap.get(id);
+    if (!el) return false;
+    triggerWandAction(el);
+    return true;
+}
+
+// ── Pending composer attachments (ST stages them in #file_form_input.files) ────
+
+/**
+ * @returns {HTMLInputElement|null}
+ */
+function _pendingInput() {
+    const el = document.getElementById('file_form_input');
+    return el instanceof HTMLInputElement ? el : null;
+}
+
+/**
+ * List files the user has staged but not yet sent.
+ *
+ * @returns {{ id: string, name: string, type: string, size: number }[]}
+ */
+function getPendingAttachments() {
+    const input = _pendingInput();
+    if (!input || !input.files) return [];
+    return Array.from(input.files).map((file, index) => ({
+        id: `${index}:${file.name}:${file.size}:${file.lastModified}`,
+        name: file.name,
+        type: file.type || '',
+        size: file.size,
+    }));
+}
+
+/**
+ * Remove one staged file before send by rebuilding the input FileList
+ * (FileList is read-only, so this uses a DataTransfer like ST itself does).
+ *
+ * @param {string} id
+ * @returns {void}
+ */
+function removePendingAttachment(id) {
+    const input = _pendingInput();
+    if (!input || !input.files) return;
+
+    const transfer = new DataTransfer();
+    Array.from(input.files).forEach((file, index) => {
+        const fileId = `${index}:${file.name}:${file.size}:${file.lastModified}`;
+        if (fileId !== id) transfer.items.add(file);
+    });
+    input.files = transfer.files;
+
+    if (input.files.length === 0) {
+        const form = document.getElementById('file_form');
+        if (form instanceof HTMLFormElement) form.reset();
+    }
+    _emitPendingChanged();
+}
+
+/** @type {Set<() => void>} */
+const _pendingListeners = new Set();
+
+/** @type {MutationObserver|null} */
+let _pendingObserver = null;
+
+/**
+ * @returns {void}
+ */
+function _emitPendingChanged() {
+    for (const listener of _pendingListeners) {
+        try {
+            listener();
+        } catch (error) {
+            console.error('[ChatUI/adapter] pending-attachment listener failed', error);
+        }
+    }
+}
+
+/**
+ * ST fires no event for pending attach/remove, so synthesize one by observing
+ * #file_form (it toggles .displayNone + preview text on attach/reset/send).
+ *
+ * @param {() => void} handler
+ * @returns {() => void}
+ */
+function subscribePendingChanged(handler) {
+    if (!_pendingObserver) {
+        const form = document.getElementById('file_form');
+        if (form) {
+            _pendingObserver = new MutationObserver(() => _emitPendingChanged());
+            _pendingObserver.observe(form, {
+                attributes: true,
+                attributeFilter: ['class'],
+                childList: true,
+                subtree: true,
+            });
+        }
+    }
+    _pendingListeners.add(handler);
+    return () => {
+        _pendingListeners.delete(handler);
+    };
+}
+
+// ── Selector chips (preset / model / persona quick-switch) ─────────────────────
+
+/**
+ * @returns {any}
+ */
+function _presetManager() {
+    return getContext().getPresetManager?.() ?? null;
+}
+
+/**
+ * @returns {{ value: string, label: string, selected: boolean }[]}
+ */
+function _presetOptions() {
+    const pm = _presetManager();
+    if (!pm) return [];
+    const names = pm.getAllPresets() ?? [];
+    const current = pm.getSelectedPresetName();
+    return names.map(name => ({ value: name, label: name, selected: name === current }));
+}
+
+/**
+ * @returns {{ value: string, label: string, selected: boolean }[]}
+ */
+function _modelOptions() {
+    const cm = getContext().extensionSettings?.connectionManager;
+    const profiles = Array.isArray(cm?.profiles) ? cm.profiles : [];
+    const selected = cm?.selectedProfile ?? '';
+    const options = [{ value: '', label: '— 默认 —', selected: !selected }];
+    [...profiles]
+        .sort((a, b) => String(a.name).localeCompare(String(b.name)))
+        .forEach(profile => options.push({
+            value: profile.id,
+            label: profile.name ?? profile.id,
+            selected: profile.id === selected,
+        }));
+    return options;
+}
+
+/**
+ * @returns {Promise<{ value: string, label: string, selected: boolean }[]>}
+ */
+async function _personaOptions() {
+    let ids = [];
+    try {
+        ids = await getUserAvatars(false);
+    } catch {
+        ids = [];
+    }
+    const personas = getContext().powerUserSettings?.personas ?? {};
+    return (Array.isArray(ids) ? ids : []).map(id => ({
+        value: id,
+        label: personas[id] ?? id,
+        selected: id === user_avatar,
+    }));
+}
+
+/**
+ * @param {'preset'|'model'|'persona'} kind
+ * @returns {Promise<{ value: string, label: string, selected: boolean }[]>}
+ */
+async function getSelectorOptions(kind) {
+    if (kind === 'preset') return _presetOptions();
+    if (kind === 'model') return _modelOptions();
+    if (kind === 'persona') return _personaOptions();
+    return [];
+}
+
+/**
+ * @param {'preset'|'model'|'persona'} kind
+ * @returns {Promise<{ value: string, label: string }|null>}
+ */
+async function getSelectedSelector(kind) {
+    const options = await getSelectorOptions(kind);
+    const current = options.find(option => option.selected);
+    return current ? { value: current.value, label: current.label } : null;
+}
+
+/**
+ * @param {'preset'|'model'|'persona'} kind
+ * @param {string} value
+ * @returns {Promise<void>}
+ */
+async function selectSelector(kind, value) {
+    if (kind === 'preset') {
+        const pm = _presetManager();
+        if (!pm) return;
+        const resolved = pm.findPreset(value);
+        if (resolved !== undefined && resolved !== null) pm.selectPreset(resolved);
+        return;
+    }
+    if (kind === 'model') {
+        const select = document.getElementById('connection_profiles');
+        if (!(select instanceof HTMLSelectElement)) return;
+        select.value = value;
+        select.dispatchEvent(new Event('change'));
+        return;
+    }
+    if (kind === 'persona') {
+        if (!value) return;
+        await setUserAvatar(value);
+    }
+}
+
 export const chatuiAdapter = Object.freeze({
     getContext,
     getCurrentChat,
@@ -831,5 +1070,15 @@ export const chatuiAdapter = Object.freeze({
         openAttachmentPicker,
         clearAttachmentPickerRestore,
         triggerWandAction,
+        listWandItems,
+        triggerWandItem,
+        getPendingAttachments,
+        removePendingAttachment,
+        subscribePendingChanged,
+    }),
+    selectorActions: Object.freeze({
+        getSelectorOptions,
+        getSelectedSelector,
+        selectSelector,
     }),
 });
