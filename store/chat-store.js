@@ -51,6 +51,9 @@ const _subscribers = new Set();
 /** @type {Array<() => void>} */
 let _unsubscribers = [];
 
+/** @type {number} Pending requestAnimationFrame id for coalesced streaming refreshes. */
+let _streamFrame = 0;
+
 /**
  * @param {unknown} value
  * @returns {string}
@@ -87,6 +90,7 @@ function _toMessageDto(raw, id, lastMessageId) {
     const isSmallSys = extra.isSmallSys === true;
     const isToolCall = Array.isArray(extra.tool_invocations);
     const attachments = chatuiAdapter.mediaActions.getMessageAttachments(message);
+    const reasoningText = _string(extra.reasoning_display_text) || _string(extra.reasoning);
 
     return {
         id,
@@ -116,7 +120,7 @@ function _toMessageDto(raw, id, lastMessageId) {
             bookmarkLink: _string(extra.bookmark_link),
             tokenCount: _numberOrNull(extra.token_count),
             reasoning: _string(extra.reasoning),
-            reasoningHtml: chatuiAdapter.formatMessageHtml(message, id, true),
+            reasoningHtml: reasoningText ? chatuiAdapter.formatMessageHtml(message, id, true) : '',
             reasoningDuration: extra.reasoning_duration ?? null,
         },
         ui: {
@@ -231,6 +235,64 @@ export function refreshChatuiStore() {
 }
 
 /**
+ * Rebuild a single message DTO in place. Falls back to a full rebuild when the
+ * chat length changed (append/delete) or the id is out of range, so derived
+ * fields (isLast / lastMessageId) stay correct. Keeps streaming, edit, and
+ * swipe updates O(1) instead of reformatting the whole chat.
+ *
+ * @param {number|string} messageId
+ * @returns {void}
+ */
+export function refreshChatuiMessage(messageId) {
+    const id = Number(messageId);
+    const rawMessages = chatuiAdapter.getCurrentChat();
+
+    if (
+        !Number.isFinite(id)
+        || id < 0
+        || id >= rawMessages.length
+        || rawMessages.length !== _state.chat.messages.length
+    ) {
+        refreshChatuiStore();
+        return;
+    }
+
+    const lastMessageId = rawMessages.length - 1;
+    const dto = _toMessageDto(rawMessages[id], id, lastMessageId);
+    const messages = _state.chat.messages.slice();
+    messages[id] = dto;
+    const byId = { ..._state.chat.byId, [dto.key]: dto };
+    const lastDto = byId[String(lastMessageId)] ?? null;
+
+    _state = {
+        ..._state,
+        chat: {
+            ..._state.chat,
+            messages,
+            byId,
+            lastMessageNeedsGenerate: lastDto?.ui.needsGenerate ?? false,
+        },
+    };
+    _emit();
+}
+
+/**
+ * Coalesce the per-token STREAM_TOKEN_RECEIVED burst into at most one
+ * last-message refresh per animation frame, so streamed text renders live in
+ * the ChatUI surface without a full-chat rebuild per token.
+ *
+ * @returns {void}
+ */
+function _scheduleStreamRefresh() {
+    if (_streamFrame) return;
+    _streamFrame = requestAnimationFrame(() => {
+        _streamFrame = 0;
+        const rawMessages = chatuiAdapter.getCurrentChat();
+        if (rawMessages.length) refreshChatuiMessage(rawMessages.length - 1);
+    });
+}
+
+/**
  * @returns {void}
  */
 export function initChatuiStore() {
@@ -240,15 +302,17 @@ export function initChatuiStore() {
 
     const refreshNow = () => refreshChatuiStore();
     const refreshSoon = () => setTimeout(() => refreshChatuiStore(), 0);
+    const refreshMessage = messageId => refreshChatuiMessage(messageId);
     _unsubscribers = [
         chatuiAdapter.subscribe(stEventKeys.CHAT_CHANGED, refreshSoon),
         chatuiAdapter.subscribe(stEventKeys.CHAT_LOADED, refreshNow),
         chatuiAdapter.subscribe(stEventKeys.MORE_MESSAGES_LOADED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SENT, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_UPDATED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SWIPED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.CHARACTER_MESSAGE_RENDERED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.USER_MESSAGE_RENDERED, refreshNow),
+        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SENT, refreshMessage),
+        chatuiAdapter.subscribe(stEventKeys.MESSAGE_UPDATED, refreshMessage),
+        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SWIPED, refreshMessage),
+        chatuiAdapter.subscribe(stEventKeys.CHARACTER_MESSAGE_RENDERED, refreshMessage),
+        chatuiAdapter.subscribe(stEventKeys.USER_MESSAGE_RENDERED, refreshMessage),
+        chatuiAdapter.subscribe(stEventKeys.STREAM_TOKEN_RECEIVED, _scheduleStreamRefresh),
         chatuiAdapter.subscribe(stEventKeys.GENERATION_STARTED, refreshNow),
         chatuiAdapter.subscribe(stEventKeys.GENERATION_STOPPED, refreshNow),
         chatuiAdapter.subscribe(stEventKeys.GENERATION_ENDED, refreshNow),
@@ -259,6 +323,10 @@ export function initChatuiStore() {
  * @returns {void}
  */
 export function teardownChatuiStore() {
+    if (_streamFrame) {
+        cancelAnimationFrame(_streamFrame);
+        _streamFrame = 0;
+    }
     for (const unsubscribe of _unsubscribers) {
         unsubscribe();
     }
