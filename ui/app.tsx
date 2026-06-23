@@ -77,7 +77,7 @@ function ChatuiApp(): ComponentChild {
     );
 }
 
-export function initChatuiRoot(_ctx: { settings: object; settingsP2: object }): void {
+export function initChatuiRoot(): void {
     if (isSetup) return;
 
     rootEl = ensureChatuiRoot();

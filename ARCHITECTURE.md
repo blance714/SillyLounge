@@ -1,7 +1,12 @@
 # SillyTavern-ChatUI · Technical Architecture
 
-> This document describes the migration target after Phase 1/2.
-> The current implementation still reshapes SillyTavern DOM directly; the target is to make ChatUI an extension-hosted app with a narrow SillyTavern adapter.
+> **Status (2026-06-23): the migration described below is complete.** ChatUI is
+> an extension-hosted Preact app behind a narrow SillyTavern adapter. The
+> transitional Phase 1/2 layer that reshaped ST DOM in place has been removed
+> (see `STATUS.md` → "Legacy cleanup"). The Stage 0–5 narrative in §5 is kept as
+> the design record of how we got here; the "Current coverage" notes reflect the
+> end state. Native `#chat` / `#send_form` remain alive but parked off-screen by
+> the shield, as runtime/fallback surfaces only.
 
 ---
 
@@ -283,16 +288,18 @@ This keeps SillyTavern integration one-way at the boundary and prevents UI code 
 
 ## 5. Migration Strategy
 
-### Stage 0: Current Phase 1/2
+### Stage 0: Phase 1/2 (retired)
 
-Current implementation:
+The original implementation:
 
-- Reshapes `#send_form`.
-- Reuses and relocates existing controls.
-- Injects `cui-` nodes into existing `.mes` message DOM.
-- Centralizes SillyTavern DOM fallback actions in `adapter/st-adapter.js`.
+- Reshaped `#send_form` in place (composer wrap, plus-menu, selector, QR float).
+- Reused and relocated existing controls.
+- Injected `cui-` nodes into existing `.mes` message DOM.
+- Centralized SillyTavern DOM fallback actions in `adapter/st-adapter.js`.
 
-This is acceptable for Phase 1/2, but should not become the final architecture.
+This was acceptable as a transitional phase and has since been **removed**
+(2026-06-23) in favor of the adapter + store + Preact root below. Only the last
+point survives: ST DOM fallbacks remain centralized in the adapter.
 
 ### Stage 1: Introduce Adapter
 
@@ -366,7 +373,7 @@ Each item needs a dependency check before stronger hiding.
 
 Current coverage:
 
-- `shield/st-dom-shield.js` applies `data-chatui-shield-level="3"` while ChatUI is active.
+- `shield/st-dom-shield.js` applies `data-chatui-shield-level="4"` by default while ChatUI is active (parking both the native `#chat` and `#send_form` surfaces).
 - Level 1 shields only lightweight native chrome that already has ChatUI replacements or Phase 2 restyling:
   - stock left-form menu/wand buttons replaced by ChatUI's plus menu,
   - native message name/timestamp chrome replaced by ChatUI identity headers,
@@ -507,6 +514,13 @@ This package would still require a running SillyTavern page. It would be a brows
 
 ## 6. Dependency Inventory
 
+> Note (2026-06-23): the native `#chat` and `#send_form` surfaces are now fully
+> parked off-screen by the shield (default level 4), so the per-element "Level 1"
+> hiding in the *Hide strategy* column is historical — those native controls are
+> already invisible inside the parked surfaces. The table is kept as the
+> dependency record; the ChatUI replacements now live in the Preact root and the
+> adapter fallbacks.
+
 Before hiding or replacing a SillyTavern DOM area, record:
 
 | ST area | ChatUI replacement | Runtime dependency | Hide strategy | Done |
@@ -540,10 +554,11 @@ SillyTavern-ChatUI/
     root-app.mjs.map
   scripts/
     build.mjs
+    build-config.mjs
+    dev.mjs
+    runtime.mjs
   adapter/
     st-adapter.js
-    st-events.js
-    st-message-actions.js
   store/
     chat-store.js
     chat-actions.js

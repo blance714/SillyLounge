@@ -3,150 +3,161 @@
 Last updated: 2026-06-23
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
-long-form design record.
+long-form design record. `DESIGN.md` is the product spec / north star.
 
 ---
 
 ## Current Architecture
 
-ChatUI is still loaded as a SillyTavern third-party extension, but the visible
-chat surface is now mostly ChatUI-owned.
+ChatUI loads as a SillyTavern third-party extension. The visible chat surface is
+ChatUI-owned: a Preact app mounted into `#chatui-root`, driven by a small store
+of view-model DTOs. SillyTavern keeps owning the runtime (persistence,
+generation, settings, events, file previews, native drawers); ChatUI never reads
+ST DOM as its model.
 
 ```text
 SillyTavern page/runtime
   |
   | manifest loads index.js + style.css
   v
-ChatUI bootstrap
+index.js  (enable toggle + settings UI + orchestration)
   |
   +-- shield/st-dom-shield.js
-  |     owns body.chatui-active, #chatui-root, and shield levels
+  |     owns body.chatui-active, #chatui-root, and the shield level
+  |     (parks native #chat / #send_form off-screen; promotes #chatui-root)
   |
   +-- adapter/st-adapter.js
-  |     reads ST runtime state and hides DOM/API fallbacks
+  |     the ONLY module that touches ST internals (getContext, eventSource,
+  |     native send/edit pipelines, DOM-button fallbacks); returns plain DTOs
   |
   +-- store/chat-store.js + store/chat-actions.js
-  |     expose ChatUI DTOs and user-intent actions
+  |     build ChatuiMessageDto objects from the adapter; expose user-intent actions
   |
   +-- ui/root.js -> dist/root-app.mjs
         Preact/compat app built from ui/app.tsx
 ```
 
-SillyTavern remains the runtime owner for chat persistence, generation,
-settings, extension events, file previews, and existing drawer contents.
-ChatUI owns the visible message list, primary composer, root topbar, root
-drawer shell, inline message editing surface, and rich attachment rendering.
+There is now **one** architecture. The earlier Phase 1/2 approach (reshaping
+native `#send_form` and decorating native `#chat .mes` in place) has been
+removed — see "Legacy cleanup" below.
 
 ---
 
 ## Source Layout
 
 ```text
+index.js                  entry: enable toggle, settings UI, setup/teardown
+manifest.json             extension descriptor
+style.css                 :root vars + shield rules + .cui-root-* app styles
+adapter/
+  st-adapter.js           ST runtime boundary (context, events, fallbacks, DTOs)
+store/
+  chat-store.js           ChatuiMessageDto store + event subscriptions
+  chat-actions.js         store-facing action facade
+shield/
+  st-dom-shield.js        #chatui-root + body.chatui-active + shield levels
 ui/
   app.tsx                 root Preact shell
-  actions.ts              UI-facing action barrel
-  hooks.ts                store snapshot + DOM enhancement hooks
-  format.ts               display formatting helpers
-  types.ts                UI-facing inferred types
   root.js                 stable runtime wrapper for dist/root-app.mjs
+  actions.ts / hooks.ts / format.ts / types.ts
   components/
-    Composer.tsx
-    MessageItem.tsx
-    ShellDrawer.tsx
+    Composer.tsx  MessageItem.tsx  ShellDrawer.tsx
     message/
-      ActionButton.tsx
-      MenuItem.tsx
-      MessageActions.tsx
-      MessageAvatar.tsx
-      MessageEditor.tsx
-      MessageMedia.tsx
-      MessageReasoning.tsx
+      ActionButton  MenuItem  MessageActions  MessageAvatar
+      MessageEditor  MessageMedia  MessageReasoning
+scripts/                  build / dev / runtime-sync tooling
+dist/                     generated browser bundle (gitignored on main)
 ```
 
-The extension installer does not build plugins. Development source is built
-with esbuild into `dist/root-app.mjs`, and `pnpm run runtime` syncs the loadable
-extension tree into `.runtime/SillyTavern-ChatUI`.
+The extension installer does not build plugins. Authored Preact/TSX is bundled
+with esbuild into `dist/root-app.mjs`; `pnpm run runtime` syncs the loadable
+tree into `.runtime/SillyTavern-ChatUI`.
 
 ---
 
-## Completed Progress
+## Ownership Boundary
 
-- Repository split: source lives outside the SillyTavern extension folder, and
-  SillyTavern loads the synced `.runtime/SillyTavern-ChatUI` tree via symlink.
-- Build/runtime pipeline: Preact/compat + TSX source, esbuild bundle, typecheck,
-  runtime sync, and dev watch scripts.
-- Shield levels:
-  - level 1 hides replaced lightweight ST chrome,
-  - level 2 promotes `#chatui-root`,
-  - level 3 visually shields native `#chat`,
-  - level 4 visually shields native `#send_form`.
-- Store DTOs: root message list is driven by `ChatuiMessageDto` objects, not by
-  UI components reading SillyTavern DOM.
-- Root message UI: metadata, formatted message HTML, reasoning block, code copy,
-  swipe labels, actions, inline edit, and generating indicator.
-- Root composer: ChatUI-owned textarea and send/stop controls, bridged through
-  SillyTavern's native send pipeline.
-- Root drawer shell: ChatUI-owned side drawer with named shell actions that open
-  the relevant SillyTavern native panels.
-- Rich media: root messages render images, videos, audio, and files from current
-  and legacy ST attachment fields.
-- UI source cleanup: root app and message UI are split into normal frontend
-  component files.
+ChatUI owns: the visible message list, message body/media/reasoning rendering,
+inline edit surface, primary composer, root topbar, and the shell drawer.
+
+SillyTavern still owns: chat persistence, generation/regeneration, settings,
+extension events, file previews, and all native drawer panel contents. The
+native `#chat` and `#send_form` stay **alive in the DOM** (parked off-screen by
+the shield) because ST render/update/send/edit semantics still flow through
+them; the adapter bridges ChatUI intents into those native pipelines.
+
+### Rules
+
+- UI code must not import ST core modules or read ST DOM as state.
+- Only `adapter/st-adapter.js` may touch ST internals or dispatch native DOM.
+- The store must not know ST selectors; the adapter must not import the store.
+- `dist/` is generated; authored UI changes belong in `ui/`.
 
 ---
 
-## Important Boundaries
+## Legacy cleanup (2026-06-23)
 
-- UI code must not import SillyTavern core modules directly.
-- UI code must not click SillyTavern DOM controls directly.
-- Adapter fallbacks may use ST DOM, but should expose plain functions and DTOs.
-- Store should not know SillyTavern selectors.
-- Native `#chat` and `#send_form` remain alive because ST render/update/send
-  semantics still depend on them.
-- `dist/` is generated runtime output; authored UI changes belong in `ui/`.
+Removed the transitional Phase 1/2 DOM-reshaping layer, which had been
+superseded by the shield + store + Preact root and was running invisibly behind
+the shield:
+
+- **Deleted modules**: `composer.js`, `plus-menu.js`, `selector.js`, `qr.js`,
+  `message-layout.js`, `message-actions.js`, `message-extras.js`,
+  `chat-chrome.js`.
+- **`index.js`**: orchestration reduced to `shield → store → root`; settings
+  collapsed to a single enable toggle (the Phase 1/2 settings — `composerMode`,
+  `selectorBKind`, identity headers, code header, scroll/regen buttons — drove
+  the removed modules and consumed nothing else).
+- **`style.css`**: dropped the Phase 1 composer CSS and the Phase 2 `.mes`
+  decoration CSS; kept `:root`, the shield rules, and the `.cui-root-*` app
+  styles (~1970 → ~720 lines).
+- **`scripts/runtime.mjs`**: dropped the deleted files from the sync lists.
+- The two build contracts (`CONTRACT.md`, `CONTRACT-P2.md`) are retained as
+  historical records with a SUPERSEDED banner.
 
 ---
 
 ## Known Deferred Work
 
-- ChatUI-owned character/chat list drawer contents.
-- ChatUI-owned settings panels.
+Features the removed Phase 1/2 modules nominally covered now need first-class
+re-implementation inside the Preact root (they were already non-functional under
+the shield, so nothing visible regressed):
+
+- Plus (`+`) menu: attachments, continue/impersonate, wand/extension tools.
+- Selector chips (preset / model / persona) in the composer or topbar.
+- QR (quick-reply) shortcut surface above the composer.
+- Identity-header configuration (group vs single: icon / name / none).
+- Composer attachment chips and queued-attachment state.
 - Toast/error feedback owned by ChatUI instead of console/native feedback.
-- Composer attachment chips and queued attachment state.
-- QR shortcut integration inside the root composer.
-- Media caption/delete/gallery swipe controls in root media.
+- ChatUI-owned drawer contents (character list, chat list, settings panels).
+- Media caption/delete/gallery-swipe controls.
 - Reasoning-specific edit controls.
-- Direct adapter/API send and edit paths that no longer need hidden native DOM
-  bridges.
-- Visual Playwright pass across desktop/mobile once the local ST test state is
-  stable enough.
+- Direct adapter/API send + edit paths that no longer need the hidden native
+  DOM bridge.
+- Visual Playwright pass across desktop/mobile once a stable local ST test state
+  exists.
 
 ---
 
 ## Suggested Next Milestones
 
 ### H1: ChatUI Feedback Layer
-
 Add a small toast/error store and root component. Route send/edit/copy/media
 errors through it before expanding more UI.
 
 ### H2: ChatUI Character Drawer
-
 Replace the first native drawer content with a ChatUI-owned character list:
-adapter character DTOs, search/filter, current character state, and switch
-actions.
+adapter character DTOs, search/filter, current-character state, switch actions.
 
-### H3: Composer Attachments
-
-Move selected-file visibility into the root composer with attachment chips and
-remove actions, while still using ST's file picker/persistence pipeline.
+### H3: Composer Attachments + Plus Menu
+Bring the `+` menu and attachment chips into the root composer (attachments,
+continue/impersonate, wand tools) while still using ST's file/persistence
+pipeline.
 
 ### H4: Media Controls
-
 Add root media gallery swipes, captions, and delete actions through adapter
 fallbacks.
 
 ### H5: Drawer Routing
-
 Introduce explicit root drawer route state so Characters, Chats, Settings, and
 Extensions become ChatUI pages rather than buttons that only open native panels.

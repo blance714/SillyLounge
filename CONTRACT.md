@@ -1,5 +1,15 @@
 # SillyTavern-ChatUI · Phase 1 Build Contract (Composer Only)
 
+> ⚠️ **SUPERSEDED / HISTORICAL — archived 2026-06-23.**
+> This contract governed the retired Phase 1 approach: reshaping SillyTavern's
+> native `#send_form` DOM in place (composer wrap, plus-menu, selector B, QR
+> float). That path has been removed. The visible composer is now the Preact
+> root app (`ui/components/Composer.tsx`), and the modules this contract
+> specified — `composer.js`, `plus-menu.js`, `selector.js`, `qr.js` — have been
+> deleted. The document is kept only as a record of the original design and the
+> SillyTavern DOM gotchas it captured. For the current architecture see
+> `ARCHITECTURE.md` and `STATUS.md`.
+
 > Authoritative source of truth for all agents writing files in this directory.
 > DESIGN.md is the product spec; this CONTRACT translates it into unambiguous implementation decisions.
 > Nothing here may be overridden per-file. Conflicts → update CONTRACT first.
