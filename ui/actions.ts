@@ -24,3 +24,10 @@ export {
     triggerChatuiShellAction,
     triggerChatuiWandItem,
 } from '../store/chat-actions.js';
+
+export {
+    getChatuiSidebarState,
+    newChatuiChat,
+    openChatuiChat,
+    subscribeChatuiSidebar,
+} from '../store/sidebar-actions.js';

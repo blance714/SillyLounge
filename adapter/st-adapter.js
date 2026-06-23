@@ -6,10 +6,10 @@
  * or dispatching native ST DOM buttons directly.
  */
 
-import { eventSource, event_types, isGenerating, messageEdit, messageFormatting, sendTextareaMessage } from '../../../../../script.js';
+import { doNewChat, eventSource, event_types, getCurrentChatDetails, getPastCharacterChats, isGenerating, messageEdit, messageFormatting, openCharacterChat, sendTextareaMessage } from '../../../../../script.js';
 import { getContext } from '../../../../st-context.js';
 import { setUserAvatar, getUserAvatars, user_avatar } from '../../../../personas.js';
-import { copyText } from '../../../../utils.js';
+import { copyText, timestampToMoment } from '../../../../utils.js';
 import { branchChat, createNewBookmark } from '../../../../bookmarks.js';
 import { hideChatMessage, unhideChatMessage } from '../../../../chats.js';
 
@@ -20,6 +20,8 @@ export const stEventKeys = Object.freeze({
     MESSAGE_UPDATED: 'MESSAGE_UPDATED',
     MESSAGE_SENT: 'MESSAGE_SENT',
     CHAT_CHANGED: 'CHAT_CHANGED',
+    CHAT_RENAMED: 'CHAT_RENAMED',
+    CHAT_DELETED: 'CHAT_DELETED',
     CHAT_LOADED: 'CHAT_LOADED',
     MORE_MESSAGES_LOADED: 'MORE_MESSAGES_LOADED',
     GENERATION_STARTED: 'GENERATION_STARTED',
@@ -1016,6 +1018,116 @@ async function selectSelector(kind, value) {
     }
 }
 
+// ── Sidebar / conversation list (Region 5) ────────────────────────────────────
+
+/**
+ * Strip ST's `.jsonl` chat extension. ST's chat-list endpoint returns names
+ * WITH the extension, but open/rename/delete all expect the bare name.
+ * @param {unknown} fileName
+ * @returns {string}
+ */
+function _stripChatExt(fileName) {
+    return typeof fileName === 'string' ? fileName.replace(/\.jsonl$/i, '') : '';
+}
+
+/**
+ * Normalize a chat's `last_mes` (epoch-ms number for empty chats, or an ST date
+ * string for non-empty ones) into a sort key + a compact display label, using
+ * ST's own timestampToMoment so parsing matches native behaviour.
+ * @param {number|string} lastMes
+ * @returns {{ ts: number, label: string }}
+ */
+function _chatTimestamp(lastMes) {
+    const moment = timestampToMoment(lastMes);
+    if (!moment || typeof moment.isValid !== 'function' || !moment.isValid()) {
+        return { ts: 0, label: '' };
+    }
+    return {
+        ts: moment.valueOf(),
+        label: moment.calendar(null, {
+            sameDay: 'HH:mm',
+            lastDay: '[昨天]',
+            lastWeek: 'dddd',
+            sameElse: 'YYYY-MM-DD',
+        }),
+    };
+}
+
+/**
+ * List the current character's past chats as plain DTOs, newest-first.
+ * ST's getPastCharacterChats sorts ALPHABETICALLY by file_name, so we re-sort by
+ * last activity here. Returns [] in a group chat or when no character is
+ * selected (Mode A is single-character).
+ * @returns {Promise<Array<{ fileName: string, displayName: string, messageCount: number, preview: string, lastMesTs: number, lastMesLabel: string, isCurrent: boolean }>>}
+ */
+async function listCharacterChats() {
+    const ctx = getContext();
+    if (ctx.groupId) return [];
+    const characterId = ctx.characterId;
+    if (characterId === undefined || characterId === null || characterId === '') return [];
+
+    const raw = await getPastCharacterChats(Number(characterId));
+    const currentName = _stripChatExt(getCurrentChatDetails()?.sessionName);
+
+    const items = (Array.isArray(raw) ? raw : []).map(chat => {
+        const entry = /** @type {Record<string, any>} */ (chat ?? {});
+        const fileName = _stripChatExt(entry.file_name);
+        const { ts, label } = _chatTimestamp(entry.last_mes);
+        // ST fills `mes` with a bracketed placeholder for empty chats/messages;
+        // blank it so the row preview stays clean.
+        const rawPreview = typeof entry.mes === 'string' ? entry.mes : '';
+        const preview = /^\[The (chat|message) is empty\]$/.test(rawPreview) ? '' : rawPreview;
+        return {
+            fileName,
+            displayName: fileName,
+            messageCount: typeof entry.chat_items === 'number' ? entry.chat_items : 0,
+            preview,
+            lastMesTs: ts,
+            lastMesLabel: label,
+            isCurrent: fileName !== '' && fileName === currentName,
+        };
+    });
+
+    items.sort((a, b) => b.lastMesTs - a.lastMesTs);
+    return items;
+}
+
+/**
+ * Active character + chat header for the conversation list. Strips ST's group
+ * object down to a boolean so no live ST object escapes the adapter.
+ * @returns {{ sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean }}
+ */
+function getCurrentChatHeader() {
+    const details = /** @type {Record<string, any>} */ (getCurrentChatDetails() ?? {});
+    return {
+        sessionName: _stripChatExt(details.sessionName),
+        characterName: typeof details.characterName === 'string' ? details.characterName : '',
+        avatarImgURL: typeof details.avatarImgURL === 'string' ? details.avatarImgURL : '',
+        isGroup: !!getContext().groupId,
+    };
+}
+
+/**
+ * Open one of the current character's past chats by bare file name (no .jsonl).
+ * Requires the live ST DOM (#selected_chat_pole) + a selected character — both
+ * hold here since the shield keeps native DOM alive.
+ * @param {string} fileName
+ * @returns {Promise<void>}
+ */
+async function openCharacterChatByName(fileName) {
+    const name = _stripChatExt(fileName);
+    if (!name) return;
+    await openCharacterChat(name);
+}
+
+/**
+ * Create a new chat for the currently-selected character.
+ * @returns {Promise<void>}
+ */
+async function newCharacterChat() {
+    await doNewChat({ deleteCurrentChat: false });
+}
+
 export const chatuiAdapter = Object.freeze({
     getContext,
     getCurrentChat,
@@ -1079,5 +1191,11 @@ export const chatuiAdapter = Object.freeze({
         getSelectorOptions,
         getSelectedSelector,
         selectSelector,
+    }),
+    sidebarActions: Object.freeze({
+        listCharacterChats,
+        getCurrentChatHeader,
+        openCharacterChatByName,
+        newCharacterChat,
     }),
 });

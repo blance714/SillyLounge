@@ -14,6 +14,7 @@
 import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
+import { initSidebarStore, teardownSidebarStore } from './store/sidebar-store.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 
@@ -67,6 +68,7 @@ function setup() {
 
     initStDomShield();
     initChatuiStore();
+    initSidebarStore();
     initChatuiRoot();
 
     isSetup = true;
@@ -82,6 +84,7 @@ function teardown() {
     if (!isSetup) return;
 
     teardownChatuiRoot();
+    teardownSidebarStore();
     teardownChatuiStore();
     teardownStDomShield();
 

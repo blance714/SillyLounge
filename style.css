@@ -178,10 +178,10 @@ body.chatui-active .cui-root-shell-header {
 
 body.chatui-active .cui-root-shell-nav {
     display: flex;
+    flex: 0 0 auto;
     flex-direction: column;
     gap: 0.15rem;
     min-height: 0;
-    overflow-y: auto;
     padding: 0.45rem;
 }
 
@@ -212,6 +212,151 @@ body.chatui-active .cui-root-shell-item:hover,
 body.chatui-active .cui-root-shell-item:focus-visible {
     background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
     outline: none;
+}
+
+/* ── Region 5 · conversation list (下段) ─────────────────────────────────────── */
+
+body.chatui-active .cui-root-convlist {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.45rem;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+body.chatui-active .cui-root-convlist-head {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.25rem 0.4rem 0.45rem;
+    font-weight: 600;
+}
+
+body.chatui-active .cui-root-convlist-avatar {
+    width: 1.6rem;
+    height: 1.6rem;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-root-convlist-avatar-fallback {
+    width: 1.6rem;
+    text-align: center;
+    opacity: 0.6;
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-root-convlist-charname {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-newchat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2.2rem;
+    margin-bottom: 0.25rem;
+    border: 1px dashed var(--SmartThemeBorderColor);
+    border-radius: 0.5rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.92);
+    padding: 0 0.65rem;
+}
+
+body.chatui-active .cui-root-newchat:hover:not(:disabled),
+body.chatui-active .cui-root-newchat:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 9%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-newchat:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+body.chatui-active .cui-root-convlist-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+body.chatui-active .cui-root-chat-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-height: 2.4rem;
+    border-radius: 0.45rem;
+    padding: 0.3rem 0.55rem;
+    cursor: pointer;
+}
+
+body.chatui-active .cui-root-chat-row:hover,
+body.chatui-active .cui-root-chat-row:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-chat-row.is-current {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+}
+
+body.chatui-active .cui-root-chat-row-icon {
+    opacity: 0.6;
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-root-chat-row-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+body.chatui-active .cui-root-chat-row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: calc(var(--mainFontSize) * 0.92);
+}
+
+body.chatui-active .cui-root-chat-row-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.6;
+    font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+body.chatui-active .cui-root-chat-row-time {
+    flex: 0 0 auto;
+    opacity: 0.55;
+    font-size: calc(var(--mainFontSize) * 0.78);
+}
+
+body.chatui-active .cui-root-chat-row-check {
+    flex: 0 0 auto;
+    opacity: 0.8;
+    font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+body.chatui-active .cui-root-convlist-note {
+    padding: 0.6rem;
+    opacity: 0.6;
+    font-size: calc(var(--mainFontSize) * 0.86);
+    text-align: center;
 }
 
 body.chatui-active .cui-root-message-list {

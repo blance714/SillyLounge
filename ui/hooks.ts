@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'preact/compat';
 import type { RefObject } from 'preact';
 import { getChatuiState, subscribeChatuiStore } from '../store/chat-store.js';
+import { getSidebarState, subscribeSidebarStore } from '../store/sidebar-store.js';
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
-import type { ChatuiMessage, ChatuiState } from './types.js';
+import type { ChatuiMessage, ChatuiState, ChatuiSidebarState } from './types.js';
 
 export function useToasts(): ReturnType<typeof getToasts> {
     const [toasts, setToasts] = useState(() => getToasts());
     useEffect(() => subscribeToasts(setToasts), []);
     return toasts;
+}
+
+export function useSidebarData(): ChatuiSidebarState {
+    const [state, setState] = useState<ChatuiSidebarState>(() => getSidebarState());
+
+    useEffect(() => subscribeSidebarStore(() => {
+        setState(getSidebarState());
+    }), []);
+
+    return state;
 }
 
 export function useChatuiSnapshot(): ChatuiState {

@@ -2,6 +2,7 @@ import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { triggerChatuiShellAction } from '../actions.js';
 import type { ShellAction } from '../types.js';
+import { ConversationList } from './sidebar/ConversationList.js';
 
 const SHELL_ITEMS: Array<{ action: ShellAction; label: string; iconClass: string }> = [
     { action: 'characters', label: 'Characters', iconClass: 'fa-solid fa-image-portrait' },
@@ -60,6 +61,7 @@ export function ShellDrawer({
                         </button>
                     ))}
                 </nav>
+                <ConversationList />
             </aside>
         </>
     );
