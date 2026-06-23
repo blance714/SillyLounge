@@ -351,9 +351,7 @@ function triggerOverflowAction(original) {
 function copyMessage(mesEl) {
     const msg = getMessageByElement(mesEl);
     const text = typeof msg?.mes === 'string' ? msg.mes : '';
-    Promise.resolve(copyText(text))
-        .then(() => globalThis.toastr?.info?.('Copied!', '', { timeOut: 2000 }))
-        .catch(error => console.error('[ChatUI/adapter] copy failed', error));
+    return Promise.resolve(copyText(text));
 }
 
 /**
@@ -515,7 +513,8 @@ function swipeMessage(mesEl, direction) {
  */
 function triggerMessageAction(mesEl, action) {
     switch (action) {
-        case 'copy':       copyMessage(mesEl);         break;
+        case 'copy':       return copyMessage(mesEl);
+
         case 'regen':      regenerateMessage();         break;
         case 'edit':       editMessage(mesEl);         break;
         case 'branch':     createBranch(mesEl);        break;
@@ -539,7 +538,7 @@ function triggerMessageActionById(mesId, action) {
 
     const mesEl = getMessageElementById(mesId);
     if (!mesEl) return;
-    triggerMessageAction(mesEl, action);
+    return triggerMessageAction(mesEl, action);
 }
 
 /**

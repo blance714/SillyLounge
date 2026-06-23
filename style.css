@@ -1056,3 +1056,92 @@ body.chatui-active .cui-root-selchip-empty {
     font-size: calc(var(--mainFontSize) * 0.88);
 }
 
+/* ---------------------------------------------------------------------------
+   6. Toasts  (ChatUI-owned feedback)
+   --------------------------------------------------------------------------- */
+body.chatui-active .cui-root-toasts {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: calc(var(--cui-sheet-z) + 50);
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    width: max-content;
+    max-width: min(92vw, 26rem);
+    pointer-events: none;
+}
+
+body.chatui-active .cui-root-toast {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    pointer-events: auto;
+    padding: 0.5rem 0.6rem 0.5rem 0.75rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-left-width: 3px;
+    border-radius: 0.5rem;
+    background-color: var(--SmartThemeBlurTintColor);
+    box-shadow: 0 6px 22px var(--SmartThemeShadowColor);
+    color: var(--SmartThemeBodyColor);
+    font-size: calc(var(--mainFontSize) * 0.9);
+    animation: cui-toast-in var(--animation-duration-2x) ease forwards;
+}
+
+@keyframes cui-toast-in {
+    from { opacity: 0; transform: translateY(-0.4rem); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+body.chatui-active .cui-root-toast > i:first-child {
+    flex-shrink: 0;
+    opacity: 0.9;
+}
+
+body.chatui-active .cui-root-toast-success {
+    border-left-color: #3fa45b;
+}
+
+body.chatui-active .cui-root-toast-success > i:first-child {
+    color: #3fa45b;
+}
+
+body.chatui-active .cui-root-toast-error {
+    border-left-color: #d84747;
+}
+
+body.chatui-active .cui-root-toast-error > i:first-child {
+    color: #d84747;
+}
+
+body.chatui-active .cui-root-toast-info {
+    border-left-color: var(--SmartThemeQuoteColor, var(--SmartThemeBorderColor));
+}
+
+body.chatui-active .cui-root-toast-text {
+    flex: 1 1 auto;
+    overflow-wrap: anywhere;
+}
+
+body.chatui-active .cui-root-toast-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.5rem;
+    height: 1.5rem;
+    flex-shrink: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    opacity: 0.6;
+}
+
+body.chatui-active .cui-root-toast-close:hover,
+body.chatui-active .cui-root-toast-close:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+}
+

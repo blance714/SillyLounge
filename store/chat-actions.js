@@ -6,6 +6,7 @@
  */
 
 import { chatuiAdapter } from '../adapter/st-adapter.js';
+import { pushToast, dismissToast } from './toast-store.js';
 
 /**
  * @param {number|string} messageId
@@ -13,7 +14,12 @@ import { chatuiAdapter } from '../adapter/st-adapter.js';
  * @returns {void}
  */
 export function triggerChatuiMessageAction(messageId, action) {
-    chatuiAdapter.messageActions.triggerMessageActionById(messageId, action);
+    const result = chatuiAdapter.messageActions.triggerMessageActionById(messageId, action);
+    if (action === 'copy') {
+        Promise.resolve(result)
+            .then(() => notifyChatui('success', '已复制'))
+            .catch(() => notifyChatui('error', '复制失败'));
+    }
 }
 
 /**
@@ -190,4 +196,23 @@ export function subscribeChatuiSelectorSync(cb) {
     const keys = ['PRESET_CHANGED', 'OAI_PRESET_CHANGED_AFTER', 'CONNECTION_PROFILE_LOADED', 'PERSONA_CHANGED', 'CHAT_CHANGED'];
     const offs = keys.map(key => chatuiAdapter.subscribe(key, cb));
     return () => offs.forEach(off => off());
+}
+
+/**
+ * Show a ChatUI-owned toast (success / error / info feedback).
+ * @param {'info'|'success'|'error'} kind
+ * @param {string} text
+ * @param {number} [ttl]
+ * @returns {string}
+ */
+export function notifyChatui(kind, text, ttl) {
+    return pushToast(kind, text, ttl);
+}
+
+/**
+ * @param {string} id
+ * @returns {void}
+ */
+export function dismissChatuiToast(id) {
+    dismissToast(id);
 }

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
+    notifyChatui,
     sendChatuiComposerMessage,
     stopChatuiGeneration,
 } from '../actions.js';
@@ -36,6 +37,7 @@ export function Composer({
             textareaRef.current?.focus();
         } catch (error) {
             console.error('[ChatUI] Failed to send composer message', error);
+            notifyChatui('error', '发送失败');
         } finally {
             setIsSending(false);
         }
