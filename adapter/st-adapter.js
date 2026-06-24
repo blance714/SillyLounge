@@ -6,7 +6,7 @@
  * or dispatching native ST DOM buttons directly.
  */
 
-import { doNewChat, eventSource, event_types, getCurrentChatDetails, getPastCharacterChats, getThumbnailUrl, isGenerating, messageEdit, messageFormatting, openCharacterChat, selectCharacterById, sendTextareaMessage } from '../../../../../script.js';
+import { deleteCharacterChatByName, doNewChat, eventSource, event_types, getCurrentChatDetails, getPastCharacterChats, getThumbnailUrl, isGenerating, messageEdit, messageFormatting, openCharacterChat, renameChat, selectCharacterById, sendTextareaMessage } from '../../../../../script.js';
 import { getContext } from '../../../../st-context.js';
 import { setUserAvatar, getUserAvatars, user_avatar } from '../../../../personas.js';
 import { copyText, timestampToMoment } from '../../../../utils.js';
@@ -1182,6 +1182,50 @@ async function newCharacterChat() {
     await doNewChat({ deleteCurrentChat: false });
 }
 
+/**
+ * Rename a chat of the CURRENT character (ST's renameChat operates on this_chid).
+ * Pass bare names — ST appends `.jsonl` itself. ST shows its own error popup and
+ * emits CHAT_RENAMED on success (sidebar auto-refresh), so this never throws on a
+ * server-side failure.
+ * @param {string} oldFileName
+ * @param {string} newName
+ * @returns {Promise<boolean>}
+ */
+async function renameCharacterChat(oldFileName, newName) {
+    const oldBare = _stripChatExt(oldFileName);
+    const next = typeof newName === 'string' ? _stripChatExt(newName).trim() : '';
+    if (!oldBare || !next) return false;
+    await renameChat(oldBare, next);
+    return true;
+}
+
+/**
+ * Delete a chat of a character (by stable avatar). Uses the importable
+ * deleteCharacterChatByName (delChat is private). Pass a bare name — ST appends
+ * `.jsonl`. If the deleted chat was the active one, ST repoints the character's
+ * chat but does NOT reload the view, so reload it here.
+ * @param {string} avatar
+ * @param {string} fileName
+ * @returns {Promise<boolean>}
+ */
+async function deleteCharacterChat(avatar, fileName) {
+    const ctx = getContext();
+    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
+    const index = characters.findIndex(c => c?.avatar === avatar);
+    const bareName = _stripChatExt(fileName);
+    if (index < 0 || !bareName) return false;
+
+    const wasCurrent = _stripChatExt(getCurrentChatDetails()?.sessionName) === bareName;
+    await deleteCharacterChatByName(index, bareName);
+
+    if (wasCurrent) {
+        // ST set the character's chat to the newest remaining (or a fresh) chat
+        // without loading it; reload so the main surface leaves the deleted chat.
+        await ctx.reloadCurrentChat();
+    }
+    return true;
+}
+
 export const chatuiAdapter = Object.freeze({
     getContext,
     getCurrentChat,
@@ -1253,5 +1297,7 @@ export const chatuiAdapter = Object.freeze({
         getCurrentChatHeader,
         openCharacterChatByName,
         newCharacterChat,
+        renameCharacterChat,
+        deleteCharacterChat,
     }),
 });

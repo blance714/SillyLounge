@@ -417,6 +417,7 @@ body.chatui-active .cui-root-convlist-items {
 }
 
 body.chatui-active .cui-root-chat-row {
+    position: relative;
     display: flex;
     align-items: center;
     gap: 0.55rem;
@@ -473,6 +474,143 @@ body.chatui-active .cui-root-chat-row-check {
     flex: 0 0 auto;
     opacity: 0.8;
     font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+/* Inline rename input + hover row actions (rename / delete) */
+body.chatui-active .cui-root-chat-row-rename {
+    width: 100%;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.3rem;
+    background: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.9);
+    padding: 0.1rem 0.35rem;
+}
+
+body.chatui-active .cui-root-chat-row-actions {
+    position: absolute;
+    right: 0.4rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+    gap: 0.1rem;
+}
+
+body.chatui-active .cui-root-chat-row:hover .cui-root-chat-row-actions,
+body.chatui-active .cui-root-chat-row:focus-within .cui-root-chat-row-actions {
+    display: flex;
+}
+
+/* When the actions float in, hide the time/check underneath them (no reflow). */
+body.chatui-active .cui-root-chat-row:hover .cui-root-chat-row-time,
+body.chatui-active .cui-root-chat-row:focus-within .cui-root-chat-row-time,
+body.chatui-active .cui-root-chat-row:hover .cui-root-chat-row-check,
+body.chatui-active .cui-root-chat-row:focus-within .cui-root-chat-row-check {
+    visibility: hidden;
+}
+
+body.chatui-active .cui-root-chat-row-act {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.7rem;
+    height: 1.7rem;
+    border: none;
+    border-radius: 0.35rem;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    opacity: 0.85;
+    font-size: calc(var(--mainFontSize) * 0.8);
+}
+
+body.chatui-active .cui-root-chat-row-act:hover {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 20%, transparent);
+}
+
+body.chatui-active .cui-root-chat-row-act-danger:hover {
+    color: #e74c3c;
+}
+
+@media (max-width: 768px) {
+    body.chatui-active .cui-root-chat-row-actions {
+        display: flex;
+    }
+
+    body.chatui-active .cui-root-chat-row-time,
+    body.chatui-active .cui-root-chat-row-check {
+        visibility: hidden;
+    }
+}
+
+/* ── ChatUI-owned confirm dialog ─────────────────────────────────────────────── */
+
+body.chatui-active .cui-root-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--cui-sheet-z) + 30);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background-color: var(--cui-overlay-bg);
+}
+
+body.chatui-active .cui-root-dialog {
+    width: min(22rem, 92vw);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.7rem;
+    padding: 1rem;
+    background-color: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    box-shadow: 0 12px 40px var(--SmartThemeShadowColor);
+}
+
+body.chatui-active .cui-root-dialog-title {
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+}
+
+body.chatui-active .cui-root-dialog-message {
+    margin-bottom: 1rem;
+    opacity: 0.8;
+    font-size: calc(var(--mainFontSize) * 0.9);
+    line-height: 1.5;
+}
+
+body.chatui-active .cui-root-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+}
+
+body.chatui-active .cui-root-dialog-btn {
+    min-height: 2.1rem;
+    padding: 0 0.9rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.45rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.9);
+}
+
+body.chatui-active .cui-root-dialog-btn:hover {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 9%, transparent);
+}
+
+body.chatui-active .cui-root-dialog-confirm.is-danger {
+    border-color: transparent;
+    background-color: #c0392b;
+    color: #fff;
+}
+
+body.chatui-active .cui-root-dialog-confirm.is-danger:hover {
+    background-color: #a93226;
 }
 
 body.chatui-active .cui-root-convlist-note {

@@ -20,6 +20,8 @@ export function ConversationList(): ComponentChild {
         );
     }
 
+    const currentAvatar = characters.find(character => character.isCurrent)?.avatar ?? '';
+
     const body = error
         ? <div className="cui-root-convlist-note">对话列表加载失败</div>
         : loading && chats.length === 0
@@ -29,7 +31,7 @@ export function ConversationList(): ComponentChild {
                 : (
                     <ul className="cui-root-convlist-items">
                         {chats.map(chat => (
-                            <ChatRow key={chat.fileName} chat={chat} />
+                            <ChatRow key={chat.fileName} chat={chat} currentAvatar={currentAvatar} />
                         ))}
                     </ul>
                 );

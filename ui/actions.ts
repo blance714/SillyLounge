@@ -26,9 +26,11 @@ export {
 } from '../store/chat-actions.js';
 
 export {
+    deleteChatuiChat,
     getChatuiSidebarState,
     newChatuiChat,
     openChatuiChat,
+    renameChatuiChat,
     subscribeChatuiSidebar,
     switchChatuiCharacter,
 } from '../store/sidebar-actions.js';
