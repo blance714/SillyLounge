@@ -10,6 +10,7 @@ export type ChatuiState = ReturnType<typeof getChatuiState>;
 export type ChatuiMessage = ChatuiState['chat']['messages'][number];
 export type ChatuiSidebarState = ReturnType<typeof getSidebarState>;
 export type ChatListItem = ChatuiSidebarState['chats'][number];
+export type CharacterSummary = ChatuiSidebarState['characters'][number];
 export type ChatuiAction = Parameters<typeof triggerChatuiMessageAction>[1];
 export type ShellAction = Parameters<typeof triggerChatuiShellAction>[0];
 export type RootApi = ReturnType<typeof createRoot>;

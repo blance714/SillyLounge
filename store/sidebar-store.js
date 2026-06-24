@@ -20,9 +20,19 @@ import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
  * @property {boolean} isCurrent
  */
 
-/** @type {{ header: { sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean }, chats: Array<ChatListItemDto>, loading: boolean, error: string|null }} */
+/**
+ * @typedef {object} CharacterSummaryDto
+ * @property {string} avatar
+ * @property {string} name
+ * @property {string} thumbnailUrl
+ * @property {boolean} fav
+ * @property {boolean} isCurrent
+ */
+
+/** @type {{ header: { sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean }, characters: Array<CharacterSummaryDto>, chats: Array<ChatListItemDto>, loading: boolean, error: string|null }} */
 let _state = {
     header: { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false },
+    characters: [],
     chats: [],
     loading: false,
     error: null,
@@ -63,11 +73,26 @@ function _emit() {
 }
 
 /**
- * Rebuild the active character/chat header from the adapter (synchronous).
+ * Rebuild the synchronous slices — active-chat header + full character list —
+ * from the adapter. Cheap (no network), so CHARACTER_* events can use it alone.
  * @returns {void}
  */
-function _refreshHeader() {
-    _state = { ..._state, header: chatuiAdapter.sidebarActions.getCurrentChatHeader() };
+function _refreshMeta() {
+    _state = {
+        ..._state,
+        header: chatuiAdapter.sidebarActions.getCurrentChatHeader(),
+        characters: chatuiAdapter.sidebarActions.listCharacters(),
+    };
+}
+
+/**
+ * Refresh the synchronous slices and emit. Used by CHARACTER_* events, which
+ * change the switcher list but not the current chat list.
+ * @returns {void}
+ */
+export function refreshSidebarMeta() {
+    _refreshMeta();
+    _emit();
 }
 
 /**
@@ -98,7 +123,7 @@ export async function refreshSidebarChats() {
  * @returns {void}
  */
 export function refreshSidebarStore() {
-    _refreshHeader();
+    _refreshMeta();
     void refreshSidebarChats();
 }
 
@@ -112,10 +137,18 @@ export function initSidebarStore() {
 
     // CHAT_CHANGED fires mid-switch, so debounce to the next tick like chat-store.
     const refreshSoon = () => setTimeout(() => refreshSidebarStore(), 0);
+    // CHARACTER_* only touches the switcher list — refresh meta (no chat fetch);
+    // CHARACTER_PAGE_LOADED can burst during pagination, so debounce too.
+    const refreshMetaSoon = () => setTimeout(() => refreshSidebarMeta(), 0);
     _unsubscribers = [
         chatuiAdapter.subscribe(stEventKeys.CHAT_CHANGED, refreshSoon),
         chatuiAdapter.subscribe(stEventKeys.CHAT_RENAMED, refreshSoon),
         chatuiAdapter.subscribe(stEventKeys.CHAT_DELETED, refreshSoon),
+        chatuiAdapter.subscribe(stEventKeys.CHARACTER_EDITED, refreshMetaSoon),
+        chatuiAdapter.subscribe(stEventKeys.CHARACTER_DELETED, refreshMetaSoon),
+        chatuiAdapter.subscribe(stEventKeys.CHARACTER_DUPLICATED, refreshMetaSoon),
+        chatuiAdapter.subscribe(stEventKeys.CHARACTER_RENAMED, refreshMetaSoon),
+        chatuiAdapter.subscribe(stEventKeys.CHARACTER_PAGE_LOADED, refreshMetaSoon),
     ];
 }
 

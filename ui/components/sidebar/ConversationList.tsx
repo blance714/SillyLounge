@@ -2,6 +2,7 @@ import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { useSidebarData } from '../../hooks.js';
 import { ChatRow } from './ChatRow.js';
+import { CharacterSwitcher } from './CharacterSwitcher.js';
 import { NewChatButton } from './NewChatButton.js';
 
 /**
@@ -9,7 +10,7 @@ import { NewChatButton } from './NewChatButton.js';
  * Renders the current character's past chats; group chats are deferred to Mode B.
  */
 export function ConversationList(): ComponentChild {
-    const { header, chats, loading, error } = useSidebarData();
+    const { header, characters, chats, loading, error } = useSidebarData();
 
     if (header.isGroup) {
         return (
@@ -35,14 +36,15 @@ export function ConversationList(): ComponentChild {
 
     return (
         <div className="cui-root-convlist">
-            <div className="cui-root-convlist-head">
-                {header.avatarImgURL
-                    ? <img className="cui-root-convlist-avatar" src={header.avatarImgURL} alt="" />
-                    : <i className="fa-solid fa-user cui-root-convlist-avatar-fallback" />}
-                <span className="cui-root-convlist-charname">{header.characterName || '未选择角色'}</span>
-            </div>
+            <CharacterSwitcher
+                characters={characters}
+                currentName={header.characterName}
+                currentAvatarUrl={header.avatarImgURL}
+            />
             <NewChatButton disabled={!header.characterName} />
-            {body}
+            <div className="cui-root-convlist-scroll">
+                {body}
+            </div>
         </div>
     );
 }

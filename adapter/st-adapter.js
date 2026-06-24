@@ -6,7 +6,7 @@
  * or dispatching native ST DOM buttons directly.
  */
 
-import { doNewChat, eventSource, event_types, getCurrentChatDetails, getPastCharacterChats, isGenerating, messageEdit, messageFormatting, openCharacterChat, sendTextareaMessage } from '../../../../../script.js';
+import { doNewChat, eventSource, event_types, getCurrentChatDetails, getPastCharacterChats, getThumbnailUrl, isGenerating, messageEdit, messageFormatting, openCharacterChat, selectCharacterById, sendTextareaMessage } from '../../../../../script.js';
 import { getContext } from '../../../../st-context.js';
 import { setUserAvatar, getUserAvatars, user_avatar } from '../../../../personas.js';
 import { copyText, timestampToMoment } from '../../../../utils.js';
@@ -23,6 +23,11 @@ export const stEventKeys = Object.freeze({
     CHAT_RENAMED: 'CHAT_RENAMED',
     CHAT_DELETED: 'CHAT_DELETED',
     CHAT_LOADED: 'CHAT_LOADED',
+    CHARACTER_EDITED: 'CHARACTER_EDITED',
+    CHARACTER_DELETED: 'CHARACTER_DELETED',
+    CHARACTER_DUPLICATED: 'CHARACTER_DUPLICATED',
+    CHARACTER_RENAMED: 'CHARACTER_RENAMED',
+    CHARACTER_PAGE_LOADED: 'CHARACTER_PAGE_LOADED',
     MORE_MESSAGES_LOADED: 'MORE_MESSAGES_LOADED',
     GENERATION_STARTED: 'GENERATION_STARTED',
     GENERATION_STOPPED: 'GENERATION_STOPPED',
@@ -1093,6 +1098,55 @@ async function listCharacterChats() {
 }
 
 /**
+ * All loaded characters as plain DTOs for the Mode-A character switcher.
+ * `avatar` is the STABLE id (the numeric chid index is unstable across
+ * getCharacters() reloads, so never persist it); isCurrent compares the index
+ * to getContext().characterId (= stringified this_chid).
+ * @returns {Array<{ avatar: string, name: string, thumbnailUrl: string, fav: boolean, isCurrent: boolean }>}
+ */
+function listCharacters() {
+    const ctx = getContext();
+    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
+    const currentId = ctx.characterId;
+    const hasCurrent = currentId !== undefined && currentId !== null && currentId !== '';
+
+    return characters.map((char, index) => {
+        const entry = /** @type {Record<string, any>} */ (char ?? {});
+        const avatar = typeof entry.avatar === 'string' ? entry.avatar : '';
+        return {
+            avatar,
+            name: typeof entry.name === 'string' ? entry.name : '',
+            thumbnailUrl: avatar && avatar !== 'none' ? getThumbnailUrl('avatar', avatar) : '',
+            fav: entry.fav === true || entry.fav === 'true',
+            isCurrent: hasCurrent && !ctx.groupId && String(index) === String(currentId),
+        };
+    });
+}
+
+/**
+ * Switch the active character by STABLE avatar (resolves to the current index
+ * fresh, since the index isn't stable). ST's selectCharacterById fires
+ * CHAT_CHANGED on success → sidebar auto-refresh. Returns a status so the caller
+ * can distinguish a real failure from ST deferring the switch:
+ * - 'ok'       switched (or already current)
+ * - 'notfound' avatar not in the loaded list
+ * - 'busy'     ST skipped it (chat saving / generation in flight)
+ * @param {string} avatar
+ * @returns {Promise<'ok'|'notfound'|'busy'>}
+ */
+async function switchCharacter(avatar) {
+    if (typeof avatar !== 'string' || !avatar) return 'notfound';
+    const ctx = getContext();
+    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
+    const index = characters.findIndex(c => c?.avatar === avatar);
+    if (index < 0) return 'notfound';
+    if (!ctx.groupId && String(ctx.characterId) === String(index)) return 'ok';
+
+    await selectCharacterById(index);
+    return String(getContext().characterId) === String(index) ? 'ok' : 'busy';
+}
+
+/**
  * Active character + chat header for the conversation list. Strips ST's group
  * object down to a boolean so no live ST object escapes the adapter.
  * @returns {{ sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean }}
@@ -1193,6 +1247,8 @@ export const chatuiAdapter = Object.freeze({
         selectSelector,
     }),
     sidebarActions: Object.freeze({
+        listCharacters,
+        switchCharacter,
         listCharacterChats,
         getCurrentChatHeader,
         openCharacterChatByName,
