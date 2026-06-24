@@ -25,6 +25,23 @@ export function subscribeChatuiSidebar(cb) {
 }
 
 /**
+ * Switch the active character by stable avatar. ST fires CHAT_CHANGED on
+ * success → sidebar auto-refresh; toast on a failed/no-op switch.
+ * @param {string} avatar
+ * @returns {Promise<void>}
+ */
+export async function switchChatuiCharacter(avatar) {
+    try {
+        const result = await chatuiAdapter.sidebarActions.switchCharacter(avatar);
+        if (result === 'notfound') pushToast('error', '切换角色失败');
+        else if (result === 'busy') pushToast('info', '正在保存或生成，请稍候');
+    } catch (error) {
+        console.error('[ChatUI] switch character failed', error);
+        pushToast('error', '切换角色失败');
+    }
+}
+
+/**
  * Open one of the current character's past chats. ST fires CHAT_CHANGED on
  * success, which the sidebar store is subscribed to (auto-refresh).
  * @param {string} fileName

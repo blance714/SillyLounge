@@ -30,4 +30,5 @@ export {
     newChatuiChat,
     openChatuiChat,
     subscribeChatuiSidebar,
+    switchChatuiCharacter,
 } from '../store/sidebar-actions.js';
