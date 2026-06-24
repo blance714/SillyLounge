@@ -11,10 +11,13 @@ import { createRoot } from 'preact/compat/client';
 import { ensureChatuiRoot } from '../shield/st-dom-shield.js';
 import { Composer, GeneratingIndicator } from './components/Composer.js';
 import { MessageItem } from './components/MessageItem.js';
-import { ShellDrawer } from './components/ShellDrawer.js';
+import { Sidebar } from './components/sidebar/Sidebar.js';
+import type { SidebarForm } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
 import { useChatuiSnapshot, useRootDomEnhancements } from './hooks.js';
 import type { ChatuiMessage, RootApi } from './types.js';
+
+const SIDEBAR_FORMS: SidebarForm[] = ['list', 'block', 'icon'];
 
 let isSetup = false;
 let rootEl: HTMLElement | null = null;
@@ -24,7 +27,8 @@ function ChatuiApp(): ComponentChild {
     const state = useChatuiSnapshot();
     const rootRef = useRef<HTMLElement>(null);
     const [editingMessageId, setEditingMessageId] = useState<ChatuiMessage['id'] | null>(null);
-    const [isShellOpen, setIsShellOpen] = useState(false);
+    const [sidebarForm, setSidebarForm] = useState<SidebarForm>('list');
+    const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const messages = useMemo(() => state.chat.messages.filter(message => (
         !message.extra.isSmallSys && !message.extra.isToolCall
     )), [state]);
@@ -37,45 +41,63 @@ function ChatuiApp(): ComponentChild {
 
     useRootDomEnhancements(rootRef, messages, state.chat.isGenerating);
 
+    // ☰ = "summon list ①": expand to the full form (desktop) and open the
+    // overlay (mobile). One handler works for both — the irrelevant effect is a
+    // no-op at each breakpoint (CSS-gated).
+    const summonSidebar = () => {
+        setSidebarForm('list');
+        setIsSidebarMobileOpen(true);
+    };
+    const cycleSidebarForm = () => {
+        setSidebarForm(form => SIDEBAR_FORMS[(SIDEBAR_FORMS.indexOf(form) + 1) % SIDEBAR_FORMS.length]);
+    };
+
     return (
-        <section ref={rootRef} className="cui-root-app" aria-label="ChatUI message root">
-            <header className="cui-root-topbar">
-                <button
-                    className="cui-root-shell-toggle"
-                    type="button"
-                    aria-label="Open navigation"
-                    title="Open navigation"
-                    onClick={() => setIsShellOpen(true)}
+        <>
+            <Sidebar
+                form={sidebarForm}
+                onCycleForm={cycleSidebarForm}
+                mobileOpen={isSidebarMobileOpen}
+                onClose={() => setIsSidebarMobileOpen(false)}
+            />
+            <section ref={rootRef} className="cui-root-app" aria-label="ChatUI message root">
+                <header className="cui-root-topbar">
+                    <button
+                        className="cui-root-shell-toggle"
+                        type="button"
+                        aria-label="Open navigation"
+                        title="Open navigation"
+                        onClick={summonSidebar}
+                    >
+                        <i className="fa-solid fa-bars" />
+                    </button>
+                    <span className="cui-root-topbar-title">ChatUI</span>
+                </header>
+                <div
+                    className="cui-root-message-list"
+                    role="log"
+                    aria-live="polite"
+                    aria-relevant="additions text"
                 >
-                    <i className="fa-solid fa-bars" />
-                </button>
-                <span className="cui-root-topbar-title">ChatUI</span>
-            </header>
-            <ShellDrawer isOpen={isShellOpen} onClose={() => setIsShellOpen(false)} />
-            <div
-                className="cui-root-message-list"
-                role="log"
-                aria-live="polite"
-                aria-relevant="additions text"
-            >
-                {messages.map(message => (
-                    <MessageItem
-                        key={message.id}
-                        message={message}
-                        isEditing={editingMessageId === message.id}
-                        onStartEdit={() => setEditingMessageId(message.id)}
-                        onCancelEdit={() => setEditingMessageId(null)}
-                        onSavedEdit={() => setEditingMessageId(null)}
-                    />
-                ))}
-            </div>
-            {state.chat.isGenerating && <GeneratingIndicator />}
-            <div className="cui-root-empty" hidden={messages.length > 0}>
-                No messages
-            </div>
-            <Composer isGenerating={state.chat.isGenerating} />
-            <Toaster />
-        </section>
+                    {messages.map(message => (
+                        <MessageItem
+                            key={message.id}
+                            message={message}
+                            isEditing={editingMessageId === message.id}
+                            onStartEdit={() => setEditingMessageId(message.id)}
+                            onCancelEdit={() => setEditingMessageId(null)}
+                            onSavedEdit={() => setEditingMessageId(null)}
+                        />
+                    ))}
+                </div>
+                {state.chat.isGenerating && <GeneratingIndicator />}
+                <div className="cui-root-empty" hidden={messages.length > 0}>
+                    No messages
+                </div>
+                <Composer isGenerating={state.chat.isGenerating} />
+                <Toaster />
+            </section>
+        </>
     );
 }
 
