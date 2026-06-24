@@ -42,10 +42,22 @@ body.chatui-active.chatui-root-visible #chatui-root {
     max-height: none;
     min-height: 0;
     box-sizing: border-box;
-    overflow-y: auto;
-    padding: 0.75rem clamp(0.75rem, 2vw, 1.5rem);
+    /* The sidebar + main columns each own their scroll; the root just clips. */
+    overflow: hidden;
     border-bottom: 1px solid var(--SmartThemeBorderColor);
     background-color: var(--SmartThemeBlurTintColor);
+}
+
+/* Desktop: two-column layout (persistent sidebar | main), and give #sheld room
+   to host both since it is only --sheldWidth (50vw) wide by default. */
+@media (min-width: 769px) {
+    body.chatui-active.chatui-root-visible #chatui-root {
+        flex-direction: row;
+    }
+
+    body.chatui-active #sheld {
+        width: min(96vw, 88rem);
+    }
 }
 
 body.chatui-active.chatui-chat-surface-shielded #chat {
@@ -83,11 +95,14 @@ body.chatui-active.chatui-composer-surface-shielded #send_form {
    --------------------------------------------------------------------------- */
 body.chatui-active .cui-root-app {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
     gap: 0.5rem;
-    width: 100%;
-    min-height: 100%;
+    min-width: 0;
+    min-height: 0;
     box-sizing: border-box;
+    overflow-y: auto;
+    padding: 0.75rem clamp(0.75rem, 2vw, 1.5rem);
     color: var(--SmartThemeBodyColor);
     font-family: var(--mainFontFamily);
 }
@@ -138,7 +153,9 @@ body.chatui-active .cui-root-topbar-title {
     opacity: 0.78;
 }
 
-body.chatui-active .cui-root-shell-backdrop {
+/* ── Region 5 · sidebar (mobile slide-in overlay / desktop persistent column) ── */
+
+body.chatui-active .cui-root-sidebar-backdrop {
     position: fixed;
     inset: 0;
     z-index: calc(var(--cui-sheet-z) + 10);
@@ -147,23 +164,120 @@ body.chatui-active .cui-root-shell-backdrop {
     cursor: default;
 }
 
-body.chatui-active .cui-root-shell-drawer {
+body.chatui-active .cui-root-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: calc(var(--cui-sheet-z) + 11);
     display: flex;
     flex-direction: column;
     width: min(82vw, 18rem);
+    transform: translateX(-100%);
+    transition: transform var(--animation-duration-2x, 0.2s) ease;
     border-right: 1px solid var(--SmartThemeBorderColor);
     background-color: var(--SmartThemeBlurTintColor);
     box-shadow: 6px 0 24px var(--SmartThemeShadowColor);
     color: var(--SmartThemeBodyColor);
-    animation: cui-shell-drawer-in var(--animation-duration-2x) ease forwards;
 }
 
-@keyframes cui-shell-drawer-in {
-    from { transform: translateX(-100%); }
-    to { transform: translateX(0); }
+body.chatui-active .cui-root-sidebar.is-mobile-open {
+    transform: translateX(0);
+}
+
+body.chatui-active .cui-root-sidebar-collapse {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border: none;
+    border-radius: 0.4rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    opacity: 0.8;
+}
+
+body.chatui-active .cui-root-sidebar-collapse:hover,
+body.chatui-active .cui-root-sidebar-collapse:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-sidebar-title {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Desktop: persistent in-flow left column with three collapse forms. */
+@media (min-width: 769px) {
+    body.chatui-active .cui-root-sidebar-backdrop {
+        display: none;
+    }
+
+    body.chatui-active .cui-root-sidebar {
+        position: relative;
+        inset: auto;
+        z-index: auto;
+        flex: 0 0 auto;
+        transform: none;
+        box-shadow: none;
+        overflow: hidden;
+        transition: width var(--animation-duration-2x, 0.18s) ease;
+    }
+
+    body.chatui-active .cui-root-sidebar[data-cui-form="list"] { width: clamp(13rem, 22vw, 17rem); }
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"] { width: 5.75rem; }
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] { width: 3.4rem; }
+
+    body.chatui-active .cui-root-sidebar-collapse { display: flex; }
+    body.chatui-active .cui-root-sidebar .cui-root-shell-close { display: none; }
+
+    /* block + icon are collapsed forms → drop the conversation list (仅配置). */
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-convlist,
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-convlist {
+        display: none;
+    }
+
+    /* hide text labels when narrow */
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-sidebar-title,
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-sidebar-title,
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-shell-item span,
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-section-label {
+        display: none;
+    }
+
+    /* block: icon-over-label nav + centered config icons */
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-shell-item {
+        flex-direction: column;
+        gap: 0.15rem;
+        min-height: auto;
+        padding: 0.4rem 0.2rem;
+        text-align: center;
+        font-size: calc(var(--mainFontSize) * 0.66);
+    }
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-section-label {
+        text-align: center;
+    }
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-configrail-icons,
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-configrail-icons {
+        justify-content: center;
+    }
+
+    /* Collapsed forms: tighten the header to the narrow width, and let the
+       remaining nav+config scroll on a very short viewport (the conversation
+       list that normally scrolls is hidden here). */
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-shell-header,
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-shell-header {
+        padding: 0.5rem 0.35rem;
+    }
+
+    body.chatui-active .cui-root-sidebar[data-cui-form="block"],
+    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] {
+        overflow-y: auto;
+    }
 }
 
 body.chatui-active .cui-root-shell-header {
