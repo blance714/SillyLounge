@@ -2,17 +2,15 @@ import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { triggerChatuiShellAction } from '../actions.js';
 import type { ShellAction } from '../types.js';
+import { ConfigRail } from './sidebar/ConfigRail.js';
 import { ConversationList } from './sidebar/ConversationList.js';
 
-const SHELL_ITEMS: Array<{ action: ShellAction; label: string; iconClass: string }> = [
+// Navigation launchers into ST's native right-nav (browse / create / groups).
+// Config drawers now live in <ConfigRail> (上段); conversations in <ConversationList> (下段).
+const NAV_ITEMS: Array<{ action: ShellAction; label: string; iconClass: string }> = [
     { action: 'characters', label: 'Characters', iconClass: 'fa-solid fa-image-portrait' },
     { action: 'characterCreate', label: 'New character', iconClass: 'fa-solid fa-user-plus' },
     { action: 'groupChats', label: 'Groups', iconClass: 'fa-solid fa-user-group' },
-    { action: 'aiConfig', label: 'AI config', iconClass: 'fa-solid fa-sliders' },
-    { action: 'worldInfo', label: 'World info', iconClass: 'fa-solid fa-earth-americas' },
-    { action: 'personas', label: 'Personas', iconClass: 'fa-solid fa-face-smile' },
-    { action: 'extensions', label: 'Extensions', iconClass: 'fa-solid fa-puzzle-piece' },
-    { action: 'userSettings', label: 'User settings', iconClass: 'fa-solid fa-gear' },
 ];
 
 export function ShellDrawer({
@@ -46,7 +44,7 @@ export function ShellDrawer({
                     </button>
                 </header>
                 <nav className="cui-root-shell-nav">
-                    {SHELL_ITEMS.map(item => (
+                    {NAV_ITEMS.map(item => (
                         <button
                             key={item.action}
                             className="cui-root-shell-item"
@@ -61,6 +59,7 @@ export function ShellDrawer({
                         </button>
                     ))}
                 </nav>
+                <ConfigRail onNavigate={onClose} />
                 <ConversationList />
             </aside>
         </>

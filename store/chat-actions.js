@@ -47,7 +47,7 @@ export function stopChatuiGeneration() {
 }
 
 /**
- * @param {'characters'|'characterCreate'|'groupChats'|'aiConfig'|'worldInfo'|'userSettings'|'extensions'|'personas'} action
+ * @param {'characters'|'characterCreate'|'groupChats'|'aiConfig'|'formatting'|'worldInfo'|'background'|'userSettings'|'extensions'|'personas'} action
  * @returns {void}
  */
 export function triggerChatuiShellAction(action) {
