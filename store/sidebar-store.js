@@ -8,6 +8,7 @@
  */
 
 import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
+import { createStore } from './create-store.js';
 
 /**
  * @typedef {object} ChatListItemDto
@@ -30,7 +31,7 @@ import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
  */
 
 /** @type {{ header: { sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean }, characters: Array<CharacterSummaryDto>, chats: Array<ChatListItemDto>, loading: boolean, error: string|null }} */
-let _state = {
+const _initialState = {
     header: { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false },
     characters: [],
     chats: [],
@@ -38,8 +39,10 @@ let _state = {
     error: null,
 };
 
-/** @type {Set<Function>} */
-const _subscribers = new Set();
+const _store = createStore(_initialState);
+
+/** @type {Set<() => void>} */
+const _storeUnsubscribers = new Set();
 
 /** @type {Array<() => void>} */
 let _unsubscribers = [];
@@ -48,10 +51,10 @@ let _unsubscribers = [];
 let _loadToken = 0;
 
 /**
- * @returns {typeof _state}
+ * @returns {typeof _initialState}
  */
 export function getSidebarState() {
-    return _state;
+    return _store.getState();
 }
 
 /**
@@ -59,27 +62,23 @@ export function getSidebarState() {
  * @returns {() => void}
  */
 export function subscribeSidebarStore(subscriber) {
-    _subscribers.add(subscriber);
-    return () => _subscribers.delete(subscriber);
-}
-
-/**
- * @returns {void}
- */
-function _emit() {
-    for (const subscriber of _subscribers) {
-        subscriber(_state);
-    }
+    const unsubscribe = _store.subscribe(subscriber);
+    _storeUnsubscribers.add(unsubscribe);
+    return () => {
+        _storeUnsubscribers.delete(unsubscribe);
+        unsubscribe();
+    };
 }
 
 /**
  * Rebuild the synchronous slices — active-chat header + full character list —
  * from the adapter. Cheap (no network), so CHARACTER_* events can use it alone.
- * @returns {void}
+ * @param {ReturnType<typeof getSidebarState>} state
+ * @returns {ReturnType<typeof getSidebarState>}
  */
-function _refreshMeta() {
-    _state = {
-        ..._state,
+function _buildMetaState(state) {
+    return {
+        ...state,
         header: chatuiAdapter.sidebarActions.getCurrentChatHeader(),
         characters: chatuiAdapter.sidebarActions.listCharacters(),
     };
@@ -91,8 +90,28 @@ function _refreshMeta() {
  * @returns {void}
  */
 export function refreshSidebarMeta() {
-    _refreshMeta();
-    _emit();
+    _store.setState(_buildMetaState(getSidebarState()));
+}
+
+/**
+ * Fetch the current character's chats (async — getPastCharacterChats hits the
+ * server). Guards loading/error and drops stale responses via _loadToken.
+ * @param {ReturnType<typeof getSidebarState>} state
+ * @returns {Promise<void>}
+ */
+async function _refreshSidebarChatsFromState(state) {
+    const token = ++_loadToken;
+    _store.setState({ ...state, loading: true, error: null });
+
+    try {
+        const chats = await chatuiAdapter.sidebarActions.listCharacterChats();
+        if (token !== _loadToken) return;
+        _store.setState({ ...getSidebarState(), chats, loading: false });
+    } catch (error) {
+        if (token !== _loadToken) return;
+        console.error('[ChatUI] sidebar chat refresh failed', error);
+        _store.setState({ ...getSidebarState(), chats: [], loading: false, error: 'load-failed' });
+    }
 }
 
 /**
@@ -101,20 +120,7 @@ export function refreshSidebarMeta() {
  * @returns {Promise<void>}
  */
 export async function refreshSidebarChats() {
-    const token = ++_loadToken;
-    _state = { ..._state, loading: true, error: null };
-    _emit();
-
-    try {
-        const chats = await chatuiAdapter.sidebarActions.listCharacterChats();
-        if (token !== _loadToken) return;
-        _state = { ..._state, chats, loading: false };
-    } catch (error) {
-        if (token !== _loadToken) return;
-        console.error('[ChatUI] sidebar chat refresh failed', error);
-        _state = { ..._state, chats: [], loading: false, error: 'load-failed' };
-    }
-    _emit();
+    await _refreshSidebarChatsFromState(getSidebarState());
 }
 
 /**
@@ -123,8 +129,7 @@ export async function refreshSidebarChats() {
  * @returns {void}
  */
 export function refreshSidebarStore() {
-    _refreshMeta();
-    void refreshSidebarChats();
+    void _refreshSidebarChatsFromState(_buildMetaState(getSidebarState()));
 }
 
 /**
@@ -160,5 +165,8 @@ export function teardownSidebarStore() {
         unsubscribe();
     }
     _unsubscribers = [];
-    _subscribers.clear();
+    for (const unsubscribe of _storeUnsubscribers) {
+        unsubscribe();
+    }
+    _storeUnsubscribers.clear();
 }

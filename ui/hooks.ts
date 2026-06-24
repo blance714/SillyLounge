@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'preact/compat';
+import { useCallback, useEffect, useRef, useState } from 'preact/compat';
 import type { RefObject } from 'preact';
 import { getChatuiState, subscribeChatuiStore } from '../store/chat-store.js';
 import { getSidebarState, subscribeSidebarStore } from '../store/sidebar-store.js';
@@ -60,7 +60,72 @@ export function useRootDomEnhancements(
 
             block.appendChild(copy);
         });
-
-        root.scrollTop = root.scrollHeight;
     }, [rootRef, messages, isGenerating]);
+}
+
+/** Distance (px) from the bottom within which we treat the view as "pinned". */
+const AT_BOTTOM_THRESHOLD = 80;
+
+/**
+ * Auto-scroll that respects the reader. New messages/tokens only pull the view
+ * to the bottom when the user is already near the bottom; if they have scrolled
+ * up to read history, their position is left alone and `atBottom` flips false so
+ * the caller can show a "back to bottom" affordance.
+ */
+export function useAutoScroll(
+    rootRef: RefObject<HTMLElement>,
+    messages: ChatuiMessage[],
+    isGenerating: boolean,
+    chatKey: string,
+): { atBottom: boolean; scrollToBottom: () => void } {
+    const [atBottom, setAtBottom] = useState(true);
+    // Authoritative "was the user pinned to the bottom" flag, updated on scroll.
+    // A ref (not state) so the content effect below reads the value from BEFORE
+    // the new content grew scrollHeight.
+    const wasAtBottomRef = useRef(true);
+    // null sentinel so the very first render also counts as a switch → land at bottom.
+    const chatKeyRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+
+        const onScroll = () => {
+            const distance = root.scrollHeight - root.scrollTop - root.clientHeight;
+            const pinned = distance < AT_BOTTOM_THRESHOLD;
+            wasAtBottomRef.current = pinned;
+            setAtBottom(prev => (prev === pinned ? prev : pinned));
+        };
+
+        root.addEventListener('scroll', onScroll, { passive: true });
+        onScroll();
+        return () => root.removeEventListener('scroll', onScroll);
+    }, [rootRef]);
+
+    useEffect(() => {
+        const root = rootRef.current;
+        if (!root) return;
+
+        // A chat switch (or first mount) always lands at the latest message,
+        // regardless of where the previous chat was scrolled. An in-place
+        // append/edit/stream only follows when the reader is already pinned — so
+        // scrolling up to read history during streaming is never interrupted.
+        const switched = chatKeyRef.current !== chatKey;
+        chatKeyRef.current = chatKey;
+
+        if (!switched && !wasAtBottomRef.current) return;
+        root.scrollTop = root.scrollHeight;
+        wasAtBottomRef.current = true;
+        setAtBottom(true);
+    }, [rootRef, messages, isGenerating, chatKey]);
+
+    const scrollToBottom = useCallback(() => {
+        const root = rootRef.current;
+        if (!root) return;
+        root.scrollTop = root.scrollHeight;
+        wasAtBottomRef.current = true;
+        setAtBottom(true);
+    }, [rootRef]);
+
+    return { atBottom, scrollToBottom };
 }

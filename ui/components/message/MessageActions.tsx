@@ -84,11 +84,16 @@ export function MessageActions({
             )}
             {message.ui.canShowSwipe && (
                 <>
-                    <ActionButton
-                        label="Previous swipe"
-                        iconClass="fa-solid fa-chevron-left"
-                        onClick={() => swipeChatuiMessage(message.id, 'left')}
-                    />
+                    {message.swipe.id > 0 && (
+                        <ActionButton
+                            label="Previous swipe"
+                            iconClass="fa-solid fa-chevron-left"
+                            onClick={() => swipeChatuiMessage(message.id, 'left')}
+                        />
+                    )}
+                    {message.swipe.hasMultiple && (
+                        <span className="cui-root-message-swipe">{message.swipe.label}</span>
+                    )}
                     <ActionButton
                         label="Next swipe"
                         iconClass="fa-solid fa-chevron-right"

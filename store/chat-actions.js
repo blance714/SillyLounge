@@ -43,7 +43,8 @@ export async function sendChatuiComposerMessage(text) {
  * @returns {void}
  */
 export function stopChatuiGeneration() {
-    chatuiAdapter.composerActions.stopGeneration();
+    const stopped = chatuiAdapter.composerActions.stopGeneration();
+    if (!stopped) notifyChatui('info', '没有正在生成的内容');
 }
 
 /**

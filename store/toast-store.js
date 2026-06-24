@@ -6,6 +6,8 @@
  * toastr or the console. Pure data + timers; no dependencies.
  */
 
+import { createStore } from './create-store.js';
+
 /**
  * @typedef {object} ChatuiToast
  * @property {string} id
@@ -14,31 +16,21 @@
  */
 
 /** @type {Array<ChatuiToast>} */
-let _toasts = [];
+const _initialToasts = [];
+
+const _store = createStore(_initialToasts);
 
 /** @type {number} */
 let _seq = 0;
-
-/** @type {Set<(toasts: Array<ChatuiToast>) => void>} */
-const _subscribers = new Set();
 
 /** @type {Map<string, ReturnType<typeof setTimeout>>} */
 const _timers = new Map();
 
 /**
- * @returns {void}
- */
-function _emit() {
-    for (const subscriber of _subscribers) {
-        subscriber(_toasts);
-    }
-}
-
-/**
  * @returns {Array<ChatuiToast>}
  */
 export function getToasts() {
-    return _toasts;
+    return _store.getState();
 }
 
 /**
@@ -46,8 +38,7 @@ export function getToasts() {
  * @returns {() => void}
  */
 export function subscribeToasts(subscriber) {
-    _subscribers.add(subscriber);
-    return () => _subscribers.delete(subscriber);
+    return _store.subscribe(subscriber);
 }
 
 /**
@@ -60,8 +51,7 @@ export function subscribeToasts(subscriber) {
  */
 export function pushToast(kind, text, ttl = 4000) {
     const id = `toast-${_seq++}`;
-    _toasts = [..._toasts, { id, kind, text }];
-    _emit();
+    _store.setState([...getToasts(), { id, kind, text }]);
 
     if (ttl > 0) {
         _timers.set(id, setTimeout(() => dismissToast(id), ttl));
@@ -79,8 +69,7 @@ export function dismissToast(id) {
         clearTimeout(timer);
         _timers.delete(id);
     }
-    _toasts = _toasts.filter(toast => toast.id !== id);
-    _emit();
+    _store.setState(getToasts().filter(toast => toast.id !== id));
 }
 
 /**
@@ -91,6 +80,5 @@ export function clearToasts() {
         clearTimeout(timer);
     }
     _timers.clear();
-    _toasts = [];
-    _emit();
+    _store.setState([]);
 }

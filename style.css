@@ -94,6 +94,7 @@ body.chatui-active.chatui-composer-surface-shielded #send_form {
    editor, action row/menu, and the composer. Authored in ui/*.tsx.
    --------------------------------------------------------------------------- */
 body.chatui-active .cui-root-app {
+    position: relative;
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -101,16 +102,16 @@ body.chatui-active .cui-root-app {
     min-width: 0;
     min-height: 0;
     box-sizing: border-box;
-    overflow-y: auto;
+    /* The frame is viewport-bounded and does NOT scroll; only the message list
+       scrolls inside it, so the topbar and composer stay fixed. */
+    overflow: hidden;
     padding: 0.75rem clamp(0.75rem, 2vw, 1.5rem);
     color: var(--SmartThemeBodyColor);
     font-family: var(--mainFontFamily);
 }
 
 body.chatui-active .cui-root-topbar {
-    position: sticky;
-    top: 0;
-    z-index: 8;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 0.55rem;
@@ -787,6 +788,10 @@ body.chatui-active .cui-root-message-list {
     width: 100%;
     flex: 1 1 auto;
     min-height: 0;
+    /* The scroll surface: messages scroll here while topbar/composer stay put. */
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
     max-width: 58rem;
     margin: 0 auto;
 }
@@ -1230,9 +1235,38 @@ body.chatui-active .cui-root-generating[hidden] {
     display: none;
 }
 
+body.chatui-active .cui-root-scroll-bottom {
+    position: absolute;
+    left: 50%;
+    bottom: 5.25rem;
+    z-index: 7;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.4rem;
+    height: 2.4rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 999px;
+    background-color: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    opacity: 0.92;
+}
+
+body.chatui-active .cui-root-scroll-bottom:hover,
+body.chatui-active .cui-root-scroll-bottom:focus-visible {
+    opacity: 1;
+    outline: 1px solid var(--interactable-outline-color-faint);
+}
+
+body.chatui-active .cui-root-scroll-bottom[hidden] {
+    display: none;
+}
+
 body.chatui-active .cui-root-composer {
-    position: sticky;
-    bottom: 0;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
