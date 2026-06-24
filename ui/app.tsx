@@ -14,7 +14,7 @@ import { MessageItem } from './components/MessageItem.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import type { SidebarForm } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
-import { useChatuiSnapshot, useRootDomEnhancements } from './hooks.js';
+import { useAutoScroll, useChatuiSnapshot, useRootDomEnhancements } from './hooks.js';
 import type { ChatuiMessage, RootApi } from './types.js';
 
 const SIDEBAR_FORMS: SidebarForm[] = ['list', 'block', 'icon'];
@@ -26,6 +26,7 @@ let rootApi: RootApi | null = null;
 function ChatuiApp(): ComponentChild {
     const state = useChatuiSnapshot();
     const rootRef = useRef<HTMLElement>(null);
+    const listRef = useRef<HTMLDivElement>(null);
     const [editingMessageId, setEditingMessageId] = useState<ChatuiMessage['id'] | null>(null);
     const [sidebarForm, setSidebarForm] = useState<SidebarForm>('list');
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
@@ -40,6 +41,7 @@ function ChatuiApp(): ComponentChild {
     }, [editingMessageId, state.chat.byId]);
 
     useRootDomEnhancements(rootRef, messages, state.chat.isGenerating);
+    const { atBottom, scrollToBottom } = useAutoScroll(listRef, messages, state.chat.isGenerating, state.chat.chatKey);
 
     // ☰ = "summon list ①": expand to the full form (desktop) and open the
     // overlay (mobile). One handler works for both — the irrelevant effect is a
@@ -74,6 +76,7 @@ function ChatuiApp(): ComponentChild {
                     <span className="cui-root-topbar-title">ChatUI</span>
                 </header>
                 <div
+                    ref={listRef}
                     className="cui-root-message-list"
                     role="log"
                     aria-live="polite"
@@ -94,6 +97,16 @@ function ChatuiApp(): ComponentChild {
                 <div className="cui-root-empty" hidden={messages.length > 0}>
                     No messages
                 </div>
+                <button
+                    className="cui-root-scroll-bottom"
+                    type="button"
+                    hidden={atBottom}
+                    aria-label="回到底部"
+                    title="回到底部"
+                    onClick={scrollToBottom}
+                >
+                    <i className="fa-solid fa-arrow-down" />
+                </button>
                 <Composer isGenerating={state.chat.isGenerating} />
                 <Toaster />
             </section>

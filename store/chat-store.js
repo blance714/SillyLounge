@@ -7,6 +7,7 @@
  */
 
 import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
+import { createStore } from './create-store.js';
 
 /**
  * @typedef {object} ChatuiMessageDto
@@ -29,12 +30,13 @@ import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
  * @property {{ isLast: boolean, canShowCharActions: boolean, canShowUserMenu: boolean, canShowSwipe: boolean, needsGenerate: boolean }} ui
  */
 
-/** @type {{ chat: { messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, isGroup: boolean, isGenerating: boolean, lastMessageNeedsGenerate: boolean }, ui: object }} */
-let _state = {
+/** @type {{ chat: { messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, chatKey: string, isGroup: boolean, isGenerating: boolean, lastMessageNeedsGenerate: boolean }, ui: object }} */
+const _initialState = {
     chat: {
         messages: [],
         byId: {},
         lastMessageId: null,
+        chatKey: '',
         isGroup: false,
         isGenerating: false,
         lastMessageNeedsGenerate: false,
@@ -45,8 +47,10 @@ let _state = {
     },
 };
 
-/** @type {Set<Function>} */
-const _subscribers = new Set();
+const _store = createStore(_initialState);
+
+/** @type {Set<() => void>} */
+const _storeUnsubscribers = new Set();
 
 /** @type {Array<() => void>} */
 let _unsubscribers = [];
@@ -127,7 +131,10 @@ function _toMessageDto(raw, id, lastMessageId) {
             isLast,
             canShowCharActions: isChar && !isSmallSys && !isToolCall,
             canShowUserMenu: isUser && !isSmallSys && !isToolCall,
-            canShowSwipe: isLast && isChar && hasMultipleSwipes,
+            // Show swipe controls on the last character message even with a
+            // single swipe, so the user can generate alternatives (the ‹›/counter
+            // visibility within the group is decided per-button in the UI).
+            canShowSwipe: isLast && isChar && !isSmallSys && !isToolCall,
             needsGenerate: isLast && (isUser || isSystem),
         },
     };
@@ -156,17 +163,17 @@ function _buildMessageDtos(rawMessages) {
 }
 
 /**
- * @returns {typeof _state}
+ * @returns {typeof _initialState}
  */
 export function getChatuiState() {
-    return _state;
+    return _store.getState();
 }
 
 /**
  * @returns {Array<ChatuiMessageDto>}
  */
 export function getMessageDtos() {
-    return _state.chat.messages;
+    return getChatuiState().chat.messages;
 }
 
 /**
@@ -174,16 +181,17 @@ export function getMessageDtos() {
  * @returns {ChatuiMessageDto|null}
  */
 export function getMessageDtoById(messageId) {
-    return _state.chat.byId[String(messageId)] ?? null;
+    return getChatuiState().chat.byId[String(messageId)] ?? null;
 }
 
 /**
  * @returns {ChatuiMessageDto|null}
  */
 export function getLastMessageDto() {
-    return _state.chat.lastMessageId === null
+    const state = getChatuiState();
+    return state.chat.lastMessageId === null
         ? null
-        : getMessageDtoById(_state.chat.lastMessageId);
+        : getMessageDtoById(state.chat.lastMessageId);
 }
 
 /**
@@ -200,17 +208,12 @@ export function getMessageDtoByElement(mesEl) {
  * @returns {() => void}
  */
 export function subscribeChatuiStore(subscriber) {
-    _subscribers.add(subscriber);
-    return () => _subscribers.delete(subscriber);
-}
-
-/**
- * @returns {void}
- */
-function _emit() {
-    for (const subscriber of _subscribers) {
-        subscriber(_state);
-    }
+    const unsubscribe = _store.subscribe(subscriber);
+    _storeUnsubscribers.add(unsubscribe);
+    return () => {
+        _storeUnsubscribers.delete(unsubscribe);
+        unsubscribe();
+    };
 }
 
 /**
@@ -219,19 +222,20 @@ function _emit() {
 export function refreshChatuiStore() {
     const rawMessages = chatuiAdapter.getCurrentChat();
     const messageState = _buildMessageDtos(rawMessages);
+    const state = getChatuiState();
 
-    _state = {
-        ..._state,
+    _store.setState({
+        ...state,
         chat: {
             messages: messageState.messages,
             byId: messageState.byId,
             lastMessageId: messageState.lastMessageId,
+            chatKey: chatuiAdapter.getCurrentChatKey(),
             isGroup: chatuiAdapter.getIsGroupChat(),
             isGenerating: chatuiAdapter.getGenerationState().isGenerating,
             lastMessageNeedsGenerate: messageState.lastMessageNeedsGenerate,
         },
-    };
-    _emit();
+    });
 }
 
 /**
@@ -246,12 +250,13 @@ export function refreshChatuiStore() {
 export function refreshChatuiMessage(messageId) {
     const id = Number(messageId);
     const rawMessages = chatuiAdapter.getCurrentChat();
+    const state = getChatuiState();
 
     if (
         !Number.isFinite(id)
         || id < 0
         || id >= rawMessages.length
-        || rawMessages.length !== _state.chat.messages.length
+        || rawMessages.length !== state.chat.messages.length
     ) {
         refreshChatuiStore();
         return;
@@ -259,21 +264,20 @@ export function refreshChatuiMessage(messageId) {
 
     const lastMessageId = rawMessages.length - 1;
     const dto = _toMessageDto(rawMessages[id], id, lastMessageId);
-    const messages = _state.chat.messages.slice();
+    const messages = state.chat.messages.slice();
     messages[id] = dto;
-    const byId = { ..._state.chat.byId, [dto.key]: dto };
+    const byId = { ...state.chat.byId, [dto.key]: dto };
     const lastDto = byId[String(lastMessageId)] ?? null;
 
-    _state = {
-        ..._state,
+    _store.setState({
+        ...state,
         chat: {
-            ..._state.chat,
+            ...state.chat,
             messages,
             byId,
             lastMessageNeedsGenerate: lastDto?.ui.needsGenerate ?? false,
         },
-    };
-    _emit();
+    });
 }
 
 /**
@@ -310,6 +314,7 @@ export function initChatuiStore() {
         chatuiAdapter.subscribe(stEventKeys.MESSAGE_SENT, refreshMessage),
         chatuiAdapter.subscribe(stEventKeys.MESSAGE_UPDATED, refreshMessage),
         chatuiAdapter.subscribe(stEventKeys.MESSAGE_SWIPED, refreshMessage),
+        chatuiAdapter.subscribe(stEventKeys.MESSAGE_DELETED, refreshNow),
         chatuiAdapter.subscribe(stEventKeys.CHARACTER_MESSAGE_RENDERED, refreshMessage),
         chatuiAdapter.subscribe(stEventKeys.USER_MESSAGE_RENDERED, refreshMessage),
         chatuiAdapter.subscribe(stEventKeys.STREAM_TOKEN_RECEIVED, _scheduleStreamRefresh),
@@ -331,5 +336,8 @@ export function teardownChatuiStore() {
         unsubscribe();
     }
     _unsubscribers = [];
-    _subscribers.clear();
+    for (const unsubscribe of _storeUnsubscribers) {
+        unsubscribe();
+    }
+    _storeUnsubscribers.clear();
 }
