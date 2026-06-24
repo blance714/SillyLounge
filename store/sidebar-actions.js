@@ -57,6 +57,39 @@ export async function openChatuiChat(fileName) {
 }
 
 /**
+ * Rename one of the current character's chats. No success toast — ST shows its
+ * own error popup on failure and the list refreshes via CHAT_RENAMED.
+ * @param {string} oldFileName
+ * @param {string} newName
+ * @returns {Promise<void>}
+ */
+export async function renameChatuiChat(oldFileName, newName) {
+    try {
+        const ok = await chatuiAdapter.sidebarActions.renameCharacterChat(oldFileName, newName);
+        if (!ok) pushToast('error', '重命名失败');
+    } catch (error) {
+        console.error('[ChatUI] rename chat failed', error);
+        pushToast('error', '重命名失败');
+    }
+}
+
+/**
+ * Delete one of a character's chats (caller confirms first via ChatUI dialog).
+ * @param {string} avatar
+ * @param {string} fileName
+ * @returns {Promise<void>}
+ */
+export async function deleteChatuiChat(avatar, fileName) {
+    try {
+        const ok = await chatuiAdapter.sidebarActions.deleteCharacterChat(avatar, fileName);
+        pushToast(ok ? 'success' : 'error', ok ? '已删除对话' : '删除失败');
+    } catch (error) {
+        console.error('[ChatUI] delete chat failed', error);
+        pushToast('error', '删除失败');
+    }
+}
+
+/**
  * Create a new chat for the current character.
  * @returns {Promise<void>}
  */
