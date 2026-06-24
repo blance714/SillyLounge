@@ -214,6 +214,52 @@ body.chatui-active .cui-root-shell-item:focus-visible {
     outline: none;
 }
 
+/* ── Region 5 · config rail (上段) ──────────────────────────────────────────── */
+
+body.chatui-active .cui-root-section-label {
+    display: block;
+    padding: 0.35rem 0.55rem 0.15rem;
+    font-size: calc(var(--mainFontSize) * 0.72);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.5;
+}
+
+body.chatui-active .cui-root-configrail {
+    flex: 0 0 auto;
+    padding: 0.2rem 0.45rem 0.45rem;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+body.chatui-active .cui-root-configrail-icons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+body.chatui-active .cui-root-configrail-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.3rem;
+    height: 2.3rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 6%, transparent);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    opacity: 0.85;
+    font-size: calc(var(--mainFontSize) * 0.95);
+}
+
+body.chatui-active .cui-root-configrail-btn:hover,
+body.chatui-active .cui-root-configrail-btn:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 14%, transparent);
+    outline: none;
+}
+
 /* ── Region 5 · conversation list (下段) ─────────────────────────────────────── */
 
 body.chatui-active .cui-root-convlist {

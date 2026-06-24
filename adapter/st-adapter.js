@@ -272,7 +272,9 @@ function triggerShellAction(action) {
         case 'characterCreate': openRightDrawerPanel('#rm_button_create'); break;
         case 'groupChats': openRightDrawerPanel('#rm_button_group_chats'); break;
         case 'aiConfig': openDrawer('#ai-config-button'); break;
+        case 'formatting': openDrawer('#advanced-formatting-button'); break;
         case 'worldInfo': openDrawer('#WI-SP-button'); break;
+        case 'background': openDrawer('#backgrounds-button'); break;
         case 'userSettings': openDrawer('#user-settings-button'); break;
         case 'extensions': openDrawer('#extensions-settings-button'); break;
         case 'personas': openDrawer('#persona-management-button'); break;
