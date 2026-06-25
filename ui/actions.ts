@@ -9,7 +9,6 @@ export {
     listChatuiWandItems,
     notifyChatui,
     openChatuiAttachmentPicker,
-    openChatuiDeleteMode,
     openChatuiMessageFile,
     openChatuiMessageMedia,
     regenerateChatuiLast,
@@ -42,4 +41,5 @@ export {
 export {
     cycleSidebarForm as cycleChatuiSidebarForm,
     setSidebarForm as setChatuiSidebarForm,
+    setPlusPinned as setChatuiPlusPinned,
 } from '../store/config-store.js';

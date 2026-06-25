@@ -159,9 +159,11 @@ body.chatui-active .cui-root-topbar-title {
     opacity: 0.78;
 }
 
-/* Slot-A selchips (persona chip in the topbar) — compact, no wrapping */
+/* Slot-A selchips (persona chip in the topbar) — compact; may shrink so a long
+   title / active rename input never pushes the row off-screen on narrow mobiles. */
 body.chatui-active .cui-root-topbar .cui-root-selchips {
-    flex: 0 0 auto;
+    flex: 0 1 auto;
+    min-width: 0;
     width: auto;
     flex-wrap: nowrap;
 }
@@ -190,7 +192,8 @@ body.chatui-active .cui-root-topbar-rename {
     font-family: var(--mainFontFamily);
     font-size: calc(var(--mainFontSize) * 0.9);
     outline: none;
-    min-width: 8rem;
+    min-width: 0;
+    width: min(60vw, 12rem);
 }
 
 /* The topbar menu dropdown opens below and to the right */
@@ -1266,6 +1269,15 @@ body.chatui-active .cui-root-menu-item:focus-visible {
     background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
 }
 
+body.chatui-active .cui-root-menu-item:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+body.chatui-active .cui-root-menu-item:disabled:hover {
+    background-color: transparent;
+}
+
 @media (max-width: 768px) {
     body.chatui-active .cui-root-message-actions {
         opacity: 0.85;
@@ -1414,6 +1426,13 @@ body.chatui-active .cui-root-plus-topslot {
 body.chatui-active .cui-root-plus-topslot .cui-root-selchips {
     flex-wrap: wrap;
     width: 100%;
+}
+
+/* Inside the ＋ menu the chip dropdown must open DOWNWARD: the menu is a
+   scroll/overflow container, so an upward-opening popup would be clipped. */
+body.chatui-active .cui-root-plus-topslot .cui-root-selchip-menu {
+    top: calc(100% + 0.35rem);
+    bottom: auto;
 }
 
 body.chatui-active .cui-root-composer-btn {

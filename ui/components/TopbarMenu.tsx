@@ -21,6 +21,12 @@ export function TopbarMenu(): ComponentChild {
     const currentAvatar = currentCharacter?.avatar ?? '';
     const hasCurrentChat = currentChat !== null;
     const chatDisplayName = currentChat?.displayName ?? sidebar.header.sessionName ?? '';
+    // Group chats have no per-character chat file: ST's renameChat works on
+    // this_chid and delete needs a character avatar — neither applies — so both
+    // ops are disabled there (rather than silently no-op'ing on a live-looking item).
+    const isGroup = sidebar.header.isGroup;
+    const canRename = hasCurrentChat && !isGroup;
+    const canDelete = hasCurrentChat && !!currentAvatar && !isGroup;
 
     const startRename = () => {
         setDraft(chatDisplayName);
@@ -70,12 +76,14 @@ export function TopbarMenu(): ComponentChild {
                         <MenuItem
                             label="重命名对话"
                             iconClass="fa-solid fa-pen"
-                            onClick={hasCurrentChat ? startRename : () => {}}
+                            disabled={!canRename}
+                            onClick={startRename}
                         />
                         <MenuItem
                             label="删除对话"
                             iconClass="fa-solid fa-trash"
-                            onClick={hasCurrentChat && currentAvatar ? () => setConfirmingDelete(true) : () => {}}
+                            disabled={!canDelete}
+                            onClick={() => setConfirmingDelete(true)}
                         />
                         <MenuItem
                             label="＋ 新对话"

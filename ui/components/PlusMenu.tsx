@@ -5,7 +5,6 @@ import {
     impersonateChatui,
     listChatuiWandItems,
     openChatuiAttachmentPicker,
-    openChatuiDeleteMode,
     regenerateChatuiLast,
     subscribeChatuiEvent,
     triggerChatuiWandItem,
@@ -30,7 +29,6 @@ const TOOLS: PlusTool[] = [
     { id: 'continue', label: '续写', iconClass: 'fa-solid fa-forward-step', run: () => continueChatuiGeneration() },
     { id: 'impersonate', label: '代笔', iconClass: 'fa-solid fa-user-pen', run: () => impersonateChatui() },
     { id: 'regenerate', label: '重新生成', iconClass: 'fa-solid fa-rotate', run: () => regenerateChatuiLast() },
-    { id: 'delete', label: '批量删除', iconClass: 'fa-solid fa-trash', run: () => openChatuiDeleteMode() },
 ];
 
 export function PlusMenu({

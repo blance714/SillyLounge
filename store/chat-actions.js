@@ -116,14 +116,6 @@ export function openChatuiAttachmentPicker(accept = null) {
 }
 
 /**
- * Enter SillyTavern's batch message-deletion (checkbox) mode.
- * @returns {void}
- */
-export function openChatuiDeleteMode() {
-    chatuiAdapter.menuActions.openDeleteMessageMode();
-}
-
-/**
  * Subscribe a UI component to a raw ST event through the adapter boundary.
  * @param {string} key
  * @param {(...args: any[]) => void} handler

@@ -76,7 +76,10 @@ const DEFAULT_CONFIG = {
     headerGroup: 'icon',
     headerSolo: 'none',
     composerLines: 'multi',
-    plusPinned: ['regenerate', 'delete'],
+    // DESIGN §4.3 defaults to [重生成, 删除], but batch-delete needs ChatUI's own
+    // message-selection UI (ST's delete mode checkboxes live in the parked #chat),
+    // so 续写 stands in until that lands.
+    plusPinned: ['regenerate', 'continue'],
 };
 
 /** @type {ReturnType<typeof createStore<ChatuiConfig>>} */
@@ -140,6 +143,17 @@ export function setMessageHeader(scope, value) {
  */
 export function setComposerLines(value) {
     setConfigValue('composerLines', value);
+}
+
+/**
+ * Set the ＋menu pinned tool ids (DESIGN §4.3 ① 置顶磁贴). The pin editor that
+ * will call this is deferred to the §7 config surface; exported now to keep the
+ * per-key setter API symmetric.
+ * @param {string[]} ids
+ * @returns {void}
+ */
+export function setPlusPinned(ids) {
+    setConfigValue('plusPinned', ids);
 }
 
 /**
