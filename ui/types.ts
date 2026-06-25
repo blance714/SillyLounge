@@ -13,6 +13,9 @@ export type ChatuiSidebarState = ReturnType<typeof getSidebarState>;
 export type ChatListItem = ChatuiSidebarState['chats'][number];
 export type CharacterSummary = ChatuiSidebarState['characters'][number];
 export type ChatuiConfig = ReturnType<typeof getConfig>;
+// Source of truth: MESSAGE_HEADERS / MessageHeaderValue in store/config-store.js
+// (mirrors the SidebarForm literal-union pattern in components/sidebar/Sidebar.tsx).
+export type MessageHeaderMode = 'icon' | 'name' | 'none';
 export type ChatuiAction = Parameters<typeof triggerChatuiMessageAction>[1];
 export type ShellAction = Parameters<typeof triggerChatuiShellAction>[0];
 export type RootApi = ReturnType<typeof createRoot>;

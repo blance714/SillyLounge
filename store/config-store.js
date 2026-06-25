@@ -19,8 +19,16 @@ import { createStore } from './create-store.js';
  */
 
 /**
+ * Identity-header density for character messages (DESIGN §5.A):
+ *   'icon' = avatar + name (+time), 'name' = name (+time) only, 'none' = nothing.
+ * @typedef {'icon'|'name'|'none'} MessageHeaderValue
+ */
+
+/**
  * @typedef {object} ChatuiConfig
  * @property {SidebarFormValue} sidebarForm
+ * @property {MessageHeaderValue} headerGroup Header mode used in group chats.
+ * @property {MessageHeaderValue} headerSolo  Header mode used in solo chats.
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -33,11 +41,24 @@ import { createStore } from './create-store.js';
  */
 export const SIDEBAR_FORMS = ['list', 'block', 'icon'];
 
+/**
+ * Canonical ordered list of identity-header modes — single source of truth for
+ * defaults, validation, and the settings select order.
+ * @type {MessageHeaderValue[]}
+ */
+export const MESSAGE_HEADERS = ['icon', 'name', 'none'];
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
-/** @type {ChatuiConfig} */
+/**
+ * Defaults follow DESIGN §5.A: group chats show avatars (tell characters apart),
+ * solo chats stay clean (pure ChatGPT, no header).
+ * @type {ChatuiConfig}
+ */
 const DEFAULT_CONFIG = {
     sidebarForm: SIDEBAR_FORMS[0],
+    headerGroup: 'icon',
+    headerSolo: 'none',
 };
 
 /** @type {ReturnType<typeof createStore<ChatuiConfig>>} */
@@ -84,6 +105,17 @@ export function setSidebarForm(form) {
 }
 
 /**
+ * Set the identity-header mode for one chat scope. Group and solo chats keep
+ * independent settings, so the active mode is chosen per chat type at render.
+ * @param {'group'|'solo'} scope
+ * @param {MessageHeaderValue} value
+ * @returns {void}
+ */
+export function setMessageHeader(scope, value) {
+    setConfigValue(scope === 'group' ? 'headerGroup' : 'headerSolo', value);
+}
+
+/**
  * Advance the sidebar form to the next in SIDEBAR_FORMS order, reading the
  * freshest persisted value (not a captured render value) so rapid cycles never
  * drop a step.
@@ -107,13 +139,15 @@ export function cycleSidebarForm() {
 export function initConfigStore() {
     const persisted = chatuiAdapter.configActions.read();
 
-    /** @type {SidebarFormValue} */
-    const rawForm = /** @type {any} */ (persisted.sidebarForm);
-    const sidebarForm = SIDEBAR_FORMS.includes(rawForm) ? rawForm : DEFAULT_CONFIG.sidebarForm;
+    /** Coerce a persisted enum value to a known member, else fall back. */
+    const pick = (/** @type {string[]} */ allowed, /** @type {unknown} */ raw, /** @type {string} */ fallback) =>
+        allowed.includes(/** @type {string} */ (raw)) ? /** @type {any} */ (raw) : fallback;
 
     /** @type {ChatuiConfig} */
     const normalized = {
-        sidebarForm,
+        sidebarForm: pick(SIDEBAR_FORMS, persisted.sidebarForm, DEFAULT_CONFIG.sidebarForm),
+        headerGroup: pick(MESSAGE_HEADERS, persisted.headerGroup, DEFAULT_CONFIG.headerGroup),
+        headerSolo: pick(MESSAGE_HEADERS, persisted.headerSolo, DEFAULT_CONFIG.headerSolo),
     };
 
     _store.setState(normalized);

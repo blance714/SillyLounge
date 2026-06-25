@@ -15,8 +15,8 @@ import { Sidebar } from './components/sidebar/Sidebar.js';
 import type { SidebarForm } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
 import { useAutoScroll, useChatuiSnapshot, useConfig, useRootDomEnhancements } from './hooks.js';
-import { cycleChatuiSidebarForm, setChatuiSidebarForm } from './actions.js';
-import type { ChatuiMessage, RootApi } from './types.js';
+import { cycleChatuiSidebarForm, regenerateChatuiLast, setChatuiSidebarForm } from './actions.js';
+import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
 
 let isSetup = false;
 let rootEl: HTMLElement | null = null;
@@ -29,6 +29,7 @@ function ChatuiApp(): ComponentChild {
     const listRef = useRef<HTMLDivElement>(null);
     const [editingMessageId, setEditingMessageId] = useState<ChatuiMessage['id'] | null>(null);
     const sidebarForm: SidebarForm = config.sidebarForm;
+    const headerMode: MessageHeaderMode = state.chat.isGroup ? config.headerGroup : config.headerSolo;
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const messages = useMemo(() => state.chat.messages.filter(message => (
         !message.extra.isSmallSys && !message.extra.isToolCall
@@ -84,6 +85,7 @@ function ChatuiApp(): ComponentChild {
                         <MessageItem
                             key={message.id}
                             message={message}
+                            headerMode={headerMode}
                             isEditing={editingMessageId === message.id}
                             onStartEdit={() => setEditingMessageId(message.id)}
                             onCancelEdit={() => setEditingMessageId(null)}
@@ -105,6 +107,18 @@ function ChatuiApp(): ComponentChild {
                 >
                     <i className="fa-solid fa-arrow-down" />
                 </button>
+                {state.chat.lastMessageNeedsGenerate && !state.chat.isGenerating && (
+                    <div className="cui-root-generate-bar">
+                        <button
+                            className="cui-root-generate-btn"
+                            type="button"
+                            onClick={regenerateChatuiLast}
+                        >
+                            <i className="fa-solid fa-rotate-right" />
+                            <span>生成回复</span>
+                        </button>
+                    </div>
+                )}
                 <Composer isGenerating={state.chat.isGenerating} />
                 <Toaster />
             </section>

@@ -135,7 +135,12 @@ function _toMessageDto(raw, id, lastMessageId) {
             // single swipe, so the user can generate alternatives (the ‹›/counter
             // visibility within the group is decided per-button in the UI).
             canShowSwipe: isLast && isChar && !isSmallSys && !isToolCall,
-            needsGenerate: isLast && (isUser || isSystem),
+            // Only a trailing USER message offers a one-click generate. A trailing
+            // system message is excluded on purpose: ST's solo regenerate pops it
+            // instead of generating after it, and small-sys notices are hidden from
+            // the list anyway — so isUser keeps the pill from firing with no
+            // visible trigger or silently deleting a message.
+            needsGenerate: isLast && isUser,
         },
     };
 }
