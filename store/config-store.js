@@ -37,6 +37,7 @@ import { createStore } from './create-store.js';
  * @property {MessageHeaderValue} headerGroup Header mode used in group chats.
  * @property {MessageHeaderValue} headerSolo  Header mode used in solo chats.
  * @property {ComposerLinesValue} composerLines Composer single/multi-line mode.
+ * @property {string[]} plusPinned ＋menu tool ids promoted to top tiles (DESIGN §4.3).
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -75,6 +76,7 @@ const DEFAULT_CONFIG = {
     headerGroup: 'icon',
     headerSolo: 'none',
     composerLines: 'multi',
+    plusPinned: ['regenerate', 'delete'],
 };
 
 /** @type {ReturnType<typeof createStore<ChatuiConfig>>} */
@@ -168,12 +170,18 @@ export function initConfigStore() {
     const pick = (/** @type {string[]} */ allowed, /** @type {unknown} */ raw, /** @type {string} */ fallback) =>
         allowed.includes(/** @type {string} */ (raw)) ? /** @type {any} */ (raw) : fallback;
 
+    const rawPinned = persisted.plusPinned;
+    const plusPinned = Array.isArray(rawPinned)
+        ? rawPinned.filter(id => typeof id === 'string')
+        : DEFAULT_CONFIG.plusPinned;
+
     /** @type {ChatuiConfig} */
     const normalized = {
         sidebarForm: pick(SIDEBAR_FORMS, persisted.sidebarForm, DEFAULT_CONFIG.sidebarForm),
         headerGroup: pick(MESSAGE_HEADERS, persisted.headerGroup, DEFAULT_CONFIG.headerGroup),
         headerSolo: pick(MESSAGE_HEADERS, persisted.headerSolo, DEFAULT_CONFIG.headerSolo),
         composerLines: pick(COMPOSER_LINES, persisted.composerLines, DEFAULT_CONFIG.composerLines),
+        plusPinned,
     };
 
     _store.setState(normalized);

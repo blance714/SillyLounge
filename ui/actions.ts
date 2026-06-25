@@ -9,6 +9,7 @@ export {
     listChatuiWandItems,
     notifyChatui,
     openChatuiAttachmentPicker,
+    openChatuiDeleteMode,
     openChatuiMessageFile,
     openChatuiMessageMedia,
     regenerateChatuiLast,

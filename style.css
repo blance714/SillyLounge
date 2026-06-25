@@ -1540,6 +1540,35 @@ body.chatui-active .cui-root-plus-close:focus-visible {
     background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
 }
 
+/* ① pinned tiles — a 1–4 item grid promoted above the tool list (DESIGN §4.3). */
+body.chatui-active .cui-root-plus-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+    padding: 0.15rem 0.5rem 0.5rem;
+}
+
+body.chatui-active .cui-root-plus-tile {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 3rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.6rem;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 6%, transparent);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.92);
+}
+
+body.chatui-active .cui-root-plus-tile:hover,
+body.chatui-active .cui-root-plus-tile:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+    outline: 1px solid var(--interactable-outline-color-faint);
+}
+
 body.chatui-active .cui-root-plus-tools {
     display: flex;
     flex-direction: column;
