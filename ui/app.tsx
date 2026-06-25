@@ -10,6 +10,7 @@ import type { ComponentChild } from 'preact';
 import { createRoot } from 'preact/compat/client';
 import { ensureChatuiRoot } from '../shield/st-dom-shield.js';
 import { Composer, GeneratingIndicator } from './components/Composer.js';
+import { QRBar } from './components/QRBar.js';
 import { MessageItem } from './components/MessageItem.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import type { SidebarForm } from './components/sidebar/Sidebar.js';
@@ -125,6 +126,7 @@ function ChatuiApp(): ComponentChild {
                         </button>
                     </div>
                 )}
+                <QRBar />
                 <Composer isGenerating={state.chat.isGenerating} />
                 <Toaster />
             </section>
