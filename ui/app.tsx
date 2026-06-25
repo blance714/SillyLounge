@@ -14,6 +14,8 @@ import { MessageItem } from './components/MessageItem.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import type { SidebarForm } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
+import { TopbarMenu } from './components/TopbarMenu.js';
+import { SelectorChips } from './components/SelectorChip.js';
 import { useAutoScroll, useChatuiSnapshot, useConfig, useRootDomEnhancements } from './hooks.js';
 import { cycleChatuiSidebarForm, regenerateChatuiLast, setChatuiSidebarForm } from './actions.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
@@ -72,7 +74,11 @@ function ChatuiApp(): ComponentChild {
                     >
                         <i className="fa-solid fa-bars" />
                     </button>
-                    <span className="cui-root-topbar-title">ChatUI</span>
+                    <SelectorChips kinds={['persona']} />
+                    <span className="cui-root-topbar-title">
+                        {state.chat.chatHeader.characterName || state.chat.chatHeader.sessionName || 'ChatUI'}
+                    </span>
+                    <TopbarMenu />
                 </header>
                 <div
                     ref={listRef}
