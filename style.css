@@ -1398,6 +1398,24 @@ body.chatui-active .cui-root-composer-input:focus {
     outline: 1px solid var(--interactable-outline-color-faint);
 }
 
+/* Single-line mode: compact one-row input, no manual resize (DESIGN §4.2). */
+body.chatui-active .cui-root-composer[data-lines="single"] .cui-root-composer-input {
+    resize: none;
+    overflow-y: auto;
+}
+
+/* Selector B relocated into the ＋ menu top when single-line. */
+body.chatui-active .cui-root-plus-topslot {
+    padding: 0.15rem 0.5rem 0.5rem;
+    margin-bottom: 0.15rem;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+body.chatui-active .cui-root-plus-topslot .cui-root-selchips {
+    flex-wrap: wrap;
+    width: 100%;
+}
+
 body.chatui-active .cui-root-composer-btn {
     display: inline-flex;
     align-items: center;
