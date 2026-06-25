@@ -5,10 +5,12 @@ import {
     impersonateChatui,
     listChatuiWandItems,
     openChatuiAttachmentPicker,
+    openChatuiDeleteMode,
     regenerateChatuiLast,
     subscribeChatuiEvent,
     triggerChatuiWandItem,
 } from '../actions.js';
+import { useConfig } from '../hooks.js';
 
 type WandItem = { id: string; label: string; iconHtml: string };
 
@@ -19,14 +21,16 @@ type PlusTool = {
     run: () => void;
 };
 
-// Built-in composer tools. Defaults are hardcoded for now; per-tool config and
-// dynamic wand/extension tools land in a later H3 slice.
+// Built-in composer tools. Which ones surface as top tiles vs. list rows is
+// driven by config.plusPinned (DESIGN §4.3 ① 置顶磁贴). The pin/toggle/drag
+// EDITOR is deferred to the §7 config surface; this slice only renders from it.
 const TOOLS: PlusTool[] = [
     { id: 'photos', label: '图片 / 视频', iconClass: 'fa-solid fa-image', run: () => openChatuiAttachmentPicker('image/*,video/*,audio/*') },
     { id: 'files', label: '文件', iconClass: 'fa-solid fa-paperclip', run: () => openChatuiAttachmentPicker() },
     { id: 'continue', label: '续写', iconClass: 'fa-solid fa-forward-step', run: () => continueChatuiGeneration() },
     { id: 'impersonate', label: '代笔', iconClass: 'fa-solid fa-user-pen', run: () => impersonateChatui() },
     { id: 'regenerate', label: '重新生成', iconClass: 'fa-solid fa-rotate', run: () => regenerateChatuiLast() },
+    { id: 'delete', label: '批量删除', iconClass: 'fa-solid fa-trash', run: () => openChatuiDeleteMode() },
 ];
 
 export function PlusMenu({
@@ -37,6 +41,7 @@ export function PlusMenu({
 } = {}): ComponentChild {
     const [isOpen, setIsOpen] = useState(false);
     const [wandItems, setWandItems] = useState<WandItem[]>([]);
+    const pinnedIds = useConfig().plusPinned;
 
     useEffect(() => {
         if (!isOpen) return;
@@ -48,6 +53,13 @@ export function PlusMenu({
         setIsOpen(false);
         tool.run();
     };
+
+    // ① top tiles = pinned tools in config order; ② list = the remainder.
+    // Unknown ids in plusPinned are ignored (filtered out by the find).
+    const pinnedTools = pinnedIds
+        .map(id => TOOLS.find(tool => tool.id === id))
+        .filter((tool): tool is PlusTool => tool !== undefined);
+    const listTools = TOOLS.filter(tool => !pinnedIds.includes(tool.id));
 
     return (
         <div className="cui-root-plus">
@@ -86,8 +98,24 @@ export function PlusMenu({
                         {topSlot && (
                             <div className="cui-root-plus-topslot">{topSlot}</div>
                         )}
+                        {pinnedTools.length > 0 && (
+                            <div className="cui-root-plus-tiles">
+                                {pinnedTools.map(tool => (
+                                    <button
+                                        key={tool.id}
+                                        className="cui-root-plus-tile"
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => runTool(tool)}
+                                    >
+                                        <i className={tool.iconClass} />
+                                        <span>{tool.label}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         <div className="cui-root-plus-tools">
-                            {TOOLS.map(tool => (
+                            {listTools.map(tool => (
                                 <button
                                     key={tool.id}
                                     className="cui-root-plus-tool"
