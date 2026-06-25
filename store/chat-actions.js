@@ -200,6 +200,35 @@ export function subscribeChatuiSelectorSync(cb) {
 }
 
 /**
+ * Enumerate visible quick-reply buttons from ST's #qr--bar.
+ * Rebuilds the id→element map on each call (ST rebuilds the bar on changes).
+ * @returns {{ id: string, label: string, title: string, iconHtml: string }[]}
+ */
+export function listChatuiQuickReplies() {
+    return chatuiAdapter.qrActions.listQuickReplies();
+}
+
+/**
+ * Proxy a click onto the live QR button identified by `id`.
+ * Only fires the primary click; context-menu actions are out of scope.
+ * @param {string} id opaque id from listChatuiQuickReplies()
+ * @returns {boolean}
+ */
+export function triggerChatuiQuickReply(id) {
+    return chatuiAdapter.qrActions.triggerQuickReply(id);
+}
+
+/**
+ * Subscribe to #qr--bar DOM changes (ST rebuilds the bar on chat / set changes).
+ * The observer is coalesced via requestAnimationFrame; returns an unsubscribe.
+ * @param {() => void} cb
+ * @returns {() => void}
+ */
+export function subscribeChatuiQuickReplies(cb) {
+    return chatuiAdapter.qrActions.subscribeQuickReplies(cb);
+}
+
+/**
  * Show a ChatUI-owned toast (success / error / info feedback).
  * @param {'info'|'success'|'error'} kind
  * @param {string} text

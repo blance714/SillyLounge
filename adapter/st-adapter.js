@@ -86,6 +86,11 @@ import {
     read,
     write,
 } from './config.js';
+import {
+    listQuickReplies,
+    triggerQuickReply,
+    subscribeQuickReplies,
+} from './qr.js';
 
 export { stEventKeys } from './internals.js';
 
@@ -167,5 +172,10 @@ export const chatuiAdapter = Object.freeze({
     configActions: Object.freeze({
         read,
         write,
+    }),
+    qrActions: Object.freeze({
+        listQuickReplies,
+        triggerQuickReply,
+        subscribeQuickReplies,
     }),
 });
