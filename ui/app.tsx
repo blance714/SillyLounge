@@ -17,7 +17,7 @@ import type { SidebarForm } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useChatuiSnapshot, useConfig, useRootDomEnhancements } from './hooks.js';
+import { useAutoScroll, useChatuiSnapshot, useConfig, useRootDomEnhancements, useSidebarData } from './hooks.js';
 import { cycleChatuiSidebarForm, regenerateChatuiLast, setChatuiSidebarForm } from './actions.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
 
@@ -28,6 +28,9 @@ let rootApi: RootApi | null = null;
 function ChatuiApp(): ComponentChild {
     const state = useChatuiSnapshot();
     const config = useConfig();
+    // Title comes from the sidebar store (single source for chat header; it also
+    // tracks rename/delete events, so the title never goes stale).
+    const chatHeader = useSidebarData().header;
     const rootRef = useRef<HTMLElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const [editingMessageId, setEditingMessageId] = useState<ChatuiMessage['id'] | null>(null);
@@ -77,7 +80,7 @@ function ChatuiApp(): ComponentChild {
                     </button>
                     <SelectorChips kinds={['persona']} />
                     <span className="cui-root-topbar-title">
-                        {state.chat.chatHeader.characterName || state.chat.chatHeader.sessionName || 'ChatUI'}
+                        {chatHeader.characterName || chatHeader.sessionName || 'ChatUI'}
                     </span>
                     <TopbarMenu />
                 </header>

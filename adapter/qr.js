@@ -22,7 +22,9 @@ const _qrItemMap = new Map();
  */
 export function listQuickReplies() {
     _qrItemMap.clear();
-    const bar = document.getElementById('qr--bar');
+    // Docked bar lives in #send_form; when the user pops it out ST moves it to
+    // #qr--popout on document.body. Read whichever is present.
+    const bar = document.getElementById('qr--bar') || document.getElementById('qr--popout');
     if (!bar) return [];
 
     const out = [];
@@ -98,12 +100,6 @@ export function triggerQuickReply(id) {
  * @returns {() => void} unsubscribe
  */
 export function subscribeQuickReplies(cb) {
-    const sendForm = document.getElementById('send_form');
-    if (!sendForm) {
-        // #send_form absent (e.g. during tests): return a no-op unsubscribe.
-        return () => {};
-    }
-
     /** @type {number|null} */
     let pendingFrame = null;
 
@@ -116,15 +112,30 @@ export function subscribeQuickReplies(cb) {
         }
     };
 
-    const observer = new MutationObserver(() => {
+    const schedule = () => {
         if (pendingFrame !== null) return;
         pendingFrame = requestAnimationFrame(flush);
-    });
+    };
 
-    observer.observe(sendForm, { childList: true, subtree: true });
+    /** @type {MutationObserver[]} */
+    const observers = [];
+
+    // Docked bar: ST rebuilds #qr--bar inside #send_form on chat / set changes.
+    const sendForm = document.getElementById('send_form');
+    if (sendForm) {
+        const o = new MutationObserver(schedule);
+        o.observe(sendForm, { childList: true, subtree: true });
+        observers.push(o);
+    }
+
+    // Popout: ST appends/removes #qr--popout directly under document.body, which
+    // the #send_form observer can't see — watch body's direct children too.
+    const bodyObserver = new MutationObserver(schedule);
+    bodyObserver.observe(document.body, { childList: true });
+    observers.push(bodyObserver);
 
     return () => {
-        observer.disconnect();
+        for (const o of observers) o.disconnect();
         if (pendingFrame !== null) {
             cancelAnimationFrame(pendingFrame);
             pendingFrame = null;
