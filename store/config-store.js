@@ -25,10 +25,18 @@ import { createStore } from './create-store.js';
  */
 
 /**
+ * Composer line mode (DESIGN §4.2):
+ *   'multi'  = tall auto-growing textarea, selector B on its own row below;
+ *   'single' = compact one-line input, selector B relocated into the ＋ menu top.
+ * @typedef {'multi'|'single'} ComposerLinesValue
+ */
+
+/**
  * @typedef {object} ChatuiConfig
  * @property {SidebarFormValue} sidebarForm
  * @property {MessageHeaderValue} headerGroup Header mode used in group chats.
  * @property {MessageHeaderValue} headerSolo  Header mode used in solo chats.
+ * @property {ComposerLinesValue} composerLines Composer single/multi-line mode.
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -48,17 +56,25 @@ export const SIDEBAR_FORMS = ['list', 'block', 'icon'];
  */
 export const MESSAGE_HEADERS = ['icon', 'name', 'none'];
 
+/**
+ * Canonical ordered list of composer line modes — single source for default,
+ * validation, and the settings select order.
+ * @type {ComposerLinesValue[]}
+ */
+export const COMPOSER_LINES = ['multi', 'single'];
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 /**
  * Defaults follow DESIGN §5.A: group chats show avatars (tell characters apart),
- * solo chats stay clean (pure ChatGPT, no header).
+ * solo chats stay clean (pure ChatGPT, no header). Composer defaults to multi-line.
  * @type {ChatuiConfig}
  */
 const DEFAULT_CONFIG = {
     sidebarForm: SIDEBAR_FORMS[0],
     headerGroup: 'icon',
     headerSolo: 'none',
+    composerLines: 'multi',
 };
 
 /** @type {ReturnType<typeof createStore<ChatuiConfig>>} */
@@ -116,6 +132,15 @@ export function setMessageHeader(scope, value) {
 }
 
 /**
+ * Set the composer line mode ('multi' | 'single').
+ * @param {ComposerLinesValue} value
+ * @returns {void}
+ */
+export function setComposerLines(value) {
+    setConfigValue('composerLines', value);
+}
+
+/**
  * Advance the sidebar form to the next in SIDEBAR_FORMS order, reading the
  * freshest persisted value (not a captured render value) so rapid cycles never
  * drop a step.
@@ -148,6 +173,7 @@ export function initConfigStore() {
         sidebarForm: pick(SIDEBAR_FORMS, persisted.sidebarForm, DEFAULT_CONFIG.sidebarForm),
         headerGroup: pick(MESSAGE_HEADERS, persisted.headerGroup, DEFAULT_CONFIG.headerGroup),
         headerSolo: pick(MESSAGE_HEADERS, persisted.headerSolo, DEFAULT_CONFIG.headerSolo),
+        composerLines: pick(COMPOSER_LINES, persisted.composerLines, DEFAULT_CONFIG.composerLines),
     };
 
     _store.setState(normalized);

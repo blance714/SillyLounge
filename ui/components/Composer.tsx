@@ -8,6 +8,7 @@ import {
 import { PlusMenu } from './PlusMenu.js';
 import { AttachmentChips } from './AttachmentChips.js';
 import { SelectorChips } from './SelectorChip.js';
+import { useConfig } from '../hooks.js';
 
 export function GeneratingIndicator(): ComponentChild {
     return (
@@ -26,6 +27,10 @@ export function Composer({
     const [draft, setDraft] = useState('');
     const [isSending, setIsSending] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const singleLine = useConfig().composerLines === 'single';
+    // Slot B = preset + model. Multi-line shows it on its own row below the input;
+    // single-line relocates it into the ＋ menu top (DESIGN §4.2).
+    const selectorSlotB = <SelectorChips kinds={['preset', 'model']} />;
 
     const submit = async () => {
         if (isSending || isGenerating) return;
@@ -46,6 +51,7 @@ export function Composer({
     return (
         <form
             className="cui-root-composer"
+            data-lines={singleLine ? 'single' : 'multi'}
             aria-label="ChatUI composer"
             onSubmit={(event) => {
                 event.preventDefault();
@@ -54,12 +60,12 @@ export function Composer({
         >
             <AttachmentChips />
             <div className="cui-root-composer-row">
-                <PlusMenu />
+                <PlusMenu topSlot={singleLine ? selectorSlotB : undefined} />
                 <textarea
                     ref={textareaRef}
                     className="cui-root-composer-input"
                     value={draft}
-                    rows={Math.min(8, Math.max(2, draft.split('\n').length))}
+                    rows={singleLine ? 1 : Math.min(8, Math.max(2, draft.split('\n').length))}
                     disabled={isSending}
                     placeholder="Message"
                     onInput={(event) => setDraft(event.currentTarget.value)}
@@ -91,7 +97,7 @@ export function Composer({
                     </button>
                 )}
             </div>
-            <SelectorChips kinds={['preset', 'model']} />
+            {!singleLine && selectorSlotB}
         </form>
     );
 }

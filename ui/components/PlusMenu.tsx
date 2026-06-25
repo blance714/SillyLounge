@@ -29,7 +29,12 @@ const TOOLS: PlusTool[] = [
     { id: 'regenerate', label: '重新生成', iconClass: 'fa-solid fa-rotate', run: () => regenerateChatuiLast() },
 ];
 
-export function PlusMenu(): ComponentChild {
+export function PlusMenu({
+    topSlot,
+}: {
+    /** Optional content pinned above the tool list — single-line mode parks selector B here (DESIGN §4.2). */
+    topSlot?: ComponentChild;
+} = {}): ComponentChild {
     const [isOpen, setIsOpen] = useState(false);
     const [wandItems, setWandItems] = useState<WandItem[]>([]);
 
@@ -78,6 +83,9 @@ export function PlusMenu(): ComponentChild {
                                 <i className="fa-solid fa-xmark" />
                             </button>
                         </header>
+                        {topSlot && (
+                            <div className="cui-root-plus-topslot">{topSlot}</div>
+                        )}
                         <div className="cui-root-plus-tools">
                             {TOOLS.map(tool => (
                                 <button

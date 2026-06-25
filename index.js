@@ -15,7 +15,7 @@ import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { initSidebarStore, teardownSidebarStore } from './store/sidebar-store.js';
-import { initConfigStore, getConfig, setSidebarForm, setMessageHeader, subscribeConfig, SIDEBAR_FORMS, MESSAGE_HEADERS } from './store/config-store.js';
+import { initConfigStore, getConfig, setSidebarForm, setMessageHeader, setComposerLines, subscribeConfig, SIDEBAR_FORMS, MESSAGE_HEADERS, COMPOSER_LINES } from './store/config-store.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 
@@ -38,6 +38,9 @@ const SIDEBAR_FORM_LABELS = { list: '列表', block: '方块', icon: '纯图标'
 
 /** Identity-header option labels for the settings selects (values come from MESSAGE_HEADERS). */
 const MESSAGE_HEADER_LABELS = { icon: '头像 + 名字', name: '仅名字', none: '无（纯净）' };
+
+/** Composer line-mode option labels (values come from COMPOSER_LINES). */
+const COMPOSER_LINES_LABELS = { multi: '多行', single: '单行' };
 
 // ── Internal state ────────────────────────────────────────────────────────────
 
@@ -186,6 +189,13 @@ function injectSettingsUI() {
                     ${optionsHtml(MESSAGE_HEADERS, MESSAGE_HEADER_LABELS)}
                 </select>
                 <div class="margin-bot-10px"></div>
+                <label class="checkbox_label" for="chatui_composer_lines" title="输入框单行 / 多行">
+                    <span>输入框行数</span>
+                </label>
+                <select id="chatui_composer_lines" class="text_pole" style="margin-bottom:8px">
+                    ${optionsHtml(COMPOSER_LINES, COMPOSER_LINES_LABELS)}
+                </select>
+                <div class="margin-bot-10px"></div>
             </div>
         </div>
     `;
@@ -227,6 +237,7 @@ function injectSettingsUI() {
     bindConfigSelect('chatui_sidebar_form', () => getConfig().sidebarForm, v => setSidebarForm(/** @type {any} */ (v)));
     bindConfigSelect('chatui_header_group', () => getConfig().headerGroup, v => setMessageHeader('group', /** @type {any} */ (v)));
     bindConfigSelect('chatui_header_solo', () => getConfig().headerSolo, v => setMessageHeader('solo', /** @type {any} */ (v)));
+    bindConfigSelect('chatui_composer_lines', () => getConfig().composerLines, v => setComposerLines(/** @type {any} */ (v)));
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
