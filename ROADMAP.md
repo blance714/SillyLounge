@@ -16,7 +16,7 @@ Last updated: 2026-06-25
 | **③ 内容区** | 🟢 ~80% | 角色整宽/用户气泡、操作行、思考块换皮、内联编辑、媒体、头像标头、swipe `‹n/m›`(**计数本次补渲染**)、代码复制、**回到底部钮**(本次新增) | 标头 3 档可配、代码块**语言名头**、**底部重生成**钮、用户消息平铺菜单 |
 | **④ 输入框** | 🟢 ~70% | ＋菜单(内置+wand 动态)、textarea、选择框 B、发送/停止、附件 chips | **QR 悬浮条**、**单/多行切换**、＋菜单**配置** |
 | **⑤ 侧栏导航中心** | 🟢 ~72% | **Mode A 单角色导航中心全通**:切角色 / ＋新对话 / 重命名 / 删除 / 打开 —— 全部接 ST 真导出函数(非桩);桌面三形态(①横列表/②方块/③纯icon)、手机覆盖式滑出、上段配置 rail | Mode B 全局列表、群聊对话列表、**配置贴边浮层**(b)/modal、手机全屏 tab + 返回、搜索 🔍 |
-| **配置系统**(§7 十项) | 🔴 ~3% | 仅 enable 开关持久化(证明 extension_settings 往返可用) | config-store + 独立设置面 + §7 十项(全是硬编码默认,见 M-E) |
+| **配置系统**(§7 十项) | 🟡 ~12% | **薄地基已落**(M-E):`config-store`(createStore 工厂)+ `adapter/config.js` 往返 + 设置面 select 双向同步;首个真功能 **侧栏三形态记忆** 已持久化 | §7 其余九项(全是硬编码默认)、独立(非内联)设置面、单/多行开关 |
 
 **毛估**:北极星完整度 ≈45-50%;"能当日常聊天用"体感 ≈75%(已部分 live-test:删除/swipe/滚动/布局)。
 
@@ -45,8 +45,8 @@ Last updated: 2026-06-25
 ### 0 · live-test 收尾(进行中)
 本次已测:删除、swipe、滚动、布局。**仍欠**:续写/代笔/重生成(走 `#options` 模拟点击,最可能哑火)、停止、切角色/新建/重命名/对话删除全链路。
 
-### M-E · 配置系统**薄地基**(先行)
-不做满 §7 十项,只立最小可用地基:`config-store`(复用 Codex 抽出的 store 工厂)+ 一个**不内联**的设置面;先把两个最便宜的现成功能接上 —— **侧栏三形态记忆**(现每次 mount 重置成 'list')、**单/多行开关**。其余八项延后。
+### ~~M-E · 配置系统**薄地基**~~ ✅ 已落地(commit `abf212f`)
+地基已立:`config-store`(createStore 工厂)+ `adapter/config.js`(ST extension_settings 往返)+ 设置面 select 双向同步。首个真功能 **侧栏三形态记忆** 已持久化(过去每次 mount 重置成 'list')。**单/多行开关** 留给 M-C(与输入框同刀做),§7 其余九项随各自归属 milestone 落。
 
 ### M-D · 内容区收尾
 **底部重生成钮**(`lastMessageNeedsGenerate` store 已就绪,纯接 UI)、**用户消息平铺菜单**(`canShowUserMenu` flag 已算好,纯布局分支)、代码块语言名头、身份标头 3 档可配(随 M-E 落)。
@@ -64,9 +64,9 @@ Last updated: 2026-06-25
 
 ## 阻塞项 / 技术债
 
-- ~~swipe/delete 从模拟点击切到 ST 导出函数~~ —— **本次会话已完成**。
-- **adapter 上帝模块(1321 行)拆分 + 三个 store 的 pub-sub 工厂化** —— Codex 进行中(纯重构,行为不变)。
-- 剩余 `#options`/抽屉等 **模拟点击写路径**(22 处)迁到 ST 导出 —— 待 live-test 确认导出可用后再迁。
+- ~~swipe/delete 从模拟点击切到 ST 导出函数~~ —— **已完成**。
+- ~~adapter 上帝模块(1321 行)拆分 + store 的 pub-sub 工厂化~~ —— **已完成**(commit `8b8e203`:adapter 拆为 8 子模块 + `createStore` 工厂,行为不变)。
+- 剩余 `#options`/抽屉等 **模拟点击写路径**(22 处)迁到 ST 导出 —— 待 live-test 确认导出可用后再迁(见 §0)。
 - `content-visibility` 双重渲染优化 —— 等火焰图看实际性能。
 - 人设 chip 懒加载 —— 现每次 selector-sync 都拉 `getUserAvatars`,小优化。
 
@@ -74,5 +74,5 @@ Last updated: 2026-06-25
 
 ## 当前分支
 
-`cleanup/remove-legacy-phase12`(main 仍在基线 `c97d8c2`)。已提交 `c97d8c2`→`bf72d9e`(含 Phase 3 全部 5 刀);
-本次会话的加固/修复 + Codex 重构尚在工作区**未提交**。已开始 live-test。
+`cleanup/remove-legacy-phase12`(main 仍在基线 `c97d8c2`)。已提交至 `abf212f`:
+`bf72d9e`(Phase 3 全 5 刀)→ `8b8e203`(写路径加固 + 滚动/布局修复 + adapter 拆分 + store 工厂)→ `abf212f`(M-E 配置薄地基)。下一刀:M-D 内容区收尾。
