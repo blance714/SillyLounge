@@ -53,23 +53,42 @@ export function useRootDomEnhancements(
 
         root.querySelectorAll('.cui-root-message-body pre, .cui-root-reasoning-body pre').forEach(pre => {
             const block = pre instanceof HTMLElement ? pre : null;
-            if (!block || block.querySelector('.cui-root-code-copy')) return;
+            if (!block) return;
 
             const code = block.querySelector('code');
             if (!code) return;
 
-            const copy = document.createElement('button');
-            copy.className = 'cui-root-code-copy';
-            copy.type = 'button';
-            copy.setAttribute('aria-label', 'Copy code');
-            copy.setAttribute('title', 'Copy code');
-            copy.innerHTML = '<i class="fa-regular fa-copy"></i>';
-            copy.addEventListener('click', (event) => {
-                event.stopPropagation();
-                navigator.clipboard?.writeText?.(code.textContent ?? '')?.catch(() => {});
-            });
+            // Language label (top-left) — only for fences that declared a language,
+            // read off the `language-xxx` class showdown emits (ChatUI renders that
+            // markdown string directly; hljs auto-detection runs on ST's own DOM, not
+            // here, so undeclared fences carry no class and stay unlabelled). The
+            // matching top-padding is reserved in CSS via :has() off that same class,
+            // so it stays put even as innerHTML is rebuilt each streaming frame.
+            if (!block.querySelector('.cui-root-code-lang')) {
+                const lang = /\blanguage-([\w#+.-]+)/.exec(code.className)?.[1];
+                if (lang) {
+                    const label = document.createElement('span');
+                    label.className = 'cui-root-code-lang';
+                    label.textContent = lang;
+                    block.appendChild(label);
+                }
+            }
 
-            block.appendChild(copy);
+            // Copy button (top-right).
+            if (!block.querySelector('.cui-root-code-copy')) {
+                const copy = document.createElement('button');
+                copy.className = 'cui-root-code-copy';
+                copy.type = 'button';
+                copy.setAttribute('aria-label', 'Copy code');
+                copy.setAttribute('title', 'Copy code');
+                copy.innerHTML = '<i class="fa-regular fa-copy"></i>';
+                copy.addEventListener('click', (event) => {
+                    event.stopPropagation();
+                    navigator.clipboard?.writeText?.(code.textContent ?? '')?.catch(() => {});
+                });
+
+                block.appendChild(copy);
+            }
         });
     }, [rootRef, messages, isGenerating]);
 }
