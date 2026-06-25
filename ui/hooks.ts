@@ -3,7 +3,18 @@ import type { RefObject } from 'preact';
 import { getChatuiState, subscribeChatuiStore } from '../store/chat-store.js';
 import { getSidebarState, subscribeSidebarStore } from '../store/sidebar-store.js';
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
-import type { ChatuiMessage, ChatuiState, ChatuiSidebarState } from './types.js';
+import { getConfig, subscribeConfig } from '../store/config-store.js';
+import type { ChatuiMessage, ChatuiState, ChatuiSidebarState, ChatuiConfig } from './types.js';
+
+export function useConfig(): ChatuiConfig {
+    const [config, setConfig] = useState<ChatuiConfig>(() => getConfig());
+
+    useEffect(() => subscribeConfig(() => {
+        setConfig(getConfig());
+    }), []);
+
+    return config;
+}
 
 export function useToasts(): ReturnType<typeof getToasts> {
     const [toasts, setToasts] = useState(() => getToasts());

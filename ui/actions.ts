@@ -34,3 +34,8 @@ export {
     subscribeChatuiSidebar,
     switchChatuiCharacter,
 } from '../store/sidebar-actions.js';
+
+export {
+    cycleSidebarForm as cycleChatuiSidebarForm,
+    setSidebarForm as setChatuiSidebarForm,
+} from '../store/config-store.js';

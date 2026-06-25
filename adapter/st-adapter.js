@@ -82,6 +82,10 @@ import {
     renameCharacterChat,
     switchCharacter,
 } from './chats.js';
+import {
+    read,
+    write,
+} from './config.js';
 
 export { stEventKeys } from './internals.js';
 
@@ -159,5 +163,9 @@ export const chatuiAdapter = Object.freeze({
         newCharacterChat,
         renameCharacterChat,
         deleteCharacterChat,
+    }),
+    configActions: Object.freeze({
+        read,
+        write,
     }),
 });

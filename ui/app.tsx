@@ -14,10 +14,9 @@ import { MessageItem } from './components/MessageItem.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import type { SidebarForm } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
-import { useAutoScroll, useChatuiSnapshot, useRootDomEnhancements } from './hooks.js';
+import { useAutoScroll, useChatuiSnapshot, useConfig, useRootDomEnhancements } from './hooks.js';
+import { cycleChatuiSidebarForm, setChatuiSidebarForm } from './actions.js';
 import type { ChatuiMessage, RootApi } from './types.js';
-
-const SIDEBAR_FORMS: SidebarForm[] = ['list', 'block', 'icon'];
 
 let isSetup = false;
 let rootEl: HTMLElement | null = null;
@@ -25,10 +24,11 @@ let rootApi: RootApi | null = null;
 
 function ChatuiApp(): ComponentChild {
     const state = useChatuiSnapshot();
+    const config = useConfig();
     const rootRef = useRef<HTMLElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
     const [editingMessageId, setEditingMessageId] = useState<ChatuiMessage['id'] | null>(null);
-    const [sidebarForm, setSidebarForm] = useState<SidebarForm>('list');
+    const sidebarForm: SidebarForm = config.sidebarForm;
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const messages = useMemo(() => state.chat.messages.filter(message => (
         !message.extra.isSmallSys && !message.extra.isToolCall
@@ -45,20 +45,18 @@ function ChatuiApp(): ComponentChild {
 
     // ☰ = "summon list ①": expand to the full form (desktop) and open the
     // overlay (mobile). One handler works for both — the irrelevant effect is a
-    // no-op at each breakpoint (CSS-gated).
+    // no-op at each breakpoint (CSS-gated). Resetting to 'list' is intentional:
+    // tapping the hamburger always reveals the full conversation list first.
     const summonSidebar = () => {
-        setSidebarForm('list');
+        setChatuiSidebarForm('list');
         setIsSidebarMobileOpen(true);
-    };
-    const cycleSidebarForm = () => {
-        setSidebarForm(form => SIDEBAR_FORMS[(SIDEBAR_FORMS.indexOf(form) + 1) % SIDEBAR_FORMS.length]);
     };
 
     return (
         <>
             <Sidebar
                 form={sidebarForm}
-                onCycleForm={cycleSidebarForm}
+                onCycleForm={cycleChatuiSidebarForm}
                 mobileOpen={isSidebarMobileOpen}
                 onClose={() => setIsSidebarMobileOpen(false)}
             />

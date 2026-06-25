@@ -15,6 +15,7 @@ import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { initSidebarStore, teardownSidebarStore } from './store/sidebar-store.js';
+import { initConfigStore, getConfig, setSidebarForm, subscribeConfig, SIDEBAR_FORMS } from './store/config-store.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 
@@ -24,13 +25,16 @@ import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 const MODULE = 'chatui_composer';
 
 /**
- * Default settings. ChatUI currently exposes a single master toggle; per-feature
- * configuration returns once the Preact root grows its own settings surface.
+ * Default settings. ChatUI owns only the master `enabled` toggle here; all
+ * per-feature config lives in (and is normalised by) store/config-store.js.
  * @type {{ enabled: boolean }}
  */
 const defaultSettings = {
     enabled: false,
 };
+
+/** Sidebar-form option labels for the settings select (values come from SIDEBAR_FORMS). */
+const SIDEBAR_FORM_LABELS = { list: '列表', block: '方块', icon: '纯图标' };
 
 // ── Internal state ────────────────────────────────────────────────────────────
 
@@ -40,8 +44,9 @@ let isSetup = false;
 // ── Settings ──────────────────────────────────────────────────────────────────
 
 /**
- * Ensures extension_settings[MODULE] exists and is well-formed.
- * Returns the live settings reference.
+ * Ensures extension_settings[MODULE] exists and the `enabled` flag is well-formed.
+ * The per-feature `config` slice in the same namespace is owned and normalised by
+ * store/config-store.js (via the adapter), not here.
  *
  * @returns {{ enabled: boolean }} Live settings object.
  */
@@ -125,6 +130,13 @@ function injectSettingsUI() {
                     <span>启用 ChatUI</span>
                 </label>
                 <div class="margin-bot-10px"></div>
+                <label class="checkbox_label" for="chatui_sidebar_form" title="侧边栏默认展示形式">
+                    <span>侧边栏形式</span>
+                </label>
+                <select id="chatui_sidebar_form" class="text_pole" style="margin-bottom:8px">
+                    ${SIDEBAR_FORMS.map(f => `<option value="${f}">${SIDEBAR_FORM_LABELS[f]}</option>`).join('')}
+                </select>
+                <div class="margin-bot-10px"></div>
             </div>
         </div>
     `;
@@ -159,6 +171,17 @@ function injectSettingsUI() {
             teardown();
         }
     });
+
+    // Sidebar form select — persistent via the config store, two-way: it writes on
+    // change AND re-syncs when the form is changed elsewhere (e.g. the in-app
+    // sidebar cycle/summon), so the two surfaces never disagree. The panel lives
+    // for the whole page, so the subscription is intentionally not torn down.
+    const sidebarFormSelect = /** @type {HTMLSelectElement} */ (document.getElementById('chatui_sidebar_form'));
+    sidebarFormSelect.value = getConfig().sidebarForm;
+    sidebarFormSelect.addEventListener('change', () => {
+        setSidebarForm(/** @type {'list'|'block'|'icon'} */ (sidebarFormSelect.value));
+    });
+    subscribeConfig(() => { sidebarFormSelect.value = getConfig().sidebarForm; });
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -170,6 +193,10 @@ function injectSettingsUI() {
  */
 function init() {
     const settings = getSettings();
+    // Hydrate the config store once, eagerly: it backs the always-present settings
+    // panel as well as the (conditionally-mounted) Preact root, so it lives for the
+    // whole page — intentionally NOT tied to setup()/teardown().
+    initConfigStore();
     injectSettingsUI();
     if (settings.enabled) setup();
 }
