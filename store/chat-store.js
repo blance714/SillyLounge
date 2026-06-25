@@ -30,7 +30,7 @@ import { createStore } from './create-store.js';
  * @property {{ isLast: boolean, canShowCharActions: boolean, canShowUserMenu: boolean, canShowSwipe: boolean, needsGenerate: boolean }} ui
  */
 
-/** @type {{ chat: { messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, chatKey: string, isGroup: boolean, isGenerating: boolean, lastMessageNeedsGenerate: boolean }, ui: object }} */
+/** @type {{ chat: { messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, chatKey: string, isGroup: boolean, isGenerating: boolean, lastMessageNeedsGenerate: boolean, chatHeader: { sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean } }, ui: object }} */
 const _initialState = {
     chat: {
         messages: [],
@@ -40,6 +40,7 @@ const _initialState = {
         isGroup: false,
         isGenerating: false,
         lastMessageNeedsGenerate: false,
+        chatHeader: { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false },
     },
     ui: {
         openMessageMenuId: null,
@@ -239,6 +240,7 @@ export function refreshChatuiStore() {
             isGroup: chatuiAdapter.getIsGroupChat(),
             isGenerating: chatuiAdapter.getGenerationState().isGenerating,
             lastMessageNeedsGenerate: messageState.lastMessageNeedsGenerate,
+            chatHeader: chatuiAdapter.sidebarActions.getCurrentChatHeader(),
         },
     });
 }

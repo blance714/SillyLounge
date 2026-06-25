@@ -149,9 +149,54 @@ body.chatui-active .cui-root-shell-close:focus-visible {
 }
 
 body.chatui-active .cui-root-topbar-title {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: calc(var(--mainFontSize) * 0.92);
     font-weight: 700;
     opacity: 0.78;
+}
+
+/* Slot-A selchips (persona chip in the topbar) — compact, no wrapping */
+body.chatui-active .cui-root-topbar .cui-root-selchips {
+    flex: 0 0 auto;
+    width: auto;
+    flex-wrap: nowrap;
+}
+
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
+    max-width: 9rem;
+}
+
+/* Topbar ⋯ menu container — positioned relative so the dropdown anchors here */
+body.chatui-active .cui-root-topbar-menu {
+    flex: 0 0 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+}
+
+/* Inline rename input shown in place of the ⋯ button */
+body.chatui-active .cui-root-topbar-rename {
+    height: 2.15rem;
+    padding: 0 0.5rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.5rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.9);
+    outline: none;
+    min-width: 8rem;
+}
+
+/* The topbar menu dropdown opens below and to the right */
+body.chatui-active .cui-root-topbar-menu-dropdown {
+    right: 0;
+    left: auto;
 }
 
 /* ── Region 5 · sidebar (mobile slide-in overlay / desktop persistent column) ── */

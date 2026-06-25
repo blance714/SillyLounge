@@ -7,8 +7,14 @@ import {
     subscribeChatuiSelectorSync,
 } from '../actions.js';
 
-type SelectorKind = 'preset' | 'model' | 'persona';
+export type SelectorKind = 'preset' | 'model' | 'persona';
 type SelectorOption = { value: string; label: string; selected: boolean };
+
+const KIND_ICON: Record<SelectorKind, string> = {
+    preset: 'fa-solid fa-sliders',
+    model: 'fa-solid fa-plug',
+    persona: 'fa-solid fa-user',
+};
 
 function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): ComponentChild {
     const [isOpen, setIsOpen] = useState(false);
@@ -83,12 +89,12 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
     );
 }
 
-export function SelectorChips(): ComponentChild {
+export function SelectorChips({ kinds = ['preset', 'model', 'persona'] }: { kinds?: SelectorKind[] } = {}): ComponentChild {
     return (
         <div className="cui-root-selchips">
-            <SelectorChip kind="preset" icon="fa-solid fa-sliders" />
-            <SelectorChip kind="model" icon="fa-solid fa-plug" />
-            <SelectorChip kind="persona" icon="fa-solid fa-user" />
+            {kinds.map(kind => (
+                <SelectorChip key={kind} kind={kind} icon={KIND_ICON[kind]} />
+            ))}
         </div>
     );
 }

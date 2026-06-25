@@ -91,7 +91,7 @@ export function Composer({
                     </button>
                 )}
             </div>
-            <SelectorChips />
+            <SelectorChips kinds={['preset', 'model']} />
         </form>
     );
 }
