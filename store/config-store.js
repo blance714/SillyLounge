@@ -64,6 +64,18 @@ export const MESSAGE_HEADERS = ['icon', 'name', 'none'];
  */
 export const COMPOSER_LINES = ['multi', 'single'];
 
+/**
+ * Canonical ordered list of ＋menu tool ids — the single source of truth for which
+ * tools exist and their order. The UI (ui/components/PlusMenu) supplies each id's
+ * label / icon / behavior; this list owns the id universe used to validate the
+ * persisted plusPinned setting. Same contract as the enums above.
+ * @type {string[]}
+ */
+export const PLUS_TOOL_IDS = ['photos', 'files', 'continue', 'impersonate', 'regenerate'];
+
+/** Max number of ＋menu tools that can be pinned as top tiles (DESIGN §4.3). */
+export const PLUS_PIN_CAP = 4;
+
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 /**
@@ -84,6 +96,35 @@ const DEFAULT_CONFIG = {
 
 /** @type {ReturnType<typeof createStore<ChatuiConfig>>} */
 const _store = createStore(DEFAULT_CONFIG);
+
+/**
+ * Normalize a raw plusPinned list to the persistence invariant: keep only known
+ * tool ids (PLUS_TOOL_IDS), de-duplicated, in first-seen order, capped at
+ * PLUS_PIN_CAP. Every read (initConfigStore) and write (setPlusPinned) funnels
+ * through here, so stale / corrupt persisted ids can never desync the ＋menu tiles
+ * from the pin editor's cap count (which would otherwise lock the editor — a list
+ * of N unknown ids reads as "cap full" yet shows zero pinned tiles, with no UI
+ * path to repair it). A non-array falls back to the default; an array that filters
+ * empty stays empty (a valid, recoverable "nothing pinned" state).
+ *
+ * @param {unknown} raw
+ * @returns {string[]}
+ */
+function normalizePlusPinned(raw) {
+    if (!Array.isArray(raw)) return [...DEFAULT_CONFIG.plusPinned];
+
+    const seen = new Set();
+    const out = [];
+    for (const id of raw) {
+        if (typeof id !== 'string') continue;
+        if (!PLUS_TOOL_IDS.includes(id)) continue;
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(id);
+        if (out.length >= PLUS_PIN_CAP) break;
+    }
+    return out;
+}
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
@@ -153,7 +194,7 @@ export function setComposerLines(value) {
  * @returns {void}
  */
 export function setPlusPinned(ids) {
-    setConfigValue('plusPinned', ids);
+    setConfigValue('plusPinned', normalizePlusPinned(ids));
 }
 
 /**
@@ -184,18 +225,13 @@ export function initConfigStore() {
     const pick = (/** @type {string[]} */ allowed, /** @type {unknown} */ raw, /** @type {string} */ fallback) =>
         allowed.includes(/** @type {string} */ (raw)) ? /** @type {any} */ (raw) : fallback;
 
-    const rawPinned = persisted.plusPinned;
-    const plusPinned = Array.isArray(rawPinned)
-        ? rawPinned.filter(id => typeof id === 'string')
-        : DEFAULT_CONFIG.plusPinned;
-
     /** @type {ChatuiConfig} */
     const normalized = {
         sidebarForm: pick(SIDEBAR_FORMS, persisted.sidebarForm, DEFAULT_CONFIG.sidebarForm),
         headerGroup: pick(MESSAGE_HEADERS, persisted.headerGroup, DEFAULT_CONFIG.headerGroup),
         headerSolo: pick(MESSAGE_HEADERS, persisted.headerSolo, DEFAULT_CONFIG.headerSolo),
         composerLines: pick(COMPOSER_LINES, persisted.composerLines, DEFAULT_CONFIG.composerLines),
-        plusPinned,
+        plusPinned: normalizePlusPinned(persisted.plusPinned),
     };
 
     _store.setState(normalized);

@@ -14,11 +14,12 @@ import { QRBar } from './components/QRBar.js';
 import { MessageItem } from './components/MessageItem.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import type { SidebarForm } from './components/sidebar/Sidebar.js';
+import { ConfigPanel } from './components/config/ConfigPanel.js';
 import { Toaster } from './components/Toaster.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
 import { useAutoScroll, useChatuiSnapshot, useConfig, useRootDomEnhancements, useSidebarData } from './hooks.js';
-import { cycleChatuiSidebarForm, regenerateChatuiLast, setChatuiSidebarForm } from './actions.js';
+import { closeSettingsPanel, cycleChatuiSidebarForm, regenerateChatuiLast, setChatuiSidebarForm } from './actions.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
 
 let isSetup = false;
@@ -67,6 +68,7 @@ function ChatuiApp(): ComponentChild {
                 mobileOpen={isSidebarMobileOpen}
                 onClose={() => setIsSidebarMobileOpen(false)}
             />
+            <ConfigPanel />
             <section ref={rootRef} className="cui-root-app" aria-label="ChatUI message root">
                 <header className="cui-root-topbar">
                     <button
@@ -150,6 +152,9 @@ export function initChatuiRoot(): void {
 export function teardownChatuiRoot(): void {
     if (!isSetup) return;
 
+    // The ui-store is a module singleton that outlives the Preact tree, so reset
+    // the panel flag here — a disable→re-enable cycle should start with it closed.
+    closeSettingsPanel();
     rootApi?.unmount();
     rootEl?.removeAttribute('data-cui-root-mounted');
     rootEl?.replaceChildren();

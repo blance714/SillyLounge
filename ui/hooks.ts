@@ -4,6 +4,7 @@ import { getChatuiState, subscribeChatuiStore } from '../store/chat-store.js';
 import { getSidebarState, subscribeSidebarStore } from '../store/sidebar-store.js';
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
 import { getConfig, subscribeConfig } from '../store/config-store.js';
+import { getUiState, subscribeUiStore } from '../store/ui-store.js';
 import type { ChatuiMessage, ChatuiState, ChatuiSidebarState, ChatuiConfig } from './types.js';
 
 export function useConfig(): ChatuiConfig {
@@ -14,6 +15,17 @@ export function useConfig(): ChatuiConfig {
     }), []);
 
     return config;
+}
+
+/** Whether the ChatUI-native settings panel is currently open (ui-store). */
+export function useSettingsPanel(): boolean {
+    const [open, setOpen] = useState(() => getUiState().settingsPanelOpen);
+
+    useEffect(() => subscribeUiStore(() => {
+        setOpen(getUiState().settingsPanelOpen);
+    }), []);
+
+    return open;
 }
 
 export function useToasts(): ReturnType<typeof getToasts> {

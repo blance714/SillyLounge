@@ -8,28 +8,45 @@ import {
     regenerateChatuiLast,
     subscribeChatuiEvent,
     triggerChatuiWandItem,
+    PLUS_TOOL_IDS,
 } from '../actions.js';
 import { useConfig } from '../hooks.js';
 
 type WandItem = { id: string; label: string; iconHtml: string };
 
-type PlusTool = {
+/** Display metadata for one built-in composer tool (no behavior). */
+export type PlusToolMeta = {
     id: string;
     label: string;
     iconClass: string;
-    run: () => void;
 };
 
-// Built-in composer tools. Which ones surface as top tiles vs. list rows is
-// driven by config.plusPinned (DESIGN §4.3 ① 置顶磁贴). The pin/toggle/drag
-// EDITOR is deferred to the §7 config surface; this slice only renders from it.
-const TOOLS: PlusTool[] = [
-    { id: 'photos', label: '图片 / 视频', iconClass: 'fa-solid fa-image', run: () => openChatuiAttachmentPicker('image/*,video/*,audio/*') },
-    { id: 'files', label: '文件', iconClass: 'fa-solid fa-paperclip', run: () => openChatuiAttachmentPicker() },
-    { id: 'continue', label: '续写', iconClass: 'fa-solid fa-forward-step', run: () => continueChatuiGeneration() },
-    { id: 'impersonate', label: '代笔', iconClass: 'fa-solid fa-user-pen', run: () => impersonateChatui() },
-    { id: 'regenerate', label: '重新生成', iconClass: 'fa-solid fa-rotate', run: () => regenerateChatuiLast() },
-];
+type PlusTool = PlusToolMeta & { run: () => void };
+
+// Per-id presentation (label + icon). The id universe and order come from
+// PLUS_TOOL_IDS (config-store) — the same list that validates persisted plusPinned —
+// so the menu, the pin editor, and persistence can never disagree on which ids exist.
+const PLUS_TOOL_PRESENTATION: Record<string, { label: string; iconClass: string }> = {
+    photos: { label: '图片 / 视频', iconClass: 'fa-solid fa-image' },
+    files: { label: '文件', iconClass: 'fa-solid fa-paperclip' },
+    continue: { label: '续写', iconClass: 'fa-solid fa-forward-step' },
+    impersonate: { label: '代笔', iconClass: 'fa-solid fa-user-pen' },
+    regenerate: { label: '重新生成', iconClass: 'fa-solid fa-rotate' },
+};
+
+/** Built-in composer tools as ordered display metadata (shared with the pin editor). */
+export const PLUS_TOOL_META: PlusToolMeta[] = PLUS_TOOL_IDS.map(id => ({ id, ...PLUS_TOOL_PRESENTATION[id] }));
+
+/** Behavior for each tool id, kept local to the menu (the editor needs only meta). */
+const RUN_BY_ID: Record<string, () => void> = {
+    photos: () => openChatuiAttachmentPicker('image/*,video/*,audio/*'),
+    files: () => openChatuiAttachmentPicker(),
+    continue: () => continueChatuiGeneration(),
+    impersonate: () => impersonateChatui(),
+    regenerate: () => regenerateChatuiLast(),
+};
+
+const TOOLS: PlusTool[] = PLUS_TOOL_META.map(meta => ({ ...meta, run: RUN_BY_ID[meta.id] }));
 
 export function PlusMenu({
     topSlot,

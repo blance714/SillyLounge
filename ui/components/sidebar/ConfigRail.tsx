@@ -1,6 +1,6 @@
 import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { triggerChatuiShellAction } from '../../actions.js';
+import { openSettingsPanel, triggerChatuiShellAction } from '../../actions.js';
 import type { ShellAction } from '../../types.js';
 
 const CONFIG_ITEMS: Array<{ action: ShellAction; label: string; iconClass: string }> = [
@@ -24,6 +24,21 @@ export function ConfigRail({ onNavigate }: { onNavigate: () => void }): Componen
         <div className="cui-root-configrail">
             <span className="cui-root-section-label">配置</span>
             <div className="cui-root-configrail-icons" role="toolbar" aria-label="配置">
+                {/* ChatUI-native settings (独立配置面) — opens the in-app panel, not an
+                    ST drawer, so it sits ahead of the native-drawer icons with its own
+                    handler. */}
+                <button
+                    className="cui-root-configrail-btn cui-root-configrail-btn-chatui"
+                    type="button"
+                    aria-label="ChatUI 设置"
+                    title="ChatUI 设置"
+                    onClick={() => {
+                        openSettingsPanel();
+                        onNavigate();
+                    }}
+                >
+                    <i className="fa-solid fa-gear" />
+                </button>
                 {CONFIG_ITEMS.map(item => (
                     <button
                         key={item.action}

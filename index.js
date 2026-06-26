@@ -15,7 +15,7 @@ import { extension_settings } from '../../../extensions.js';
 import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { initSidebarStore, teardownSidebarStore } from './store/sidebar-store.js';
-import { initConfigStore, getConfig, setSidebarForm, setMessageHeader, setComposerLines, subscribeConfig, SIDEBAR_FORMS, MESSAGE_HEADERS, COMPOSER_LINES } from './store/config-store.js';
+import { initConfigStore } from './store/config-store.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 
@@ -33,51 +33,10 @@ const defaultSettings = {
     enabled: false,
 };
 
-/** Sidebar-form option labels for the settings select (values come from SIDEBAR_FORMS). */
-const SIDEBAR_FORM_LABELS = { list: '列表', block: '方块', icon: '纯图标' };
-
-/** Identity-header option labels for the settings selects (values come from MESSAGE_HEADERS). */
-const MESSAGE_HEADER_LABELS = { icon: '头像 + 名字', name: '仅名字', none: '无（纯净）' };
-
-/** Composer line-mode option labels (values come from COMPOSER_LINES). */
-const COMPOSER_LINES_LABELS = { multi: '多行', single: '单行' };
-
 // ── Internal state ────────────────────────────────────────────────────────────
 
 /** @type {boolean} */
 let isSetup = false;
-
-// ── Settings UI helpers ─────────────────────────────────────────────────────────
-
-/**
- * Build `<option>` markup from an ordered value list and a label map. Values are
- * the canonical store enums; the rendered text is the localized label.
- *
- * @param {string[]} values
- * @param {Record<string, string>} labels
- * @returns {string}
- */
-function optionsHtml(values, labels) {
-    return values.map(v => `<option value="${v}">${labels[v]}</option>`).join('');
-}
-
-/**
- * Wire a settings `<select>` to a config value, two-way: seed it, persist on
- * change, and re-sync when the value changes elsewhere. The panel lives for the
- * whole page, so the subscription is intentionally never torn down.
- *
- * @param {string} selectId
- * @param {() => string} read  Current persisted value.
- * @param {(value: string) => void} write  Persist a new value.
- * @returns {void}
- */
-function bindConfigSelect(selectId, read, write) {
-    const select = /** @type {HTMLSelectElement|null} */ (document.getElementById(selectId));
-    if (!select) return;
-    select.value = read();
-    select.addEventListener('change', () => write(select.value));
-    subscribeConfig(() => { select.value = read(); });
-}
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -168,34 +127,7 @@ function injectSettingsUI() {
                     <span>启用 ChatUI</span>
                 </label>
                 <div class="margin-bot-10px"></div>
-                <label class="checkbox_label" for="chatui_sidebar_form" title="侧边栏默认展示形式">
-                    <span>侧边栏形式</span>
-                </label>
-                <select id="chatui_sidebar_form" class="text_pole" style="margin-bottom:8px">
-                    ${optionsHtml(SIDEBAR_FORMS, SIDEBAR_FORM_LABELS)}
-                </select>
-                <div class="margin-bot-10px"></div>
-                <label class="checkbox_label" for="chatui_header_group" title="群聊里角色消息的身份标头">
-                    <span>群聊标头</span>
-                </label>
-                <select id="chatui_header_group" class="text_pole" style="margin-bottom:8px">
-                    ${optionsHtml(MESSAGE_HEADERS, MESSAGE_HEADER_LABELS)}
-                </select>
-                <div class="margin-bot-10px"></div>
-                <label class="checkbox_label" for="chatui_header_solo" title="单聊里角色消息的身份标头">
-                    <span>单聊标头</span>
-                </label>
-                <select id="chatui_header_solo" class="text_pole" style="margin-bottom:8px">
-                    ${optionsHtml(MESSAGE_HEADERS, MESSAGE_HEADER_LABELS)}
-                </select>
-                <div class="margin-bot-10px"></div>
-                <label class="checkbox_label" for="chatui_composer_lines" title="输入框单行 / 多行">
-                    <span>输入框行数</span>
-                </label>
-                <select id="chatui_composer_lines" class="text_pole" style="margin-bottom:8px">
-                    ${optionsHtml(COMPOSER_LINES, COMPOSER_LINES_LABELS)}
-                </select>
-                <div class="margin-bot-10px"></div>
+                <small class="opacity50p">界面 / 消息 / 输入框等设置已移入 ChatUI 内的「ChatUI 设置」面板。</small>
             </div>
         </div>
     `;
@@ -218,7 +150,10 @@ function injectSettingsUI() {
         drawerContent.style.display = 'none';
     }
 
-    // Enable toggle drives setup/teardown.
+    // Enable toggle drives setup/teardown. The per-feature config (sidebar form,
+    // message headers, composer lines, ＋menu pins) now lives in the in-app ChatUI
+    // settings panel (ui/components/config/ConfigPanel) — this native drawer keeps
+    // only the master enable toggle, the bootstrap that must exist while ChatUI is off.
     const enabledCb = /** @type {HTMLInputElement} */ (document.getElementById('chatui_enabled'));
     enabledCb.addEventListener('change', () => {
         const settings = getSettings();
@@ -230,14 +165,6 @@ function injectSettingsUI() {
             teardown();
         }
     });
-
-    // Config selects — each persistent via the config store and two-way synced:
-    // they write on change AND re-sync when the value changes elsewhere (e.g. the
-    // in-app sidebar cycle/summon), so the surfaces never disagree.
-    bindConfigSelect('chatui_sidebar_form', () => getConfig().sidebarForm, v => setSidebarForm(/** @type {any} */ (v)));
-    bindConfigSelect('chatui_header_group', () => getConfig().headerGroup, v => setMessageHeader('group', /** @type {any} */ (v)));
-    bindConfigSelect('chatui_header_solo', () => getConfig().headerSolo, v => setMessageHeader('solo', /** @type {any} */ (v)));
-    bindConfigSelect('chatui_composer_lines', () => getConfig().composerLines, v => setComposerLines(/** @type {any} */ (v)));
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
