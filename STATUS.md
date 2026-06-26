@@ -1,72 +1,86 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-06-23
+Last updated: 2026-06-27
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
+`ROADMAP.md` is the live completeness map + priority backlog.
 
 ---
 
 ## Current Architecture
 
 ChatUI loads as a SillyTavern third-party extension. The visible chat surface is
-ChatUI-owned: a Preact app mounted into `#chatui-root`, driven by a small store
-of view-model DTOs. SillyTavern keeps owning the runtime (persistence,
-generation, settings, events, file previews, native drawers); ChatUI never reads
-ST DOM as its model.
+ChatUI-owned: a Preact app mounted into `#chatui-root`, driven by small stores of
+view-model DTOs. SillyTavern keeps owning the runtime (persistence, generation,
+settings, events, file previews, native drawers); ChatUI never reads ST DOM as
+its model.
 
 ```text
 SillyTavern page/runtime
   |
   | manifest loads index.js + style.css
   v
-index.js  (enable toggle + settings UI + orchestration)
+index.js  (master enable toggle + setup/teardown orchestration)
   |
   +-- shield/st-dom-shield.js
   |     owns body.chatui-active, #chatui-root, and the shield level
   |     (parks native #chat / #send_form off-screen; promotes #chatui-root)
   |
-  +-- adapter/st-adapter.js
-  |     the ONLY module that touches ST internals (getContext, eventSource,
-  |     native send/edit pipelines, DOM-button fallbacks); returns plain DTOs
+  +-- adapter/  (the ONLY layer that touches ST internals)
+  |     st-adapter.js is the frozen facade; behavior split across
+  |     internals · messages · composer · media · menu · selectors ·
+  |     shell · chats · qr · config submodules; returns plain DTOs
   |
-  +-- store/chat-store.js + store/chat-actions.js
-  |     build ChatuiMessageDto objects from the adapter; expose user-intent actions
+  +-- store/  (ST-free observable view-model, createStore factory)
+  |     chat · sidebar · config · ui · toast stores + *-actions facades
   |
   +-- ui/root.js -> dist/root-app.mjs
-        Preact/compat app built from ui/app.tsx
+        Preact/compat app built from ui/app.tsx; reads stores via hooks,
+        mutates via the ui/actions.ts barrel
 ```
 
-There is now **one** architecture. The earlier Phase 1/2 approach (reshaping
-native `#send_form` and decorating native `#chat .mes` in place) has been
-removed — see "Legacy cleanup" below.
+There is **one** architecture. The earlier Phase 1/2 approach (reshaping native
+`#send_form` and decorating native `#chat .mes` in place) was removed in the
+2026-06-23 legacy cleanup; `CONTRACT.md` / `CONTRACT-P2.md` are retained as
+SUPERSEDED historical records.
 
 ---
 
 ## Source Layout
 
 ```text
-index.js                  entry: enable toggle, settings UI, setup/teardown
+index.js                  entry: master enable toggle + setup/teardown
 manifest.json             extension descriptor
 style.css                 :root vars + shield rules + .cui-root-* app styles
-adapter/
-  st-adapter.js           ST runtime boundary (context, events, fallbacks, DTOs)
-store/
-  chat-store.js           ChatuiMessageDto store + event subscriptions
-  chat-actions.js         store-facing action facade
+adapter/                  ST runtime boundary — facade + per-domain submodules
+  st-adapter.js           frozen facade (groups the submodule actions)
+  internals.js            shared ST context / event / dispatch helpers
+  messages.js  composer.js  media.js  menu.js  selectors.js
+  shell.js     chats.js     qr.js     config.js
+store/                    ST-free observable view-model (createStore factory)
+  create-store.js         tiny observable store primitive
+  chat-store.js / chat-actions.js
+  sidebar-store.js / sidebar-actions.js
+  config-store.js         persisted per-feature config (via adapter/config.js)
+  ui-store.js             ephemeral session UI state (settings-panel open)
+  toast-store.js          ChatUI feedback layer
 shield/
   st-dom-shield.js        #chatui-root + body.chatui-active + shield levels
 ui/
-  app.tsx                 root Preact shell
+  app.tsx                 root Preact shell (sidebar | config panel | chat)
   root.js                 stable runtime wrapper for dist/root-app.mjs
-  actions.ts / hooks.ts / format.ts / types.ts
+  actions.ts hooks.ts format.ts types.ts
   components/
-    Composer.tsx  MessageItem.tsx  ShellDrawer.tsx
-    message/
-      ActionButton  MenuItem  MessageActions  MessageAvatar
-      MessageEditor  MessageMedia  MessageReasoning
+    Composer  PlusMenu  QRBar  SelectorChip  AttachmentChips
+    MessageItem  TopbarMenu  ConfirmDialog  Toaster
+    sidebar/  Sidebar ConversationList ChatRow CharacterSwitcher
+              NewChatButton ConfigRail
+    config/   ConfigPanel ConfigSelect PlusPinEditor
+    message/  ActionButton MenuItem MessageActions MessageAvatar
+              MessageEditor MessageMedia MessageReasoning
 scripts/                  build / dev / runtime-sync tooling
-dist/                     generated browser bundle (gitignored on main)
+dist/                     generated browser bundle (gitignored)
 ```
 
 The extension installer does not build plugins. Authored Preact/TSX is bundled
@@ -77,87 +91,50 @@ tree into `.runtime/SillyTavern-ChatUI`.
 
 ## Ownership Boundary
 
-ChatUI owns: the visible message list, message body/media/reasoning rendering,
-inline edit surface, primary composer, root topbar, and the shell drawer.
+ChatUI owns: the sidebar navigation center, the root topbar, the visible message
+list, message body/media/reasoning rendering, the inline edit surface, the
+composer (＋menu, selector chips, attachment chips, QR bar), the toast feedback
+layer, and the ChatUI-native settings panel.
 
 SillyTavern still owns: chat persistence, generation/regeneration, settings,
-extension events, file previews, and all native drawer panel contents. The
-native `#chat` and `#send_form` stay **alive in the DOM** (parked off-screen by
-the shield) because ST render/update/send/edit semantics still flow through
-them; the adapter bridges ChatUI intents into those native pipelines.
+extension events, file previews, and all native drawer panel contents. The native
+`#chat` and `#send_form` stay alive in the DOM (parked off-screen by the shield)
+because ST render/update/send/edit semantics still flow through them; the adapter
+bridges ChatUI intents into those native pipelines.
 
 ### Rules
 
 - UI code must not import ST core modules or read ST DOM as state.
-- Only `adapter/st-adapter.js` may touch ST internals or dispatch native DOM.
+- Only the `adapter/` layer may touch ST internals or dispatch native DOM.
 - The store must not know ST selectors; the adapter must not import the store.
+- Bundled UI reaches the store only through `ui/actions.ts` / `ui/hooks.ts`
+  (esbuild marks `../store/*` external relative to the `ui/app.tsx` entry, so a
+  deep component importing `../../../store/*` would wrongly bundle the ST graph).
 - `dist/` is generated; authored UI changes belong in `ui/`.
 
 ---
 
-## Legacy cleanup (2026-06-23)
+## Where things stand
 
-Removed the transitional Phase 1/2 DOM-reshaping layer, which had been
-superseded by the shield + store + Preact root and was running invisibly behind
-the shield:
+Five-region north star ≈70% (see `ROADMAP.md` for the per-region map). The sidebar
+navigation center, content area, composer, and topbar trunks are closed-loop on
+real ST export functions — delete / swipe / rename / chat-switch are no longer
+simulated clicks. The config system now has a ChatUI-native settings panel
+(独立配置面: desktop push-aside column / mobile full-screen takeover) holding the
+migrated per-feature settings plus the first §7 editor (the ＋menu pin editor).
 
-- **Deleted modules**: `composer.js`, `plus-menu.js`, `selector.js`, `qr.js`,
-  `message-layout.js`, `message-actions.js`, `message-extras.js`,
-  `chat-chrome.js`.
-- **`index.js`**: orchestration reduced to `shield → store → root`; settings
-  collapsed to a single enable toggle (the Phase 1/2 settings — `composerMode`,
-  `selectorBKind`, identity headers, code header, scroll/regen buttons — drove
-  the removed modules and consumed nothing else).
-- **`style.css`**: dropped the Phase 1 composer CSS and the Phase 2 `.mes`
-  decoration CSS; kept `:root`, the shield rules, and the `.cui-root-*` app
-  styles (~1970 → ~720 lines).
-- **`scripts/runtime.mjs`**: dropped the deleted files from the sync lists.
-- The two build contracts (`CONTRACT.md`, `CONTRACT-P2.md`) are retained as
-  historical records with a SUPERSEDED banner.
+`ROADMAP.md` is the authoritative priority backlog. Current top items:
+
+- **Mobile full-screen tab + back** — the biggest M-A UX gap; the settings panel's
+  mobile takeover establishes the pattern to reuse.
+- **§7 config deepening** — selector-slot placement, ＋menu drag-reorder editor.
+- **Remaining sim-click write paths** (`#options` / drawers) → ST exports.
+- Group-chat conversation list, search 🔍, Mode B global list.
 
 ---
 
-## Known Deferred Work
+## Live-test status
 
-Features the removed Phase 1/2 modules nominally covered now need first-class
-re-implementation inside the Preact root (they were already non-functional under
-the shield, so nothing visible regressed):
-
-- Plus (`+`) menu: attachments, continue/impersonate, wand/extension tools.
-- Selector chips (preset / model / persona) in the composer or topbar.
-- QR (quick-reply) shortcut surface above the composer.
-- Identity-header configuration (group vs single: icon / name / none).
-- Composer attachment chips and queued-attachment state.
-- Toast/error feedback owned by ChatUI instead of console/native feedback.
-- ChatUI-owned drawer contents (character list, chat list, settings panels).
-- Media caption/delete/gallery-swipe controls.
-- Reasoning-specific edit controls.
-- Direct adapter/API send + edit paths that no longer need the hidden native
-  DOM bridge.
-- Visual Playwright pass across desktop/mobile once a stable local ST test state
-  exists.
-
----
-
-## Suggested Next Milestones
-
-### H1: ChatUI Feedback Layer
-Add a small toast/error store and root component. Route send/edit/copy/media
-errors through it before expanding more UI.
-
-### H2: ChatUI Character Drawer
-Replace the first native drawer content with a ChatUI-owned character list:
-adapter character DTOs, search/filter, current-character state, switch actions.
-
-### H3: Composer Attachments + Plus Menu
-Bring the `+` menu and attachment chips into the root composer (attachments,
-continue/impersonate, wand tools) while still using ST's file/persistence
-pipeline.
-
-### H4: Media Controls
-Add root media gallery swipes, captions, and delete actions through adapter
-fallbacks.
-
-### H5: Drawer Routing
-Introduce explicit root drawer route state so Characters, Chats, Settings, and
-Extensions become ChatUI pages rather than buttons that only open native panels.
+Verified live: delete, swipe, scroll guard, layout, config-panel persistence.
+Still owed: continue / impersonate / regenerate (`#options` sim-click), stop, and
+the full switch-character / new / rename / delete-chat chain.
