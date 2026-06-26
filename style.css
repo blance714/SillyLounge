@@ -423,6 +423,155 @@ body.chatui-active .cui-root-configrail-btn:focus-visible {
     outline: none;
 }
 
+/* The ChatUI-native settings gear is accented apart from the 7 ST-drawer icons. */
+body.chatui-active .cui-root-configrail-btn-chatui {
+    color: var(--SmartThemeQuoteColor);
+    border-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 35%, transparent);
+    opacity: 1;
+}
+
+/* ── Config panel (独立配置面) ────────────────────────────────────────────────
+   ChatUI-native settings surface. Base styles = mobile full-screen takeover; the
+   desktop @media block below turns it into an in-flow push-aside column so the
+   chat (.cui-root-app, flex:1 min-width:0) shrinks but stays visible. Rendered
+   only while open (component returns null when closed), so it costs no layout. */
+body.chatui-active .cui-root-configpanel {
+    position: fixed;
+    inset: 0;
+    z-index: calc(var(--cui-sheet-z) + 40);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    box-sizing: border-box;
+    background-color: var(--SmartThemeBlurTintColor);
+    backdrop-filter: blur(12px);
+    color: var(--SmartThemeBodyColor);
+    font-family: var(--mainFontFamily);
+}
+
+body.chatui-active .cui-root-configpanel-header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.6rem 0.7rem;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+}
+
+body.chatui-active .cui-root-configpanel-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    opacity: 0.85;
+}
+
+body.chatui-active .cui-root-configpanel-back:hover,
+body.chatui-active .cui-root-configpanel-back:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-configpanel-title {
+    font-weight: 700;
+    font-size: calc(var(--mainFontSize) * 1);
+}
+
+body.chatui-active .cui-root-configpanel-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.5rem 0.7rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+body.chatui-active .cui-root-config-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding-bottom: 0.5rem;
+}
+
+body.chatui-active .cui-root-config-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    padding: 0.25rem 0;
+    cursor: pointer;
+}
+
+body.chatui-active .cui-root-config-row-label {
+    font-size: calc(var(--mainFontSize) * 0.88);
+    opacity: 0.85;
+}
+
+body.chatui-active .cui-root-config-select {
+    width: 100%;
+}
+
+body.chatui-active .cui-root-config-hint {
+    margin: 0 0 0.3rem;
+    font-size: calc(var(--mainFontSize) * 0.78);
+    opacity: 0.55;
+}
+
+body.chatui-active .cui-root-pin-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+body.chatui-active .cui-root-pin-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.5rem;
+    cursor: pointer;
+}
+
+body.chatui-active .cui-root-pin-row:has(.cui-root-pin-check:disabled) {
+    opacity: 0.45;
+    cursor: default;
+}
+
+body.chatui-active .cui-root-pin-icon {
+    width: 1.2rem;
+    text-align: center;
+    opacity: 0.8;
+}
+
+body.chatui-active .cui-root-pin-label {
+    flex: 1 1 auto;
+}
+
+body.chatui-active .cui-root-pin-check {
+    flex: 0 0 auto;
+    cursor: inherit;
+}
+
+/* Desktop: in-flow push-aside column between the sidebar and the chat. */
+@media (min-width: 769px) {
+    body.chatui-active .cui-root-configpanel {
+        position: static;
+        inset: auto;
+        z-index: auto;
+        flex: 0 0 clamp(18rem, 26vw, 24rem);
+        backdrop-filter: none;
+        border-right: 1px solid var(--SmartThemeBorderColor);
+    }
+}
+
 /* ── Region 5 · conversation list (下段) ─────────────────────────────────────── */
 
 body.chatui-active .cui-root-convlist {
