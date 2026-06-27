@@ -7,6 +7,7 @@ export {
     impersonateChatui,
     listChatuiQuickReplies,
     listChatuiWandItems,
+    mountChatuiStDrawer,   /* TEMP M-G S0 POC */
     notifyChatui,
     openChatuiAttachmentPicker,
     openChatuiMessageFile,
@@ -26,6 +27,7 @@ export {
     triggerChatuiQuickReply,
     triggerChatuiShellAction,
     triggerChatuiWandItem,
+    unmountChatuiStDrawer, /* TEMP M-G S0 POC */
 } from '../store/chat-actions.js';
 
 export {

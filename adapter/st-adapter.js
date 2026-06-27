@@ -91,6 +91,10 @@ import {
     triggerQuickReply,
     subscribeQuickReplies,
 } from './qr.js';
+import {
+    mountStDrawer,
+    unmountStDrawer,
+} from './settings.js';
 
 export { stEventKeys } from './internals.js';
 
@@ -177,5 +181,9 @@ export const chatuiAdapter = Object.freeze({
         listQuickReplies,
         triggerQuickReply,
         subscribeQuickReplies,
+    }),
+    settingsActions: Object.freeze({
+        mountDrawer: mountStDrawer,
+        unmountDrawer: unmountStDrawer,
     }),
 });
