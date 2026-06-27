@@ -246,3 +246,26 @@ export function notifyChatui(kind, text, ttl) {
 export function dismissChatuiToast(id) {
     dismissToast(id);
 }
+
+// ---------------------------------------------------------------------------
+// Embed-engine: relocate / restore live ST drawer-content nodes   /* TEMP M-G S0 POC */
+// ---------------------------------------------------------------------------
+
+/**
+ * Move a live ST .drawer-content node into a ChatUI-owned host element.
+ * @param {string} drawerContentId  id of the .drawer-content element
+ * @param {Element} hostEl          ChatUI host container
+ * @returns {boolean}
+ */
+export function mountChatuiStDrawer(drawerContentId, hostEl) { /* TEMP M-G S0 POC */
+    return chatuiAdapter.settingsActions.mountDrawer(drawerContentId, hostEl);
+}
+
+/**
+ * Restore a previously-mounted ST .drawer-content node to its original position.
+ * @param {string} drawerContentId  id of the .drawer-content element
+ * @returns {boolean}
+ */
+export function unmountChatuiStDrawer(drawerContentId) { /* TEMP M-G S0 POC */
+    return chatuiAdapter.settingsActions.unmountDrawer(drawerContentId);
+}

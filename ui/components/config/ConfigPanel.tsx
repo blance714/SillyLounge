@@ -1,4 +1,4 @@
-import React, { useEffect } from 'preact/compat';
+import React, { useEffect, useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { ConfigSelect } from './ConfigSelect.js';
 import type { ConfigSelectOption } from './ConfigSelect.js';
@@ -6,9 +6,11 @@ import { PlusPinEditor } from './PlusPinEditor.js';
 import { useConfig, useSettingsPanel } from '../../hooks.js';
 import {
     closeSettingsPanel,
+    mountChatuiStDrawer,   /* TEMP M-G S0 POC */
     setChatuiSidebarForm,
     setChatuiMessageHeader,
     setChatuiComposerLines,
+    unmountChatuiStDrawer, /* TEMP M-G S0 POC */
     SIDEBAR_FORMS,
     MESSAGE_HEADERS,
     COMPOSER_LINES,
@@ -28,6 +30,9 @@ const SIDEBAR_FORM_OPTIONS = toOptions(SIDEBAR_FORMS, SIDEBAR_FORM_LABELS);
 const MESSAGE_HEADER_OPTIONS = toOptions(MESSAGE_HEADERS, MESSAGE_HEADER_LABELS);
 const COMPOSER_LINES_OPTIONS = toOptions(COMPOSER_LINES, COMPOSER_LINES_LABELS);
 
+// TEMP M-G S0 POC — drawer id under test
+const POC_DRAWER_ID = 'user-settings-block'; /* TEMP M-G S0 POC */
+
 /**
  * ChatUI-native settings panel (独立配置面). Desktop: an in-flow push-aside column
  * between the sidebar and the chat (the chat shrinks but stays visible). Mobile: a
@@ -39,6 +44,29 @@ const COMPOSER_LINES_OPTIONS = toOptions(COMPOSER_LINES, COMPOSER_LINES_LABELS);
 export function ConfigPanel(): ComponentChild {
     const open = useSettingsPanel();
     const config = useConfig();
+
+    // TEMP M-G S0 POC — embed-engine test state
+    const [pocActive, setPocActive] = useState(false); /* TEMP M-G S0 POC */
+    const pocHostRef = useRef<HTMLDivElement>(null);   /* TEMP M-G S0 POC */
+
+    // TEMP M-G S0 POC — unmount on panel close to avoid orphaning the node
+    useEffect(() => { /* TEMP M-G S0 POC */
+        if (!open && pocActive) { /* TEMP M-G S0 POC */
+            unmountChatuiStDrawer(POC_DRAWER_ID); /* TEMP M-G S0 POC */
+            setPocActive(false); /* TEMP M-G S0 POC */
+        } /* TEMP M-G S0 POC */
+    }, [open, pocActive]); /* TEMP M-G S0 POC */
+
+    // TEMP M-G S0 POC — toggle handler
+    function handlePocToggle() { /* TEMP M-G S0 POC */
+        if (pocActive) { /* TEMP M-G S0 POC */
+            unmountChatuiStDrawer(POC_DRAWER_ID); /* TEMP M-G S0 POC */
+            setPocActive(false); /* TEMP M-G S0 POC */
+        } else if (pocHostRef.current) { /* TEMP M-G S0 POC */
+            const ok = mountChatuiStDrawer(POC_DRAWER_ID, pocHostRef.current); /* TEMP M-G S0 POC */
+            if (ok) setPocActive(true); /* TEMP M-G S0 POC */
+        } /* TEMP M-G S0 POC */
+    } /* TEMP M-G S0 POC */
 
     // Escape closes the panel (mirrors ConfirmDialog). Bound only while open.
     useEffect(() => {
@@ -102,6 +130,26 @@ export function ConfigPanel(): ComponentChild {
                     />
                 </div>
                 <PlusPinEditor />
+                {/* TEMP M-G S0 POC — embed-engine test surface — remove in S2 */}
+                <div className="cui-root-config-group">
+                    <span className="cui-root-section-label">{'🧪 嵌入引擎 POC' /* TEMP M-G S0 POC */}</span>
+                    <button
+                        type="button"
+                        className="menu_button"
+                        onClick={handlePocToggle}
+                        title={pocActive ? '点击恢复到 ST 原位' : '点击将用户设置嵌入此面板'}
+                    >
+                        {/* TEMP M-G S0 POC */}
+                        {pocActive ? '↩ 还原：用户设置' : '🧪 嵌入 POC：用户设置'}
+                    </button>
+                    {/* TEMP M-G S0 POC — always-mounted host; ref is stable across re-renders */}
+                    <div
+                        className="cui-settings-pane"
+                        ref={pocHostRef}
+                        style={pocActive ? undefined : { display: 'none' }}
+                    />
+                </div>
+                {/* END TEMP M-G S0 POC */}
             </div>
         </aside>
     );

@@ -2117,3 +2117,37 @@ body.chatui-active .cui-root-qrbar-label {
     pointer-events: none;
 }
 
+/* ---------------------------------------------------------------------------
+   TEMP M-G S0 POC — embed-engine host + drawer-content flatten
+   Remove this block in S2 once SettingsContent owns these rules permanently.
+   --------------------------------------------------------------------------- */
+
+/* Host container for an embedded ST drawer-content */
+body.chatui-active .cui-settings-pane { /* TEMP M-G S0 POC */
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    overflow-y: auto;
+    box-sizing: border-box;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 0.375rem;
+    padding: 0.5rem;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
+}
+
+/* Flatten all ST positioning so .drawer-content fills its host naturally */
+body.chatui-active .cui-settings-pane .drawer-content { /* TEMP M-G S0 POC */
+    position: static !important;
+    inset: auto !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    min-width: 0 !important;
+    display: block !important;
+    overflow-y: auto !important;
+}
+
