@@ -16,6 +16,7 @@ import { saveSettingsDebounced, eventSource, event_types } from '../../../../scr
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { initSidebarStore, teardownSidebarStore } from './store/sidebar-store.js';
 import { initConfigStore } from './store/config-store.js';
+import { initTempChatStore } from './store/temp-chat-store.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 
@@ -180,6 +181,7 @@ function init() {
     // panel as well as the (conditionally-mounted) Preact root, so it lives for the
     // whole page — intentionally NOT tied to setup()/teardown().
     initConfigStore();
+    initTempChatStore();
     injectSettingsUI();
     if (settings.enabled) setup();
 }

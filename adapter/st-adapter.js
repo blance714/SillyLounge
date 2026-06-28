@@ -74,11 +74,16 @@ import {
 } from './selectors.js';
 import {
     deleteCharacterChat,
+    deleteChatFileIfSafe,
     getCurrentChatHeader,
+    getCurrentChatIdentity,
     listCharacterChats,
     listCharacters,
+    listCharacterConversations,
+    listChatsForCharacter,
     newCharacterChat,
     openCharacterChatByName,
+    openChatForCharacter,
     renameCharacterChat,
     switchCharacter,
 } from './chats.js';
@@ -94,6 +99,7 @@ import {
 import {
     mountStDrawer,
     unmountStDrawer,
+    listStSettingsEntries,
 } from './settings.js';
 
 export { stEventKeys } from './internals.js';
@@ -109,6 +115,7 @@ export const chatuiAdapter = Object.freeze({
     formatMessageHtml,
     getGenerationState,
     getIsGroupChat,
+    getCurrentChatIdentity,
     subscribe,
     scrollChatToBottom,
     composerActions: Object.freeze({
@@ -168,10 +175,15 @@ export const chatuiAdapter = Object.freeze({
         switchCharacter,
         listCharacterChats,
         getCurrentChatHeader,
+        getCurrentChatIdentity,
         openCharacterChatByName,
         newCharacterChat,
         renameCharacterChat,
         deleteCharacterChat,
+        deleteChatFileIfSafe,
+        listCharacterConversations,
+        listChatsForCharacter,
+        openChatForCharacter,
     }),
     configActions: Object.freeze({
         read,
@@ -185,5 +197,6 @@ export const chatuiAdapter = Object.freeze({
     settingsActions: Object.freeze({
         mountDrawer: mountStDrawer,
         unmountDrawer: unmountStDrawer,
+        listEntries: listStSettingsEntries,
     }),
 });

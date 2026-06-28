@@ -5,6 +5,7 @@ import { getSidebarState, subscribeSidebarStore } from '../store/sidebar-store.j
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
 import { getConfig, subscribeConfig } from '../store/config-store.js';
 import { getUiState, subscribeUiStore } from '../store/ui-store.js';
+import { getTempChat, subscribeTempChatStore } from './actions.js';
 import type { ChatuiMessage, ChatuiState, ChatuiSidebarState, ChatuiConfig } from './types.js';
 
 export function useConfig(): ChatuiConfig {
@@ -17,15 +18,22 @@ export function useConfig(): ChatuiConfig {
     return config;
 }
 
-/** Whether the ChatUI-native settings panel is currently open (ui-store). */
-export function useSettingsPanel(): boolean {
-    const [open, setOpen] = useState(() => getUiState().settingsPanelOpen);
+/** Shape returned by useSettings; matches ChatuiUiState from store/ui-store.js. */
+export type SettingsModeState = { settingsOpen: boolean; activeSettingsId: string | null };
+
+/** Reactive read of the full settings mode state (settingsOpen + activeSettingsId). */
+export function useSettings(): SettingsModeState {
+    const [state, setState] = useState<SettingsModeState>(() => ({
+        settingsOpen: getUiState().settingsOpen,
+        activeSettingsId: getUiState().activeSettingsId,
+    }));
 
     useEffect(() => subscribeUiStore(() => {
-        setOpen(getUiState().settingsPanelOpen);
+        const s = getUiState();
+        setState({ settingsOpen: s.settingsOpen, activeSettingsId: s.activeSettingsId });
     }), []);
 
-    return open;
+    return state;
 }
 
 export function useToasts(): ReturnType<typeof getToasts> {
@@ -52,6 +60,26 @@ export function useChatuiSnapshot(): ChatuiState {
     }), []);
 
     return state;
+}
+
+export function useTempChat(): ReturnType<typeof getTempChat> {
+    const [tempChat, setTempChat] = useState(() => getTempChat());
+
+    useEffect(() => subscribeTempChatStore(() => {
+        setTempChat(getTempChat());
+    }), []);
+
+    return tempChat;
+}
+
+export function useIsTempChatActive(): boolean {
+    const state = useChatuiSnapshot();
+    const tempChat = useTempChat();
+    const current = state.chat.currentChat;
+    return !!current
+        && !!tempChat
+        && current.avatar === tempChat.avatar
+        && current.fileName === tempChat.fileName;
 }
 
 export function useRootDomEnhancements(

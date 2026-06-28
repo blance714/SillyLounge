@@ -2,8 +2,7 @@
  * SillyTavern-ChatUI · config store
  *
  * Thin persistent config layer backed by ST extension_settings (via adapter).
- * Currently tracks exactly one feature: sidebarForm — so the sidebar keeps its
- * last form ('list' | 'block' | 'icon') across page reloads.
+ * Tracks visual/UX preferences that survive page reloads.
  *
  * Shape is intentionally minimal. New config keys should be added here, never
  * directly to other stores.
@@ -13,10 +12,6 @@ import { chatuiAdapter } from '../adapter/st-adapter.js';
 import { createStore } from './create-store.js';
 
 // ── Types (JSDoc) ─────────────────────────────────────────────────────────────
-
-/**
- * @typedef {'list'|'block'|'icon'} SidebarFormValue
- */
 
 /**
  * Identity-header density for character messages (DESIGN §5.A):
@@ -33,7 +28,6 @@ import { createStore } from './create-store.js';
 
 /**
  * @typedef {object} ChatuiConfig
- * @property {SidebarFormValue} sidebarForm
  * @property {MessageHeaderValue} headerGroup Header mode used in group chats.
  * @property {MessageHeaderValue} headerSolo  Header mode used in solo chats.
  * @property {ComposerLinesValue} composerLines Composer single/multi-line mode.
@@ -41,14 +35,6 @@ import { createStore } from './create-store.js';
  */
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-
-/**
- * Canonical ordered list of sidebar forms — the single source of truth for the
- * default value, validation, and the UI cycle order. The matching literal type
- * (SidebarForm) lives in ui/components/sidebar/Sidebar.tsx; keep the two in sync.
- * @type {SidebarFormValue[]}
- */
-export const SIDEBAR_FORMS = ['list', 'block', 'icon'];
 
 /**
  * Canonical ordered list of identity-header modes — single source of truth for
@@ -84,7 +70,6 @@ export const PLUS_PIN_CAP = 4;
  * @type {ChatuiConfig}
  */
 const DEFAULT_CONFIG = {
-    sidebarForm: SIDEBAR_FORMS[0],
     headerGroup: 'icon',
     headerSolo: 'none',
     composerLines: 'multi',
@@ -158,15 +143,6 @@ export function setConfigValue(key, value) {
 }
 
 /**
- * Set the sidebar form directly (e.g. the hamburger always summons 'list').
- * @param {SidebarFormValue} form
- * @returns {void}
- */
-export function setSidebarForm(form) {
-    setConfigValue('sidebarForm', form);
-}
-
-/**
  * Set the identity-header mode for one chat scope. Group and solo chats keep
  * independent settings, so the active mode is chosen per chat type at render.
  * @param {'group'|'solo'} scope
@@ -198,18 +174,6 @@ export function setPlusPinned(ids) {
 }
 
 /**
- * Advance the sidebar form to the next in SIDEBAR_FORMS order, reading the
- * freshest persisted value (not a captured render value) so rapid cycles never
- * drop a step.
- * @returns {void}
- */
-export function cycleSidebarForm() {
-    const current = getConfig().sidebarForm;
-    const next = SIDEBAR_FORMS[(SIDEBAR_FORMS.indexOf(current) + 1) % SIDEBAR_FORMS.length];
-    setConfigValue('sidebarForm', next);
-}
-
-/**
  * Load the persisted config from ST extension_settings (via adapter), normalise
  * it against DEFAULT_CONFIG (drop unknown keys, fill missing, coerce invalid
  * enum values to their defaults), and push the result into the store.
@@ -227,7 +191,6 @@ export function initConfigStore() {
 
     /** @type {ChatuiConfig} */
     const normalized = {
-        sidebarForm: pick(SIDEBAR_FORMS, persisted.sidebarForm, DEFAULT_CONFIG.sidebarForm),
         headerGroup: pick(MESSAGE_HEADERS, persisted.headerGroup, DEFAULT_CONFIG.headerGroup),
         headerSolo: pick(MESSAGE_HEADERS, persisted.headerSolo, DEFAULT_CONFIG.headerSolo),
         composerLines: pick(COMPOSER_LINES, persisted.composerLines, DEFAULT_CONFIG.composerLines),

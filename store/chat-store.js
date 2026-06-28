@@ -8,6 +8,7 @@
 
 import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
 import { createStore } from './create-store.js';
+import { clearTempChat, getTempChat } from './temp-chat-store.js';
 
 /**
  * @typedef {object} ChatuiMessageDto
@@ -30,13 +31,14 @@ import { createStore } from './create-store.js';
  * @property {{ isLast: boolean, canShowCharActions: boolean, canShowUserMenu: boolean, canShowSwipe: boolean, needsGenerate: boolean }} ui
  */
 
-/** @type {{ chat: { messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, chatKey: string, isGroup: boolean, isGenerating: boolean, lastMessageNeedsGenerate: boolean }, ui: object }} */
+/** @type {{ chat: { messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, chatKey: string, currentChat: { avatar: string, fileName: string }|null, isGroup: boolean, isGenerating: boolean, lastMessageNeedsGenerate: boolean }, ui: object }} */
 const _initialState = {
     chat: {
         messages: [],
         byId: {},
         lastMessageId: null,
         chatKey: '',
+        currentChat: null,
         isGroup: false,
         isGenerating: false,
         lastMessageNeedsGenerate: false,
@@ -174,6 +176,10 @@ export function getChatuiState() {
     return _store.getState();
 }
 
+export function getChatuiCurrentChatIdentity() {
+    return chatuiAdapter.getCurrentChatIdentity();
+}
+
 /**
  * @returns {Array<ChatuiMessageDto>}
  */
@@ -228,6 +234,7 @@ export function refreshChatuiStore() {
     const rawMessages = chatuiAdapter.getCurrentChat();
     const messageState = _buildMessageDtos(rawMessages);
     const state = getChatuiState();
+    const isGroup = chatuiAdapter.getIsGroupChat();
 
     _store.setState({
         ...state,
@@ -236,7 +243,8 @@ export function refreshChatuiStore() {
             byId: messageState.byId,
             lastMessageId: messageState.lastMessageId,
             chatKey: chatuiAdapter.getCurrentChatKey(),
-            isGroup: chatuiAdapter.getIsGroupChat(),
+            currentChat: chatuiAdapter.getCurrentChatIdentity(),
+            isGroup,
             isGenerating: chatuiAdapter.getGenerationState().isGenerating,
             lastMessageNeedsGenerate: messageState.lastMessageNeedsGenerate,
         },
@@ -286,6 +294,17 @@ export function refreshChatuiMessage(messageId) {
 }
 
 /**
+ * @returns {void}
+ */
+function _clearTempChatIfCurrent() {
+    const current = chatuiAdapter.getCurrentChatIdentity();
+    const tempChat = getTempChat();
+    if (current && tempChat && current.avatar === tempChat.avatar && current.fileName === tempChat.fileName) {
+        clearTempChat();
+    }
+}
+
+/**
  * Coalesce the per-token STREAM_TOKEN_RECEIVED burst into at most one
  * last-message refresh per animation frame, so streamed text renders live in
  * the ChatUI surface without a full-chat rebuild per token.
@@ -312,12 +331,20 @@ export function initChatuiStore() {
     const refreshNow = () => refreshChatuiStore();
     const refreshSoon = () => setTimeout(() => refreshChatuiStore(), 0);
     const refreshMessage = messageId => refreshChatuiMessage(messageId);
+    const refreshSentMessage = messageId => {
+        _clearTempChatIfCurrent();
+        refreshChatuiMessage(messageId);
+    };
+    const refreshUpdatedMessage = messageId => {
+        _clearTempChatIfCurrent();
+        refreshChatuiMessage(messageId);
+    };
     _unsubscribers = [
         chatuiAdapter.subscribe(stEventKeys.CHAT_CHANGED, refreshSoon),
         chatuiAdapter.subscribe(stEventKeys.CHAT_LOADED, refreshNow),
         chatuiAdapter.subscribe(stEventKeys.MORE_MESSAGES_LOADED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SENT, refreshMessage),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_UPDATED, refreshMessage),
+        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SENT, refreshSentMessage),
+        chatuiAdapter.subscribe(stEventKeys.MESSAGE_UPDATED, refreshUpdatedMessage),
         chatuiAdapter.subscribe(stEventKeys.MESSAGE_SWIPED, refreshMessage),
         chatuiAdapter.subscribe(stEventKeys.MESSAGE_DELETED, refreshNow),
         chatuiAdapter.subscribe(stEventKeys.CHARACTER_MESSAGE_RENDERED, refreshMessage),

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'preact/compat';
+import React, { useCallback, useEffect, useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
     getChatuiSelectorOptions,
@@ -19,14 +19,28 @@ const KIND_ICON: Record<SelectorKind, string> = {
 function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): ComponentChild {
     const [isOpen, setIsOpen] = useState(false);
     const [options, setOptions] = useState<SelectorOption[]>([]);
+    const mountedRef = useRef(false);
+    const requestIdRef = useRef(0);
 
     const refresh = useCallback(async () => {
+        const requestId = ++requestIdRef.current;
         try {
-            setOptions(await getChatuiSelectorOptions(kind));
+            const nextOptions = await getChatuiSelectorOptions(kind);
+            if (!mountedRef.current || requestId !== requestIdRef.current) return;
+            setOptions(nextOptions);
         } catch (error) {
+            if (!mountedRef.current || requestId !== requestIdRef.current) return;
             console.error('[ChatUI] selector refresh failed', error);
         }
     }, [kind]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            requestIdRef.current += 1;
+        };
+    }, []);
 
     useEffect(() => {
         void refresh();
