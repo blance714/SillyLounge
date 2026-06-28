@@ -88,6 +88,12 @@ body.chatui-active.chatui-composer-surface-shielded #send_form {
     clip-path: inset(50%);
 }
 
+body.chatui-active #top-bar,
+body.chatui-active #top-settings-holder,
+body.chatui-active #rightNavHolder {
+    display: none !important;
+}
+
 /* ---------------------------------------------------------------------------
    3. ChatUI root app  (Preact, mounted into #chatui-root)
    Topbar, shell drawer, message list, message body/media/reasoning, inline
@@ -232,27 +238,6 @@ body.chatui-active .cui-root-sidebar.is-mobile-open {
     transform: translateX(0);
 }
 
-body.chatui-active .cui-root-sidebar-collapse {
-    display: none;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    border: none;
-    border-radius: 0.4rem;
-    background: none;
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    opacity: 0.8;
-}
-
-body.chatui-active .cui-root-sidebar-collapse:hover,
-body.chatui-active .cui-root-sidebar-collapse:focus-visible {
-    opacity: 1;
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
-    outline: none;
-}
-
 body.chatui-active .cui-root-sidebar-title {
     flex: 1 1 auto;
     overflow: hidden;
@@ -260,7 +245,7 @@ body.chatui-active .cui-root-sidebar-title {
     white-space: nowrap;
 }
 
-/* Desktop: persistent in-flow left column with three collapse forms. */
+/* Desktop: persistent in-flow left column. */
 @media (min-width: 769px) {
     body.chatui-active .cui-root-sidebar-backdrop {
         display: none;
@@ -277,55 +262,16 @@ body.chatui-active .cui-root-sidebar-title {
         transition: width var(--animation-duration-2x, 0.18s) ease;
     }
 
-    body.chatui-active .cui-root-sidebar[data-cui-form="list"] { width: clamp(13rem, 22vw, 17rem); }
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"] { width: 5.75rem; }
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] { width: 3.4rem; }
+    /* Fixed sidebar width. */
+    body.chatui-active .cui-root-sidebar {
+        width: clamp(13rem, 22vw, 17rem);
+    }
 
-    body.chatui-active .cui-root-sidebar-collapse { display: flex; }
     body.chatui-active .cui-root-sidebar .cui-root-shell-close { display: none; }
 
-    /* block + icon are collapsed forms → drop the conversation list (仅配置). */
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-convlist,
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-convlist {
+    /* Hide the topbar hamburger on desktop — sidebar is always visible. */
+    body.chatui-active .cui-root-shell-toggle {
         display: none;
-    }
-
-    /* hide text labels when narrow */
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-sidebar-title,
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-sidebar-title,
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-shell-item span,
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-section-label {
-        display: none;
-    }
-
-    /* block: icon-over-label nav + centered config icons */
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-shell-item {
-        flex-direction: column;
-        gap: 0.15rem;
-        min-height: auto;
-        padding: 0.4rem 0.2rem;
-        text-align: center;
-        font-size: calc(var(--mainFontSize) * 0.66);
-    }
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-section-label {
-        text-align: center;
-    }
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-configrail-icons,
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-configrail-icons {
-        justify-content: center;
-    }
-
-    /* Collapsed forms: tighten the header to the narrow width, and let the
-       remaining nav+config scroll on a very short viewport (the conversation
-       list that normally scrolls is hidden here). */
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"] .cui-root-shell-header,
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] .cui-root-shell-header {
-        padding: 0.5rem 0.35rem;
-    }
-
-    body.chatui-active .cui-root-sidebar[data-cui-form="block"],
-    body.chatui-active .cui-root-sidebar[data-cui-form="icon"] {
-        overflow-y: auto;
     }
 }
 
@@ -339,16 +285,23 @@ body.chatui-active .cui-root-shell-header {
     font-weight: 700;
 }
 
-body.chatui-active .cui-root-shell-nav {
-    display: flex;
+/* ── Sidebar top section (NewChatButton wrapper) ─────────────────────────── */
+
+body.chatui-active .cui-root-sidebar-top {
     flex: 0 0 auto;
-    flex-direction: column;
-    gap: 0.15rem;
-    min-height: 0;
-    padding: 0.45rem;
+    padding: 0.45rem 0.45rem 0;
 }
 
-body.chatui-active .cui-root-shell-item {
+/* ── Sidebar footer (SettingsEntry) ─────────────────────────────────────── */
+
+body.chatui-active .cui-root-sidebar-footer {
+    flex: 0 0 auto;
+    margin-top: auto;
+    padding: 0.35rem 0.45rem 0.45rem;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+body.chatui-active .cui-root-settings-entry {
     display: flex;
     align-items: center;
     gap: 0.7rem;
@@ -365,19 +318,19 @@ body.chatui-active .cui-root-shell-item {
     text-align: left;
 }
 
-body.chatui-active .cui-root-shell-item i {
+body.chatui-active .cui-root-settings-entry i {
     width: 1.25rem;
     text-align: center;
     opacity: 0.78;
 }
 
-body.chatui-active .cui-root-shell-item:hover,
-body.chatui-active .cui-root-shell-item:focus-visible {
+body.chatui-active .cui-root-settings-entry:hover,
+body.chatui-active .cui-root-settings-entry:focus-visible {
     background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
     outline: none;
 }
 
-/* ── Region 5 · config rail (上段) ──────────────────────────────────────────── */
+/* ── Region 5 · section label ────────────────────────────────────────────── */
 
 body.chatui-active .cui-root-section-label {
     display: block;
@@ -387,47 +340,6 @@ body.chatui-active .cui-root-section-label {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     opacity: 0.5;
-}
-
-body.chatui-active .cui-root-configrail {
-    flex: 0 0 auto;
-    padding: 0.2rem 0.45rem 0.45rem;
-    border-top: 1px solid var(--SmartThemeBorderColor);
-}
-
-body.chatui-active .cui-root-configrail-icons {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.3rem;
-}
-
-body.chatui-active .cui-root-configrail-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.3rem;
-    height: 2.3rem;
-    border: 1px solid transparent;
-    border-radius: 0.5rem;
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 6%, transparent);
-    color: var(--SmartThemeBodyColor);
-    cursor: pointer;
-    opacity: 0.85;
-    font-size: calc(var(--mainFontSize) * 0.95);
-}
-
-body.chatui-active .cui-root-configrail-btn:hover,
-body.chatui-active .cui-root-configrail-btn:focus-visible {
-    opacity: 1;
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 14%, transparent);
-    outline: none;
-}
-
-/* The ChatUI-native settings gear is accented apart from the 7 ST-drawer icons. */
-body.chatui-active .cui-root-configrail-btn-chatui {
-    color: var(--SmartThemeQuoteColor);
-    border-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 35%, transparent);
-    opacity: 1;
 }
 
 /* ── Config panel (独立配置面) ────────────────────────────────────────────────
@@ -760,6 +672,11 @@ body.chatui-active .cui-root-newchat:focus-visible {
     outline: none;
 }
 
+body.chatui-active .cui-root-newchat.is-active {
+    border-color: transparent;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+}
+
 body.chatui-active .cui-root-newchat:disabled {
     opacity: 0.45;
     cursor: default;
@@ -978,6 +895,159 @@ body.chatui-active .cui-root-convlist-note {
     text-align: center;
 }
 
+/* ── Character-grouped conversation list (S4) ─────────────────────────────────── */
+
+body.chatui-active .cui-root-chargroups {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+body.chatui-active .cui-root-char-group {
+    display: flex;
+    flex-direction: column;
+}
+
+body.chatui-active .cui-root-char-group-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: 2.5rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.94);
+    font-weight: 600;
+    padding: 0.3rem 0.55rem;
+    text-align: left;
+}
+
+body.chatui-active .cui-root-char-group-header:hover,
+body.chatui-active .cui-root-char-group-header:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 9%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-char-group-avatar {
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-root-char-group-avatar-fallback {
+    width: 1.7rem;
+    text-align: center;
+    opacity: 0.6;
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-root-char-group-name {
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-char-group-chats {
+    display: flex;
+    flex-direction: column;
+    gap: 0.05rem;
+    margin: 0;
+    padding: 0 0 0.15rem 0;
+    list-style: none;
+}
+
+/* Nested chat row: indented child under a character header */
+body.chatui-active .cui-root-nested-chat-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.1rem;
+    border-radius: 0.4rem;
+    /* 1.7rem avatar + 0.5rem gap + 0.55rem padding = ~2.75rem base; offset by same */
+    padding: 0.25rem 0.55rem 0.25rem 2.75rem;
+    cursor: pointer;
+    font-size: calc(var(--mainFontSize) * 0.88);
+}
+
+body.chatui-active .cui-root-nested-chat-row:hover,
+body.chatui-active .cui-root-nested-chat-row:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-nested-chat-row.is-current {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 11%, transparent);
+}
+
+body.chatui-active .cui-root-nested-chat-row-icon {
+    opacity: 0.45;
+    flex: 0 0 auto;
+    font-size: calc(var(--mainFontSize) * 0.82);
+}
+
+body.chatui-active .cui-root-nested-chat-row-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+body.chatui-active .cui-root-nested-chat-row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-nested-chat-row-preview {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.55;
+    font-size: calc(var(--mainFontSize) * 0.78);
+}
+
+body.chatui-active .cui-root-nested-chat-row-time {
+    flex: 0 0 auto;
+    opacity: 0.5;
+    font-size: calc(var(--mainFontSize) * 0.76);
+}
+
+body.chatui-active .cui-root-nested-chat-row-check {
+    flex: 0 0 auto;
+    opacity: 0.8;
+    font-size: calc(var(--mainFontSize) * 0.78);
+}
+
+body.chatui-active .cui-root-nested-chat-row-actions {
+    position: absolute;
+    right: 0.4rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+}
+
+body.chatui-active .cui-root-nested-chat-row:hover .cui-root-nested-chat-row-actions,
+body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-row-actions {
+    display: flex;
+}
+
+body.chatui-active .cui-root-nested-chat-row:hover .cui-root-nested-chat-row-time,
+body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-row-time,
+body.chatui-active .cui-root-nested-chat-row:hover .cui-root-nested-chat-row-check,
+body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-row-check {
+    visibility: hidden;
+}
+
+/* collapsed forms: hide the grouped list body just like the old convlist */
 body.chatui-active .cui-root-message-list {
     display: flex;
     flex-direction: column;
@@ -1069,6 +1139,13 @@ body.chatui-active .cui-root-message-body {
     overflow-wrap: anywhere;
     white-space: pre-wrap;
     line-height: 1.5;
+}
+
+body.chatui-active .cui-root-message-body q::before,
+body.chatui-active .cui-root-message-body q::after,
+body.chatui-active .cui-root-reasoning-body q::before,
+body.chatui-active .cui-root-reasoning-body q::after {
+    content: none;
 }
 
 body.chatui-active .cui-root-message-body p,
@@ -2050,6 +2127,112 @@ body.chatui-active .cui-root-toast-close:focus-visible {
     background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
 }
 
+/* ── New-chat character picker (fresh-chat) ──────────────────────────────── */
+
+body.chatui-active .cui-picker {
+    /* Aligns with composer width and vertical position */
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    width: min(100%, 58rem);   /* matches .cui-root-composer */
+    margin: 0 auto;
+    padding: 0.35rem 0 0.15rem;
+    box-sizing: border-box;
+}
+
+body.chatui-active .cui-picker-label {
+    /* Matches the section label style used in the sidebar */
+    display: block;
+    padding: 0 0.15rem 0.1rem;
+    font-size: calc(var(--mainFontSize) * 0.72);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.5;
+}
+
+body.chatui-active .cui-picker-scroll {
+    display: flex;
+    flex-direction: row;
+    gap: 0.5rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 0.2rem;
+    /* Hide scrollbar on all platforms — the strip has visual overflow affordance */
+    scrollbar-width: none;
+}
+
+body.chatui-active .cui-picker-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+body.chatui-active .cui-picker-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    flex: 0 0 auto;
+    width: 4rem;
+    padding: 0.4rem 0.3rem;
+    border: 1px solid transparent;
+    border-radius: 0.65rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    text-align: center;
+    /* Reset button styles so text-align works */
+    -webkit-appearance: none;
+}
+
+body.chatui-active .cui-picker-item:hover:not(:disabled),
+body.chatui-active .cui-picker-item:focus-visible:not(:disabled) {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    border-color: var(--SmartThemeBorderColor);
+    outline: none;
+}
+
+body.chatui-active .cui-picker-item:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
+body.chatui-active .cui-picker-item.is-current {
+    border-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 55%, transparent);
+    background-color: color-mix(in srgb, var(--SmartThemeQuoteColor) 8%, transparent);
+}
+
+body.chatui-active .cui-picker-item-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    object-fit: cover;
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-picker-item-avatar-fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+    font-size: calc(var(--mainFontSize) * 0.95);
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-picker-item-name {
+    font-size: calc(var(--mainFontSize) * 0.72);
+    line-height: 1.2;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.85;
+}
+
 /* ---------------------------------------------------------------------------
    QR bar — quick-reply buttons mirrored above the composer
    --------------------------------------------------------------------------- */
@@ -2118,25 +2301,140 @@ body.chatui-active .cui-root-qrbar-label {
 }
 
 /* ---------------------------------------------------------------------------
-   TEMP M-G S0 POC — embed-engine host + drawer-content flatten
-   Remove this block in S2 once SettingsContent owns these rules permanently.
+   Settings mode — embedded ST drawer host + layout
    --------------------------------------------------------------------------- */
 
-/* Host container for an embedded ST drawer-content */
-body.chatui-active .cui-settings-pane { /* TEMP M-G S0 POC */
+/* SettingsNav left column (mirrors .cui-root-sidebar desktop width) */
+body.chatui-active .cui-settings-nav {
+    flex: 0 0 clamp(13rem, 22vw, 17rem);
     display: flex;
     flex-direction: column;
-    width: 100%;
+    min-height: 0;
     overflow-y: auto;
+    border-right: 1px solid var(--SmartThemeBorderColor);
+    background-color: var(--SmartThemeBlurTintColor);
+    color: var(--SmartThemeBodyColor);
+    font-family: var(--mainFontFamily);
     box-sizing: border-box;
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 0.375rem;
-    padding: 0.5rem;
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
 }
 
-/* Flatten all ST positioning so .drawer-content fills its host naturally */
-body.chatui-active .cui-settings-pane .drawer-content { /* TEMP M-G S0 POC */
+/* ←返回 button — full-width, distinct from nav items */
+body.chatui-active .cui-settings-nav-back {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-bottom: 1px solid var(--SmartThemeBorderColor);
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.94);
+    font-weight: 600;
+    text-align: left;
+    box-sizing: border-box;
+}
+
+body.chatui-active .cui-settings-nav-back:hover,
+body.chatui-active .cui-settings-nav-back:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    outline: none;
+}
+
+/* Section groupings (ST / ChatUI labels) */
+body.chatui-active .cui-settings-nav-section {
+    display: flex;
+    flex-direction: column;
+    padding: 0.35rem 0.35rem 0.5rem;
+}
+
+/* Nav item buttons */
+body.chatui-active .cui-settings-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    width: 100%;
+    min-height: 2.3rem;
+    padding: 0 0.6rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: none;
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.93);
+    text-align: left;
+    box-sizing: border-box;
+}
+
+body.chatui-active .cui-settings-nav-item i {
+    width: 1.25rem;
+    text-align: center;
+    opacity: 0.7;
+    flex: 0 0 auto;
+}
+
+body.chatui-active .cui-settings-nav-item:hover,
+body.chatui-active .cui-settings-nav-item:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-settings-nav-item.is-active {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 13%, transparent);
+    font-weight: 600;
+}
+
+body.chatui-active .cui-settings-nav-item.is-active i {
+    opacity: 1;
+}
+
+/* SettingsContent right column */
+body.chatui-active .cui-settings-content {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Host container for an embedded ST drawer-content */
+body.chatui-active .cui-settings-host {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+/* When hidden, cost zero layout (hidden attr also sets display:none,
+   but be explicit to prevent any accidental override) */
+body.chatui-active .cui-settings-host[hidden] {
+    display: none !important;
+}
+
+/* ChatUI settings right pane */
+body.chatui-active .cui-settings-chatui {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.5rem 0.7rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    color: var(--SmartThemeBodyColor);
+    font-family: var(--mainFontFamily);
+}
+
+/* Flatten all ST positioning so .drawer-content fills its host naturally.
+   !important overrides ST's own stylesheet rules AND any movingUI inline styles. */
+body.chatui-active .cui-settings-host .drawer-content {
     position: static !important;
     inset: auto !important;
     top: auto !important;
@@ -2149,5 +2447,47 @@ body.chatui-active .cui-settings-pane .drawer-content { /* TEMP M-G S0 POC */
     min-width: 0 !important;
     display: block !important;
     overflow-y: auto !important;
+    flex: 1 1 auto;
+    box-sizing: border-box;
 }
 
+/* Extra suppression for fillRight (right-nav-panel/角色) and fillLeft (left-nav-panel/AI配置).
+   ST's .fillRight { position:fixed; right:0; z-index:3000; height:0 } must be fully overridden
+   or the panel escapes its host and appears outside the layout.
+   Source: SillyTavern/public/style.css lines 5605–5656. */
+body.chatui-active .cui-settings-host .fillRight,
+body.chatui-active .cui-settings-host .fillLeft {
+    position: static !important;
+    right: auto !important;
+    left: auto !important;
+    top: auto !important;
+    z-index: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    box-shadow: none !important;
+    transform: none !important;
+}
+
+/* fillRight.openDrawer sets display:flex and height:100% — re-flatten. */
+body.chatui-active .cui-settings-host .fillRight.openDrawer,
+body.chatui-active .cui-settings-host .fillLeft.openDrawer {
+    display: block !important;
+    height: auto !important;
+}
+
+/* Mobile: stack vertically. */
+@media (max-width: 768px) {
+    body.chatui-active .cui-settings-nav {
+        flex: 0 0 auto;
+        width: 100%;
+        max-height: 40vh;
+        border-right: none;
+        border-bottom: 1px solid var(--SmartThemeBorderColor);
+    }
+
+    body.chatui-active .cui-settings-content {
+        flex: 1 1 auto;
+    }
+}

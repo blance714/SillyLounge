@@ -248,7 +248,7 @@ export function dismissChatuiToast(id) {
 }
 
 // ---------------------------------------------------------------------------
-// Embed-engine: relocate / restore live ST drawer-content nodes   /* TEMP M-G S0 POC */
+// Embed-engine: relocate / restore live ST drawer-content nodes
 // ---------------------------------------------------------------------------
 
 /**
@@ -257,7 +257,7 @@ export function dismissChatuiToast(id) {
  * @param {Element} hostEl          ChatUI host container
  * @returns {boolean}
  */
-export function mountChatuiStDrawer(drawerContentId, hostEl) { /* TEMP M-G S0 POC */
+export function mountChatuiStDrawer(drawerContentId, hostEl) {
     return chatuiAdapter.settingsActions.mountDrawer(drawerContentId, hostEl);
 }
 
@@ -266,6 +266,14 @@ export function mountChatuiStDrawer(drawerContentId, hostEl) { /* TEMP M-G S0 PO
  * @param {string} drawerContentId  id of the .drawer-content element
  * @returns {boolean}
  */
-export function unmountChatuiStDrawer(drawerContentId) { /* TEMP M-G S0 POC */
+export function unmountChatuiStDrawer(drawerContentId) {
     return chatuiAdapter.settingsActions.unmountDrawer(drawerContentId);
+}
+
+/**
+ * Return the full ordered ST settings entry list (static).
+ * @returns {import('../adapter/settings.js').ST_SETTINGS_ENTRIES}
+ */
+export function listChatuiStSettingsEntries() {
+    return chatuiAdapter.settingsActions.listEntries();
 }

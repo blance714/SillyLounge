@@ -1,66 +1,83 @@
-import React, { useState } from 'preact/compat';
+import React, { useEffect, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { deleteChatuiChat, newChatuiChat, renameChatuiChat } from '../actions.js';
-import { useSidebarData } from '../hooks.js';
+import { deleteChatuiChat, renameChatuiChat, getChatuiCurrentChatIdentity } from '../actions.js';
+import { useChatuiSnapshot, useSidebarData } from '../hooks.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { MenuItem } from './message/MenuItem.js';
 
+type ChatOperationTarget = {
+    fileName: string;
+    avatar: string;
+    displayName: string;
+};
+
+const _isLiveTarget = (t: ChatOperationTarget) => {
+    const live = getChatuiCurrentChatIdentity();
+    return !!live && live.avatar === t.avatar && live.fileName === t.fileName;
+};
+
 /**
  * Topbar-right ⋯ overflow menu for current-chat operations:
- * rename, delete (guarded by ConfirmDialog), and new chat.
+ * rename and delete (guarded by ConfirmDialog).
  */
 export function TopbarMenu(): ComponentChild {
+    const state = useChatuiSnapshot();
     const sidebar = useSidebarData();
-    const [renaming, setRenaming] = useState(false);
+    const [renameTarget, setRenameTarget] = useState<ChatOperationTarget | null>(null);
     const [draft, setDraft] = useState('');
-    const [confirmingDelete, setConfirmingDelete] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<ChatOperationTarget | null>(null);
 
-    // Resolve the current chat and character from sidebar state.
-    const currentChat = sidebar.chats.find(c => c.isCurrent) ?? null;
-    const currentCharacter = sidebar.characters.find(c => c.isCurrent) ?? null;
-    const currentAvatar = currentCharacter?.avatar ?? '';
-    const hasCurrentChat = currentChat !== null;
-    const chatDisplayName = currentChat?.displayName ?? sidebar.header.sessionName ?? '';
-    // Group chats have no per-character chat file: ST's renameChat works on
-    // this_chid and delete needs a character avatar — neither applies — so both
-    // ops are disabled there (rather than silently no-op'ing on a live-looking item).
+    const identity = state.chat.currentChat;
     const isGroup = sidebar.header.isGroup;
-    const canRename = hasCurrentChat && !isGroup;
-    const canDelete = hasCurrentChat && !!currentAvatar && !isGroup;
+    const hasCurrentChat = !!identity && !isGroup;
+    const currentTarget = hasCurrentChat
+        ? { fileName: identity.fileName, avatar: identity.avatar, displayName: identity.fileName }
+        : null;
+    const currentTargetKey = currentTarget ? `${currentTarget.avatar}:${currentTarget.fileName}` : '';
+    const canRename = hasCurrentChat;
+    const canDelete = hasCurrentChat;
+
+    useEffect(() => {
+        setRenameTarget(null);
+        setDeleteTarget(null);
+    }, [currentTargetKey]);
 
     const startRename = () => {
-        setDraft(chatDisplayName);
-        setRenaming(true);
+        if (!currentTarget) return;
+        setDraft(currentTarget.displayName);
+        setRenameTarget(currentTarget);
     };
 
     const commitRename = () => {
-        setRenaming(false);
+        const target = renameTarget;
+        setRenameTarget(null);
         const next = draft.trim();
-        if (next && next !== chatDisplayName && currentChat) {
-            void renameChatuiChat(currentChat.fileName, next);
+        if (target && next && next !== target.displayName) {
+            if (!_isLiveTarget(target)) return;
+            void renameChatuiChat(target.fileName, next);
         }
     };
 
     const confirmDelete = () => {
-        setConfirmingDelete(false);
-        if (currentChat && currentAvatar) {
-            void deleteChatuiChat(currentAvatar, currentChat.fileName);
-        }
+        const target = deleteTarget;
+        setDeleteTarget(null);
+        if (!target || !target.avatar || !_isLiveTarget(target)) return;
+        void deleteChatuiChat(target.avatar, target.fileName);
     };
 
     return (
         <div className="cui-root-topbar-menu">
-            {renaming ? (
+            {renameTarget ? (
                 <input
                     className="cui-root-topbar-rename"
                     type="text"
                     value={draft}
                     autoFocus
                     onInput={(event) => setDraft(event.currentTarget.value)}
-                    onBlur={() => setRenaming(false)}
+                    onBlur={() => setRenameTarget(null)}
                     onKeyDown={(event) => {
                         if (event.key === 'Enter') { event.preventDefault(); commitRename(); }
-                        else if (event.key === 'Escape') { event.preventDefault(); setRenaming(false); }
+                        else if (event.key === 'Escape') { event.preventDefault(); setRenameTarget(null); }
                     }}
                 />
             ) : (
@@ -83,24 +100,21 @@ export function TopbarMenu(): ComponentChild {
                             label="删除对话"
                             iconClass="fa-solid fa-trash"
                             disabled={!canDelete}
-                            onClick={() => setConfirmingDelete(true)}
-                        />
-                        <MenuItem
-                            label="＋ 新对话"
-                            iconClass="fa-solid fa-plus"
-                            onClick={() => void newChatuiChat()}
+                            onClick={() => {
+                                if (currentTarget) setDeleteTarget(currentTarget);
+                            }}
                         />
                     </div>
                 </details>
             )}
-            {confirmingDelete && (
+            {deleteTarget && (
                 <ConfirmDialog
                     title="删除对话"
-                    message={`确定删除「${chatDisplayName}」？此操作不可撤销。`}
+                    message={`确定删除「${deleteTarget.displayName}」？此操作不可撤销。`}
                     confirmLabel="删除"
                     danger
                     onConfirm={confirmDelete}
-                    onCancel={() => setConfirmingDelete(false)}
+                    onCancel={() => setDeleteTarget(null)}
                 />
             )}
         </div>

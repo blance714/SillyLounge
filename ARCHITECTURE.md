@@ -154,6 +154,14 @@ Rules:
 - If a SillyTavern operation still requires DOM fallback, keep that fallback inside the adapter and document it.
 - Adapter return values should be plain data, not live SillyTavern DOM nodes.
 
+Current exception: the settings shell can host selected SillyTavern drawer
+contents because those panels are still ST-owned configuration UIs. This is
+implemented only in `adapter/settings.js`: the adapter snapshots the exact live
+drawer node, original parent/sibling, classes, inline style, icon state, and
+drag handles before reparenting into `StDrawerHost`, then restores or parks the
+node on unmount. Preact components may ask the adapter to mount/unmount by
+drawer id, but must not inspect or mutate the hosted drawer DOM.
+
 ### 3.3 ChatUI Store
 
 The store is ChatUI's view model.

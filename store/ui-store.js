@@ -2,25 +2,26 @@
  * SillyTavern-ChatUI · ephemeral UI store
  *
  * Session-local view state that no other store owns and that is deliberately
- * NOT persisted: it never touches the adapter / extension_settings. Currently
- * one flag — whether the ChatUI-native settings panel (独立配置面) is open.
+ * NOT persisted: it never touches the adapter / extension_settings.
+ * Tracks whether the app is in settings mode and which entry is active.
  *
- * The open trigger (sidebar config rail) and the panel (a sibling of <Sidebar/>)
- * live in different render subtrees, so the state is held here rather than lifted
- * into ChatuiApp — decoupled, no prop-drilling, and ready for future entry points
- * (e.g. a topbar gear).
+ * The SettingsEntry button (sidebar bottom) and the two-pane
+ * settings layout live in different render subtrees, so the state is held here
+ * rather than lifted — decoupled, no prop-drilling.
  */
 
 import { createStore } from './create-store.js';
 
 /**
  * @typedef {object} ChatuiUiState
- * @property {boolean} settingsPanelOpen Whether the settings panel is open.
+ * @property {boolean} settingsOpen Whether the app is in settings mode.
+ * @property {string|null} activeSettingsId The active settings entry id, or null if none selected.
  */
 
 /** @type {ChatuiUiState} */
 const INITIAL_STATE = {
-    settingsPanelOpen: false,
+    settingsOpen: false,
+    activeSettingsId: null,
 };
 
 /** @type {ReturnType<typeof createStore<ChatuiUiState>>} */
@@ -42,20 +43,36 @@ export function subscribeUiStore(fn) {
 }
 
 /**
- * Open the settings panel. No-op (skips notifying subscribers) if already open.
+ * Enter settings mode. Optionally pre-select an entry by id.
+ * Defaults to 'st:left-nav-panel' if no id is given and none was previously active.
+ * No-op (skips notification) if already open AND id is unchanged.
+ * @param {string} [id]
  * @returns {void}
  */
-export function openSettingsPanel() {
-    if (_store.getState().settingsPanelOpen) return;
-    _store.setState({ ..._store.getState(), settingsPanelOpen: true });
+export function openSettings(id) {
+    const s = _store.getState();
+    const nextId = id ?? s.activeSettingsId ?? 'st:left-nav-panel';
+    if (s.settingsOpen && s.activeSettingsId === nextId) return;
+    _store.setState({ settingsOpen: true, activeSettingsId: nextId });
 }
 
 /**
- * Close the settings panel. No-op if already closed. Called both from the panel
- * itself (✕ / Escape) and from teardown so a re-mount starts clean.
+ * Leave settings mode. Preserves activeSettingsId so re-opening lands on the
+ * last selection. No-op if already closed.
  * @returns {void}
  */
-export function closeSettingsPanel() {
-    if (!_store.getState().settingsPanelOpen) return;
-    _store.setState({ ..._store.getState(), settingsPanelOpen: false });
+export function closeSettings() {
+    if (!_store.getState().settingsOpen) return;
+    _store.setState({ ..._store.getState(), settingsOpen: false });
+}
+
+/**
+ * Change the active entry without toggling mode. No-op if settings is not open.
+ * @param {string} id
+ * @returns {void}
+ */
+export function setActiveSettings(id) {
+    if (!_store.getState().settingsOpen) return;
+    if (_store.getState().activeSettingsId === id) return;
+    _store.setState({ ..._store.getState(), activeSettingsId: id });
 }

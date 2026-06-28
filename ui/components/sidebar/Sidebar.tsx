@@ -1,36 +1,59 @@
 import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { triggerChatuiShellAction } from '../../actions.js';
-import type { ShellAction } from '../../types.js';
-import { ConfigRail } from './ConfigRail.js';
-import { ConversationList } from './ConversationList.js';
+import { useSidebarData } from '../../hooks.js';
+import { CharacterConversationList } from './CharacterConversationList.js';
+import { NewChatButton } from './NewChatButton.js';
+import { SettingsEntry } from './SettingsEntry.js';
 
-export type SidebarForm = 'list' | 'block' | 'icon';
-
-// Navigation launchers into ST's native right-nav (browse / create / groups).
-const NAV_ITEMS: Array<{ action: ShellAction; label: string; iconClass: string }> = [
-    { action: 'characters', label: 'Characters', iconClass: 'fa-solid fa-image-portrait' },
-    { action: 'characterCreate', label: 'New character', iconClass: 'fa-solid fa-user-plus' },
-    { action: 'groupChats', label: 'Groups', iconClass: 'fa-solid fa-user-group' },
-];
+const SIDEBAR_NAV_SELECTOR = [
+    '.cui-root-char-group-header',
+    '.cui-root-nested-chat-row',
+    '.cui-root-chat-row',
+].join(',');
+const SIDEBAR_NAV_IGNORE_SELECTOR = [
+    '.cui-root-chat-row-act',
+    '.cui-root-dialog-overlay',
+    '.cui-root-dialog',
+    'input',
+    'textarea',
+    'select',
+].join(',');
 
 /**
- * Region-5 sidebar. Persistent left column on desktop (three collapse forms via
- * data-cui-form: list ① / block ② / icon ③) and a slide-in overlay on mobile
- * (.is-mobile-open + backdrop). Pure-CSS responsive — JS only flips the form
- * attribute + the mobile-open flag.
+ * Region-5 sidebar. Persistent left column on desktop; slide-in overlay on mobile
+ * (.is-mobile-open + backdrop). Two-section layout: NewChatButton pinned at top,
+ * ConversationList slot in middle, SettingsEntry pinned at bottom.
  */
 export function Sidebar({
-    form,
-    onCycleForm,
     mobileOpen,
     onClose,
+    onNavigate,
+    isTempChatActive,
 }: {
-    form: SidebarForm;
-    onCycleForm: () => void;
     mobileOpen: boolean;
     onClose: () => void;
+    onNavigate: () => void;
+    isTempChatActive: boolean;
 }): ComponentChild {
+    const { header } = useSidebarData();
+
+    const scheduleNavigateClose = () => {
+        window.setTimeout(onNavigate, 0);
+    };
+
+    const onSidebarClickCapture = (event: Event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || target.closest(SIDEBAR_NAV_IGNORE_SELECTOR)) return;
+        if (target.closest(SIDEBAR_NAV_SELECTOR)) scheduleNavigateClose();
+    };
+
+    const onSidebarKeyDownCapture = (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target || target.closest(SIDEBAR_NAV_IGNORE_SELECTOR)) return;
+        if (target.closest('.cui-root-nested-chat-row, .cui-root-chat-row')) scheduleNavigateClose();
+    };
+
     return (
         <>
             {mobileOpen && (
@@ -43,19 +66,11 @@ export function Sidebar({
             )}
             <aside
                 className={`cui-root-sidebar${mobileOpen ? ' is-mobile-open' : ''}`}
-                data-cui-form={form}
                 aria-label="ChatUI navigation"
+                onClickCapture={onSidebarClickCapture}
+                onKeyDownCapture={onSidebarKeyDownCapture}
             >
                 <header className="cui-root-shell-header">
-                    <button
-                        className="cui-root-sidebar-collapse"
-                        type="button"
-                        aria-label="折叠 / 展开侧栏"
-                        title="折叠 / 展开侧栏"
-                        onClick={onCycleForm}
-                    >
-                        <i className="fa-solid fa-table-columns" />
-                    </button>
                     <span className="cui-root-sidebar-title">ChatUI</span>
                     <button
                         className="cui-root-shell-close"
@@ -67,25 +82,11 @@ export function Sidebar({
                         <i className="fa-solid fa-xmark" />
                     </button>
                 </header>
-                <nav className="cui-root-shell-nav">
-                    {NAV_ITEMS.map(item => (
-                        <button
-                            key={item.action}
-                            className="cui-root-shell-item"
-                            type="button"
-                            title={item.label}
-                            onClick={() => {
-                                triggerChatuiShellAction(item.action);
-                                onClose();
-                            }}
-                        >
-                            <i className={item.iconClass} />
-                            <span>{item.label}</span>
-                        </button>
-                    ))}
-                </nav>
-                <ConfigRail onNavigate={onClose} />
-                <ConversationList />
+                <div className="cui-root-sidebar-top">
+                    <NewChatButton disabled={!header.characterName || header.isGroup} active={isTempChatActive} onNavigate={onNavigate} />
+                </div>
+                <CharacterConversationList />
+                <SettingsEntry onNavigate={onNavigate} />
             </aside>
         </>
     );

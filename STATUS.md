@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-06-27
+Last updated: 2026-06-28
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
@@ -30,7 +30,7 @@ index.js  (master enable toggle + setup/teardown orchestration)
   +-- adapter/  (the ONLY layer that touches ST internals)
   |     st-adapter.js is the frozen facade; behavior split across
   |     internals · messages · composer · media · menu · selectors ·
-  |     shell · chats · qr · config submodules; returns plain DTOs
+  |     shell · chats · qr · config · settings submodules; returns plain DTOs
   |
   +-- store/  (ST-free observable view-model, createStore factory)
   |     chat · sidebar · config · ui · toast stores + *-actions facades
@@ -62,21 +62,24 @@ store/                    ST-free observable view-model (createStore factory)
   create-store.js         tiny observable store primitive
   chat-store.js / chat-actions.js
   sidebar-store.js / sidebar-actions.js
+  temp-chat-store.js      single new-chat draft pointer (localStorage), replaces the old pending-new-chat marker
   config-store.js         persisted per-feature config (via adapter/config.js)
-  ui-store.js             ephemeral session UI state (settings-panel open)
+  ui-store.js             ephemeral session UI state (settings mode / drawer selection)
   toast-store.js          ChatUI feedback layer
 shield/
   st-dom-shield.js        #chatui-root + body.chatui-active + shield levels
 ui/
-  app.tsx                 root Preact shell (sidebar | config panel | chat)
+  app.tsx                 root Preact shell (two-pane sidebar | chat; settings swaps both panes)
   root.js                 stable runtime wrapper for dist/root-app.mjs
   actions.ts hooks.ts format.ts types.ts
   components/
     Composer  PlusMenu  QRBar  SelectorChip  AttachmentChips
     MessageItem  TopbarMenu  ConfirmDialog  Toaster
-    sidebar/  Sidebar ConversationList ChatRow CharacterSwitcher
-              NewChatButton ConfigRail
-    config/   ConfigPanel ConfigSelect PlusPinEditor
+    composer/ NewChatCharacterPicker
+    sidebar/  Sidebar CharacterConversationList CharacterSwitcher
+              ChatRow NewChatButton SettingsEntry
+    settings/ SettingsNav SettingsContent ChatUiSettingsContent StDrawerHost
+    config/   ConfigSelect PlusPinEditor
     message/  ActionButton MenuItem MessageActions MessageAvatar
               MessageEditor MessageMedia MessageReasoning
 scripts/                  build / dev / runtime-sync tooling
@@ -94,13 +97,15 @@ tree into `.runtime/SillyTavern-ChatUI`.
 ChatUI owns: the sidebar navigation center, the root topbar, the visible message
 list, message body/media/reasoning rendering, the inline edit surface, the
 composer (＋menu, selector chips, attachment chips, QR bar), the toast feedback
-layer, and the ChatUI-native settings panel.
+layer, and the ChatUI-native settings shell.
 
 SillyTavern still owns: chat persistence, generation/regeneration, settings,
-extension events, file previews, and all native drawer panel contents. The native
-`#chat` and `#send_form` stay alive in the DOM (parked off-screen by the shield)
-because ST render/update/send/edit semantics still flow through them; the adapter
-bridges ChatUI intents into those native pipelines.
+extension events, file previews, and all native drawer panel contents. ChatUI may
+temporarily host a live ST drawer inside its settings shell, but only through
+`adapter/settings.js` + `StDrawerHost`; UI code never reaches into the drawer DOM
+directly. The native `#chat` and `#send_form` stay alive in the DOM (parked
+off-screen by the shield) because ST render/update/send/edit semantics still flow
+through them; the adapter bridges ChatUI intents into those native pipelines.
 
 ### Rules
 
@@ -116,17 +121,22 @@ bridges ChatUI intents into those native pipelines.
 
 ## Where things stand
 
-Five-region north star ≈70% (see `ROADMAP.md` for the per-region map). The sidebar
+Five-region north star ≈80% (see `ROADMAP.md` for the per-region map). The sidebar
 navigation center, content area, composer, and topbar trunks are closed-loop on
 real ST export functions — delete / swipe / rename / chat-switch are no longer
-simulated clicks. The config system now has a ChatUI-native settings panel
-(独立配置面: desktop push-aside column / mobile full-screen takeover) holding the
-migrated per-feature settings plus the first §7 editor (the ＋menu pin editor).
+simulated clicks. The old three-form sidebar cycle and third settings column have
+been replaced by the Codex-app-style two-pane model: `Sidebar | chat`, with
+settings as a mode swap that shows ChatUI-owned nav on the left and either
+ChatUI-native settings or a live ST drawer host on the right.
+
+New-chat drafts now use an explicit `tempChat` pointer in localStorage instead of
+`chat_metadata.chatui_isNewChat` / message-count heuristics. The pointed draft is
+hidden from the sidebar, highlights the ＋新对话 tab while active, is replaced only
+through guarded `doNewChat`, and becomes a normal kept conversation when the user
+sends or edits the greeting.
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
-- **Mobile full-screen tab + back** — the biggest M-A UX gap; the settings panel's
-  mobile takeover establishes the pattern to reuse.
 - **§7 config deepening** — selector-slot placement, ＋menu drag-reorder editor.
 - **Remaining sim-click write paths** (`#options` / drawers) → ST exports.
 - Group-chat conversation list, search 🔍, Mode B global list.
@@ -135,6 +145,22 @@ migrated per-feature settings plus the first §7 editor (the ＋menu pin editor)
 
 ## Live-test status
 
-Verified live: delete, swipe, scroll guard, layout, config-panel persistence.
+Verified live before this stabilization pass: delete, swipe, scroll guard,
+layout, config persistence, and the first ST-drawer hosting POC.
+
+Browser live-test for the M-G review fixes passed (2026-06-28): topbar
+rename/delete re-validates the authoritative chat identity before destructive
+calls, temp-draft creation is serialized, and ＋新对话 is disabled/inert in group
+chats.
+
+Automated checks after the parallel review-fix pass (2026-06-27):
+
+- `./node_modules/.bin/tsc --noEmit`
+- `node ./scripts/build.mjs`
+- `node ./scripts/runtime.mjs`
+- focused `npx --no-install eslint` on the runtime-loaded extension files
+- `node --check` on touched adapter/store files and both built bundles
+- `shasum dist/root-app.mjs .runtime/SillyTavern-ChatUI/dist/root-app.mjs`
+
 Still owed: continue / impersonate / regenerate (`#options` sim-click), stop, and
-the full switch-character / new / rename / delete-chat chain.
+the broader mobile/sidebar regression pass.
