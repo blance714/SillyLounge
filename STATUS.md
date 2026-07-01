@@ -91,7 +91,9 @@ dist/                     generated browser output (gitignored)
 The extension installer does not build plugins. Authored Preact/TSX is bundled
 with Vite into `dist/root-app.mjs`; runtime TS modules are compiled with Vite
 into `dist/runtime/`, and `pnpm run runtime` syncs the loadable tree into
-`.runtime/SillyTavern-ChatUI`.
+`.runtime/SillyTavern-ChatUI`. The full runtime chain is `src/` →
+`dist/runtime/` + `dist/root-app.mjs` → `.runtime/SillyTavern-ChatUI` →
+SillyTavern's third-party symlink.
 
 ---
 
@@ -140,6 +142,9 @@ sends or edits the greeting.
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
+- **Short-term migration hardening** — Day 1 docs are pinned down; Day 2 adds
+  generated artifact checks for unresolved `@st/*`, `process.env` / Node globals,
+  and bad browser import specifiers.
 - **§7 config deepening** — selector-slot placement, ＋menu drag-reorder editor.
 - **Remaining sim-click write paths** (`#options` / drawers) → ST exports.
 - Group-chat conversation list, search 🔍, Mode B global list.
@@ -156,11 +161,14 @@ rename/delete re-validates the authoritative chat identity before destructive
 calls, temp-draft creation is serialized, and ＋新对话 is disabled/inert in group
 chats.
 
+Manual smoke test after the TS/Vite migration looked OK on 2026-07-01.
+
 Automated checks for the current migration pass:
 
 - `CI=true pnpm run typecheck`
 - `CI=true pnpm run build`
-- `CI=true pnpm run runtime`
+- `CI=true pnpm run runtime` (build + sync + generated artifact check)
+- `CI=true pnpm run check:runtime` (standalone generated artifact check)
 - `git diff --check`
 - `node --check` on representative generated runtime modules and the UI bundle
 

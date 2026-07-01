@@ -1,11 +1,52 @@
 # SillyTavern-ChatUI · Roadmap
 
-Last updated: 2026-06-28
+Last updated: 2026-07-01
 
 三份文档的分工:`DESIGN.md` = 产品北极星(目标形态)、`STATUS.md` = 当前实现快照、
 **本文 = 完整度地图 + 剩余工作的优先级排期**。架构记录见 `ARCHITECTURE.md`。
 
 ---
+
+## 短期计划(2026-07-01 ~ 2026-07-07)
+
+前提:TS/Vite 大迁移已落地,`strict` 已恢复,`process.env.NODE_ENV`
+浏览器 bundle 修复已提交;2026-07-01 的手动 smoke test 看起来正常。
+
+### ~~1. 迁移尾巴 / 文档固化(2026-07-01)~~ ✅
+
+- 已把 Vite build warning、`pnpm run build` vs `pnpm run runtime`、软链目标、
+  `CI=true pnpm ...` 非交互运行方式写入 `README.md` / `STATUS.md`。
+- 已明确当前 runtime 链路:`src/` → `dist/runtime` + `dist/root-app.mjs` →
+  `.runtime/SillyTavern-ChatUI` → SillyTavern third-party symlink。
+
+### ~~2. 产物检查脚本(2026-07-02)~~ ✅
+
+- 已新增 `scripts/check-runtime.mjs`,阻止 `dist/` / `.runtime/` 残留:
+  `@st/*`、`process.env`、错误绝对 import、明显的浏览器不可用 Node global。
+- 已接入 `pnpm run runtime` 末尾;也可单独跑 `pnpm run check:runtime`。
+
+### 3. 构建脚本整理(2026-07-03)
+
+- 拆小 `scripts/build.mjs`:runtime build、UI build、ST external rewrite、
+  browser define 分开命名。
+- 保持当前行为不变,只降低维护成本;不引入没用到的 `vite.config.*`。
+
+### 4. Adapter 类型边界收窄(2026-07-04 ~ 2026-07-05)
+
+- 优先收 `src/adapter/chats.ts`、`media.ts`、`messages.ts` 的显式 `any`。
+- 目标不是一次性全类型化 ST,而是给 ChatUI 输出 DTO 和输入参数建立本地类型。
+
+### 5. 回归清单落地(2026-07-06)
+
+- 写手动 checklist:加载、切角色、切对话、新对话/tempChat、发送、编辑、
+  删除、settings drawer、附件、QR、selector、手机侧栏/settings。
+- 当前 smoke test 通过先记为人工结果;后续再考虑自动化。
+
+### 6. 产品缺口重启(2026-07-07)
+
+- 回到 §7 config deepening:选择框槽位可配、＋菜单拖拽排序编辑器。
+- 同时挑一个剩余 `#options` 写路径(continue / impersonate / regenerate / stop)
+  做 adapter/export 化试点。
 
 ## 完整度快照(对照 DESIGN 五大区)
 

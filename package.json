@@ -4,8 +4,9 @@
     "type": "module",
     "scripts": {
         "build": "node ./scripts/build.mjs",
+        "check:runtime": "node ./scripts/check-runtime.mjs",
         "dev": "node ./scripts/dev.mjs",
-        "runtime": "pnpm run build && node ./scripts/runtime.mjs",
+        "runtime": "pnpm run build && node ./scripts/runtime.mjs && node ./scripts/check-runtime.mjs",
         "typecheck": "tsc --noEmit",
         "watch": "node ./scripts/dev.mjs"
     },
