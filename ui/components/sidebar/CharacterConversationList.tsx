@@ -1,7 +1,7 @@
 import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { openChatuiChatForCharacter, deleteChatuiChat, switchChatuiCharacter } from '../../actions.js';
-import { useSidebarData, useTempChat } from '../../hooks.js';
+import { useSidebarData } from '../../hooks.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
 import type { CharConversationGroup, ChatListItem } from '../../types.js';
 
@@ -99,16 +99,7 @@ function NestedChatRow({ chat, charAvatar }: NestedChatRowProps): ComponentChild
  * nested chat rows each, sorted by most-recently-active. Replaces ConversationList.
  */
 export function CharacterConversationList(): ComponentChild {
-    const { charGroups, charGroupsLoading, charGroupsError, header } = useSidebarData();
-    const tempChat = useTempChat();
-    const visibleGroups = charGroups.map(group => ({
-        ...group,
-        chats: group.chats.filter(chat => !(
-            tempChat
-            && group.avatar === tempChat.avatar
-            && chat.fileName === tempChat.fileName
-        )),
-    }));
+    const { charGroups, charGroupsError, header, loadMoreCharacterChats, retryCharacterChats } = useSidebarData();
 
     if (header.isGroup) {
         return (
@@ -120,19 +111,22 @@ export function CharacterConversationList(): ComponentChild {
 
     const body = charGroupsError
         ? <div className="cui-root-convlist-note">对话列表加载失败</div>
-        : (charGroupsLoading && charGroups.length === 0)
-            ? <div className="cui-root-convlist-note">加载中…</div>
-            : visibleGroups.length === 0
-                ? <div className="cui-root-convlist-note">{charGroups.length === 0 ? '还没有角色' : '还没有对话'}</div>
-                : (
-                    <div className="cui-root-chargroups">
-                        {visibleGroups.map(group => (
+        : charGroups.length === 0
+            ? <div className="cui-root-convlist-note">{charGroups.length === 0 ? '还没有角色' : '还没有对话'}</div>
+            : (
+                <div className="cui-root-chargroups">
+                    {charGroups.map(group => {
+                        const showLoading = group.pending === 'backfill' || group.pending === 'more';
+                        const showMore = group.chatsLoaded && !group.fullyLoaded;
+                        const showList = group.chats.length > 0 || showLoading || group.pending === 'error';
+                        const retryDisabled = group.pending === 'backfill';
+                        return (
                             <div key={group.avatar} className="cui-root-char-group">
                                 <CharacterGroupHeader
                                     group={group}
                                     onClick={() => { void switchChatuiCharacter(group.avatar); }}
                                 />
-                                {group.chats.length > 0 && (
+                                {showList && (
                                     <ul className="cui-root-char-group-chats">
                                         {group.chats.map(chat => (
                                             <NestedChatRow
@@ -141,12 +135,41 @@ export function CharacterConversationList(): ComponentChild {
                                                 charAvatar={group.avatar}
                                             />
                                         ))}
+                                        {showLoading && (
+                                            <li className="cui-root-char-group-note">
+                                                {group.pending === 'more' ? '加载更多…' : '加载中…'}
+                                            </li>
+                                        )}
+                                        {group.pending === 'error' && (
+                                            <li className="cui-root-char-group-note is-error">
+                                                <span>加载失败</span>
+                                                <button
+                                                    className="cui-root-char-group-retry"
+                                                    type="button"
+                                                    disabled={retryDisabled}
+                                                    onClick={() => { void retryCharacterChats(group.avatar); }}
+                                                >
+                                                    重试
+                                                </button>
+                                            </li>
+                                        )}
                                     </ul>
                                 )}
+                                {showMore && (
+                                    <button
+                                        className="cui-root-char-group-more"
+                                        type="button"
+                                        disabled={group.pending === 'more'}
+                                        onClick={() => { void loadMoreCharacterChats(group.avatar); }}
+                                    >
+                                        更多
+                                    </button>
+                                )}
                             </div>
-                        ))}
-                    </div>
-                );
+                        );
+                    })}
+                </div>
+            );
 
     return (
         <div className="cui-root-convlist">

@@ -6,6 +6,7 @@
  */
 
 import { chatuiAdapter } from '../adapter/st-adapter.js';
+export { stEventKeys as chatuiEventKeys } from '../adapter/st-adapter.js';
 import { pushToast, dismissToast } from './toast-store.js';
 
 /**

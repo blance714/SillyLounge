@@ -29,6 +29,7 @@ export {
     triggerChatuiShellAction,
     triggerChatuiWandItem,
     unmountChatuiStDrawer,
+    chatuiEventKeys,
 } from '../store/chat-actions.js';
 
 export {
@@ -37,7 +38,11 @@ export {
 
 export {
     deleteChatuiChat,
+    getChatuiCurrentChatHeader,
     getChatuiSidebarState,
+    listChatuiCharacters,
+    listChatuiChatsForCharacterAvatar,
+    listChatuiRecentCharacterChatRows,
     newChatuiChat,
     openChatuiChat,
     openChatuiChatForCharacter,
@@ -68,7 +73,11 @@ export {
 } from '../store/ui-store.js';
 
 export {
+    beginTempChatDraft,
+    cancelTempChatDraft,
     getTempChat,
+    getTempChatDraft,
     isTempChat,
+    isTempChatDraft,
     subscribeTempChatStore,
 } from '../store/temp-chat-store.js';

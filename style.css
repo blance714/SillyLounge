@@ -963,6 +963,68 @@ body.chatui-active .cui-root-char-group-chats {
     list-style: none;
 }
 
+body.chatui-active .cui-root-char-group-note {
+    padding: 0.25rem 0.55rem 0.3rem 2.75rem;
+    color: color-mix(in srgb, var(--SmartThemeBodyColor) 62%, transparent);
+    font-size: calc(var(--mainFontSize) * 0.78);
+}
+
+body.chatui-active .cui-root-char-group-note.is-error {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    color: color-mix(in srgb, #d86a5f 74%, var(--SmartThemeBodyColor));
+}
+
+body.chatui-active .cui-root-char-group-retry {
+    min-height: 1.45rem;
+    border: none;
+    border-radius: 0.35rem;
+    background: color-mix(in srgb, var(--SmartThemeBodyColor) 8%, transparent);
+    color: var(--SmartThemeBodyColor);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.76);
+    padding: 0.05rem 0.42rem;
+}
+
+body.chatui-active .cui-root-char-group-retry:hover,
+body.chatui-active .cui-root-char-group-retry:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 14%, transparent);
+    outline: none;
+}
+
+body.chatui-active .cui-root-char-group-retry:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
+body.chatui-active .cui-root-char-group-more {
+    align-self: flex-start;
+    min-height: 1.65rem;
+    margin: 0 0 0.2rem 2.75rem;
+    border: none;
+    border-radius: 0.35rem;
+    background: none;
+    color: color-mix(in srgb, var(--SmartThemeBodyColor) 72%, transparent);
+    cursor: pointer;
+    font-family: var(--mainFontFamily);
+    font-size: calc(var(--mainFontSize) * 0.82);
+    padding: 0.12rem 0.45rem;
+}
+
+body.chatui-active .cui-root-char-group-more:hover,
+body.chatui-active .cui-root-char-group-more:focus-visible {
+    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
+    color: var(--SmartThemeBodyColor);
+    outline: none;
+}
+
+body.chatui-active .cui-root-char-group-more:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
 /* Nested chat row: indented child under a character header */
 body.chatui-active .cui-root-nested-chat-row {
     position: relative;

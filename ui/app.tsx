@@ -8,6 +8,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { createRoot } from 'preact/compat/client';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { ensureChatuiRoot } from '../shield/st-dom-shield.js';
 import { Composer, GeneratingIndicator } from './components/Composer.js';
 import { QRBar } from './components/QRBar.js';
@@ -19,8 +20,10 @@ import { SettingsNav } from './components/settings/SettingsNav.js';
 import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useChatuiSnapshot, useConfig, useIsTempChatActive, useRootDomEnhancements, useSidebarData, useSettings } from './hooks.js';
+import { useAutoScroll, useChatuiSnapshot, useConfig, useIsTempChatActive, useRootDomEnhancements, useSidebarBasics, useSettings } from './hooks.js';
 import { clearChatuiToasts, closeChatuiSettings, regenerateChatuiLast } from './actions.js';
+import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
+import { StQueryBridge } from './use-st-query-bridge.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
 
 let isSetup = false;
@@ -37,8 +40,8 @@ function ChatuiApp(): ComponentChild {
     const config = useConfig();
     // Title comes from the sidebar store (single source for chat header; it also
     // tracks rename/delete events, so the title never goes stale).
-    const sidebarData = useSidebarData();
-    const chatHeader = sidebarData.header;
+    const sidebarBasics = useSidebarBasics();
+    const chatHeader = sidebarBasics.header;
     const isTempChatActive = useIsTempChatActive();
     const rootRef = useRef<HTMLElement>(null);
     const listRef = useRef<HTMLDivElement>(null);
@@ -144,7 +147,8 @@ function ChatuiApp(): ComponentChild {
                       <QRBar />
                       {isTempChatActive && (
                           <NewChatCharacterPicker
-                              characters={sidebarData.characters}
+                              characters={sidebarBasics.characters}
+                              getDraftSnapshot={sidebarBasics.getDraftSnapshot}
                               isGenerating={state.chat.isGenerating}
                           />
                       )}
@@ -162,7 +166,12 @@ export function initChatuiRoot(): void {
     rootEl = ensureChatuiRoot();
     rootEl.setAttribute('data-cui-root-mounted', '1');
     rootApi = createRoot(rootEl);
-    rootApi.render(<ChatuiApp />);
+    rootApi.render(
+        <QueryClientProvider client={chatuiQueryClient}>
+            <StQueryBridge />
+            <ChatuiApp />
+        </QueryClientProvider>,
+    );
     isSetup = true;
 }
 
@@ -174,6 +183,7 @@ export function teardownChatuiRoot(): void {
     closeChatuiSettings();
     clearChatuiToasts();
     rootApi?.unmount();
+    resetChatuiQueryClient();
     rootEl?.removeAttribute('data-cui-root-mounted');
     rootEl?.replaceChildren();
 

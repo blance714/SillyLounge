@@ -1,6 +1,6 @@
 import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { newChatuiChat } from '../../actions.js';
+import { beginTempChatDraft, newChatuiChat } from '../../actions.js';
 
 /**
  * Region-5 ＋新对话 · creates a new chat for the current character.
@@ -9,10 +9,14 @@ import { newChatuiChat } from '../../actions.js';
 export function NewChatButton({
     disabled,
     active,
+    avatar,
+    draftSnapshot,
     onNavigate,
 }: {
     disabled: boolean;
     active: boolean;
+    avatar: string;
+    draftSnapshot: { fileNames: string[]; complete: boolean };
     onNavigate: () => void;
 }): ComponentChild {
     return (
@@ -21,6 +25,11 @@ export function NewChatButton({
             type="button"
             disabled={disabled}
             onClick={() => {
+                beginTempChatDraft({
+                    avatar,
+                    knownFileNames: draftSnapshot.fileNames,
+                    complete: draftSnapshot.complete,
+                });
                 void newChatuiChat();
                 onNavigate();
             }}

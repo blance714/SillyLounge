@@ -8,14 +8,16 @@
 
 import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { switchChatuiCharacterAndNewChat } from '../../actions.js';
+import { beginTempChatDraft, switchChatuiCharacterAndNewChat } from '../../actions.js';
 import type { CharacterSummary } from '../../types.js';
 
 export function NewChatCharacterPicker({
     characters,
+    getDraftSnapshot,
     isGenerating,
 }: {
     characters: CharacterSummary[];
+    getDraftSnapshot: (avatar: string) => { fileNames: string[]; complete: boolean };
     isGenerating: boolean;
 }): ComponentChild {
     const [isPicking, setIsPicking] = useState(false);
@@ -24,6 +26,12 @@ export function NewChatCharacterPicker({
 
     async function pick(char: CharacterSummary): Promise<void> {
         if (isPicking || isGenerating) return;
+        const snap = getDraftSnapshot(char.avatar);
+        beginTempChatDraft({
+            avatar: char.avatar,
+            knownFileNames: snap.fileNames,
+            complete: snap.complete,
+        });
         setIsPicking(true);
         try {
             await switchChatuiCharacterAndNewChat(char.avatar);

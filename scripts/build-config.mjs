@@ -7,6 +7,13 @@ export const buildOptions = {
     sourcemap: true,
     jsxFactory: 'React.createElement',
     jsxFragment: 'React.Fragment',
+    alias: {
+        react: 'preact/compat',
+        'react-dom': 'preact/compat',
+        'react-dom/client': 'preact/compat/client',
+        'react/jsx-runtime': 'preact/compat/jsx-runtime',
+        'react/jsx-dev-runtime': 'preact/compat/jsx-dev-runtime',
+    },
     external: [
         '../shield/*',
         '../store/*',
