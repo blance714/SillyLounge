@@ -1,7 +1,9 @@
 /**
  * SillyTavern-ChatUI · temp chat pointer store
  *
- * Tracks the single live new-chat draft by stable { avatar, fileName } identity.
+ * Tracks the single live new-chat draft. `tempChat` is the persisted concrete
+ * { avatar, fileName } identity; `optimisticDraft` is an in-memory marker set
+ * synchronously on click before SillyTavern creates the concrete chat file.
  * This store intentionally has no ST imports; adapter/ owns all runtime access.
  */
 
@@ -13,9 +15,14 @@ const TEMP_CHAT_STORAGE_KEY = 'chatui:tempChat';
  * @typedef {{ avatar: string, fileName: string }} TempChatPointer
  */
 
-/** @type {{ tempChat: TempChatPointer|null }} */
+/**
+ * @typedef {{ avatar: string, knownFileNames: string[], complete: boolean }} TempChatDraft
+ */
+
+/** @type {{ tempChat: TempChatPointer|null, optimisticDraft: TempChatDraft|null }} */
 const _initialState = {
     tempChat: null,
+    optimisticDraft: null,
 };
 
 const _store = createStore(_initialState);
@@ -38,8 +45,30 @@ function _storage() {
 function _normalizePointer(value) {
     const entry = /** @type {Record<string, unknown>|null} */ (value && typeof value === 'object' ? value : null);
     const avatar = typeof entry?.avatar === 'string' ? entry.avatar : '';
-    const fileName = typeof entry?.fileName === 'string' ? entry.fileName : '';
+    const fileName = _normalizeFileName(entry?.fileName);
     return avatar && fileName ? { avatar, fileName } : null;
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string}
+ */
+function _normalizeFileName(value) {
+    return typeof value === 'string' ? value.replace(/\.jsonl$/i, '') : '';
+}
+
+/**
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function _normalizeKnownFileNames(value) {
+    if (!Array.isArray(value)) return [];
+    const seen = new Set();
+    for (const item of value) {
+        const fileName = _normalizeFileName(item);
+        if (fileName) seen.add(fileName);
+    }
+    return Array.from(seen);
 }
 
 /**
@@ -82,13 +111,52 @@ export function getTempChat() {
 }
 
 /**
+ * @returns {TempChatDraft|null}
+ */
+export function getTempChatDraft() {
+    return _store.getState().optimisticDraft;
+}
+
+/**
+ * Mark draft intent before ST has created the concrete chat file.
+ * @param {{ avatar: string, knownFileNames?: string[], complete?: boolean }} draft
+ * @returns {void}
+ */
+export function beginTempChatDraft(draft) {
+    const avatar = typeof draft?.avatar === 'string' ? draft.avatar : '';
+    if (!avatar) return;
+    _store.setState({
+        ..._store.getState(),
+        optimisticDraft: {
+            avatar,
+            knownFileNames: _normalizeKnownFileNames(draft.knownFileNames),
+            complete: !!draft.complete,
+        },
+    });
+}
+
+/**
+ * Drop an in-flight optimistic marker, preserving any known concrete temp chat.
+ * @returns {void}
+ */
+export function cancelTempChatDraft() {
+    _store.setState({
+        ..._store.getState(),
+        optimisticDraft: null,
+    });
+}
+
+/**
  * @param {TempChatPointer|null} ptr
  * @returns {void}
  */
 export function setTempChat(ptr) {
     const next = _normalizePointer(ptr);
     _writeStoredPointer(next);
-    _store.setState({ tempChat: next });
+    _store.setState({
+        tempChat: next,
+        optimisticDraft: null,
+    });
 }
 
 /**
@@ -96,7 +164,7 @@ export function setTempChat(ptr) {
  */
 export function clearTempChat() {
     _writeStoredPointer(null);
-    _store.setState({ tempChat: null });
+    _store.setState({ tempChat: null, optimisticDraft: null });
 }
 
 /**
@@ -106,7 +174,25 @@ export function clearTempChat() {
  */
 export function isTempChat(avatar, fileName) {
     const ptr = getTempChat();
-    return !!ptr && ptr.avatar === avatar && ptr.fileName === fileName;
+    return !!ptr && ptr.avatar === avatar && ptr.fileName === _normalizeFileName(fileName);
+}
+
+/**
+ * Match either the concrete temp chat or any post-click chat file that was not
+ * present in the sidebar when the optimistic draft began.
+ * @param {string} avatar
+ * @param {string} fileName
+ * @returns {boolean}
+ */
+export function isTempChatDraft(avatar, fileName) {
+    const normalized = _normalizeFileName(fileName);
+    if (isTempChat(avatar, normalized)) return true;
+    const ptr = getTempChat();
+    if (ptr?.avatar === avatar) return false;
+
+    const draft = getTempChatDraft();
+    if (!draft || draft.avatar !== avatar) return false;
+    return normalized !== '' && !draft.knownFileNames.includes(normalized);
 }
 
 /**
@@ -123,5 +209,9 @@ export function subscribeTempChatStore(cb) {
  * @returns {void}
  */
 export function initTempChatStore() {
-    _store.setState({ tempChat: _readStoredPointer() });
+    const tempChat = _readStoredPointer();
+    _store.setState({
+        tempChat,
+        optimisticDraft: null,
+    });
 }

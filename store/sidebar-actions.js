@@ -1,13 +1,21 @@
 /**
  * SillyTavern-ChatUI · sidebar actions
  *
- * Store-facing facade for the navigation sidebar (Region 5). UI modules dispatch
- * sidebar intents here instead of reaching into the adapter or ST internals.
+ * UI-facing facade for sidebar intents and adapter reads. TanStack Query lives
+ * in ui/; this raw-loaded module exposes adapter-backed query functions without
+ * importing React Query or owning server-state cache.
  */
 
 import { chatuiAdapter } from '../adapter/st-adapter.js';
-import { getSidebarState, refreshCharGroupForCharacter, refreshSidebarChats, setSidebarChatEventRefreshSuppressed, subscribeSidebarStore } from './sidebar-store.js';
-import { clearTempChat, getTempChat, setTempChat } from './temp-chat-store.js';
+import { getSidebarState, subscribeSidebarStore } from './sidebar-store.js';
+import {
+    beginTempChatDraft,
+    cancelTempChatDraft,
+    clearTempChat,
+    getTempChat,
+    getTempChatDraft,
+    setTempChat,
+} from './temp-chat-store.js';
 import { pushToast } from './toast-store.js';
 
 /**
@@ -25,6 +33,37 @@ export function subscribeChatuiSidebar(cb) {
     return subscribeSidebarStore(cb);
 }
 
+/**
+ * @returns {ReturnType<typeof chatuiAdapter.sidebarActions.getCurrentChatHeader>}
+ */
+export function getChatuiCurrentChatHeader() {
+    return chatuiAdapter.sidebarActions.getCurrentChatHeader();
+}
+
+/**
+ * @returns {ReturnType<typeof chatuiAdapter.sidebarActions.listCharacters>}
+ */
+export function listChatuiCharacters() {
+    return chatuiAdapter.sidebarActions.listCharacters();
+}
+
+/**
+ * @param {{ max?: number, signal?: AbortSignal }} [options]
+ * @returns {ReturnType<typeof chatuiAdapter.sidebarActions.listRecentCharacterChatRows>}
+ */
+export function listChatuiRecentCharacterChatRows(options) {
+    return chatuiAdapter.sidebarActions.listRecentCharacterChatRows(options);
+}
+
+/**
+ * @param {string} avatar
+ * @param {{ limit?: number|null, signal?: AbortSignal }} [options]
+ * @returns {ReturnType<typeof chatuiAdapter.sidebarActions.listChatsForCharacterAvatar>}
+ */
+export function listChatuiChatsForCharacterAvatar(avatar, options) {
+    return chatuiAdapter.sidebarActions.listChatsForCharacterAvatar(avatar, options);
+}
+
 function _sameChatIdentity(a, b) {
     return !!a && !!b && a.avatar === b.avatar && a.fileName === b.fileName;
 }
@@ -33,38 +72,61 @@ let _draftInFlight = false;
 
 async function _createTempDraft() {
     if (_draftInFlight) return;
+
     const current = chatuiAdapter.getCurrentChatIdentity();
-    if (!current) return;
+    if (!current) {
+        cancelTempChatDraft();
+        return;
+    }
+
     const old = getTempChat();
     if (_sameChatIdentity(old, current)) return;
 
     _draftInFlight = true;
+    const existingDraft = getTempChatDraft();
+    if (existingDraft?.avatar !== current.avatar) {
+        beginTempChatDraft({ avatar: current.avatar });
+    }
     try {
-        let created = null;
-        setSidebarChatEventRefreshSuppressed(true);
-        try {
-            await chatuiAdapter.sidebarActions.newCharacterChat();
-            created = chatuiAdapter.getCurrentChatIdentity();
-            if (created) setTempChat(created);
-        } finally {
-            setSidebarChatEventRefreshSuppressed(false);
+        await chatuiAdapter.sidebarActions.newCharacterChat();
+        const created = chatuiAdapter.getCurrentChatIdentity();
+        if (!created) {
+            cancelTempChatDraft();
+            return;
         }
-        await refreshSidebarChats();
-        const currentAvatar = getSidebarState().characters.find(char => char.isCurrent)?.avatar;
-        if (currentAvatar) await refreshCharGroupForCharacter(currentAvatar);
-        if (old && created && !_sameChatIdentity(old, created)) {
+
+        setTempChat(created);
+
+        if (old && !_sameChatIdentity(old, created)) {
             await chatuiAdapter.sidebarActions.deleteChatFileIfSafe(old.avatar, old.fileName);
-            if (currentAvatar === old.avatar) await refreshSidebarChats();
-            await refreshCharGroupForCharacter(old.avatar);
         }
+    } catch (error) {
+        cancelTempChatDraft();
+        throw error;
     } finally {
         _draftInFlight = false;
     }
 }
 
+async function _gcAbandonedTempChat() {
+    if (_draftInFlight) return;
+    const ptr = getTempChat();
+    if (!ptr) return;
+
+    const current = chatuiAdapter.getCurrentChatIdentity();
+    if (current && _sameChatIdentity(ptr, current)) return;
+
+    try {
+        await chatuiAdapter.sidebarActions.deleteChatFileIfSafe(ptr.avatar, ptr.fileName);
+    } catch (error) {
+        console.error('[ChatUI] abandoned temp-chat GC failed', error);
+    } finally {
+        clearTempChat();
+    }
+}
+
 /**
- * Switch the active character by stable avatar. ST fires CHAT_CHANGED on
- * success → sidebar auto-refresh; toast on a failed/no-op switch.
+ * Switch the active character by stable avatar.
  * @param {string} avatar
  * @returns {Promise<void>}
  */
@@ -73,6 +135,7 @@ export async function switchChatuiCharacter(avatar) {
         const result = await chatuiAdapter.sidebarActions.switchCharacter(avatar);
         if (result === 'notfound') pushToast('error', '切换角色失败');
         else if (result === 'busy') pushToast('info', '正在保存或生成，请稍候');
+        else await _gcAbandonedTempChat();
     } catch (error) {
         console.error('[ChatUI] switch character failed', error);
         pushToast('error', '切换角色失败');
@@ -80,14 +143,14 @@ export async function switchChatuiCharacter(avatar) {
 }
 
 /**
- * Open one of the current character's past chats. ST fires CHAT_CHANGED on
- * success, which the sidebar store is subscribed to (auto-refresh).
+ * Open one of the current character's past chats.
  * @param {string} fileName
  * @returns {Promise<void>}
  */
 export async function openChatuiChat(fileName) {
     try {
         await chatuiAdapter.sidebarActions.openCharacterChatByName(fileName);
+        await _gcAbandonedTempChat();
     } catch (error) {
         console.error('[ChatUI] open chat failed', error);
         pushToast('error', '打开对话失败');
@@ -95,8 +158,7 @@ export async function openChatuiChat(fileName) {
 }
 
 /**
- * Rename one of the current character's chats. No success toast — ST shows its
- * own error popup on failure and the list refreshes via CHAT_RENAMED.
+ * Rename one of the current character's chats.
  * @param {string} oldFileName
  * @param {string} newName
  * @returns {Promise<void>}
@@ -112,7 +174,7 @@ export async function renameChatuiChat(oldFileName, newName) {
 }
 
 /**
- * Delete one of a character's chats (caller confirms first via ChatUI dialog).
+ * Delete one of a character's chats.
  * @param {string} avatar
  * @param {string} fileName
  * @returns {Promise<void>}
@@ -123,9 +185,6 @@ export async function deleteChatuiChat(avatar, fileName) {
         if (ok) {
             const tempChat = getTempChat();
             if (tempChat?.avatar === avatar && tempChat?.fileName === fileName) clearTempChat();
-            const currentAvatar = getSidebarState().characters.find(char => char.isCurrent)?.avatar;
-            if (currentAvatar === avatar) await refreshSidebarChats();
-            await refreshCharGroupForCharacter(avatar);
         }
         pushToast(ok ? 'success' : 'error', ok ? '已删除对话' : '删除失败');
     } catch (error) {
@@ -143,41 +202,34 @@ export async function newChatuiChat() {
         await _createTempDraft();
     } catch (error) {
         console.error('[ChatUI] new chat failed', error);
+        cancelTempChatDraft();
         pushToast('error', '新建对话失败');
     }
 }
 
 /**
- * Switch to the character identified by stable avatar, then immediately create
- * a new empty chat for them. Used by NewChatCharacterPicker for the "pick →
- * atomic switch + new chat" UX.
- *
- * If avatar is already the current character, skips the switch (avoiding a
- * redundant CHAT_CHANGED + getChat() round-trip) and only creates the new chat.
- *
- * No success toast — the blank new chat is its own visual confirmation.
- *
- * @param {string} avatar Stable character avatar (e.g. "char.png")
+ * Switch to a character and create a new empty chat for them.
+ * @param {string} avatar Stable character avatar.
  * @returns {Promise<void>}
  */
 export async function switchChatuiCharacterAndNewChat(avatar) {
     try {
         const result = await chatuiAdapter.sidebarActions.switchCharacter(avatar);
-        if (result === 'notfound') { pushToast('error', '切换角色失败'); return; }
-        if (result === 'busy')     { pushToast('info',  '正在保存或生成，请稍候'); return; }
+        if (result === 'notfound') { cancelTempChatDraft(); pushToast('error', '切换角色失败'); return; }
+        if (result === 'busy')     { cancelTempChatDraft(); pushToast('info',  '正在保存或生成，请稍候'); return; }
 
         await _createTempDraft();
     } catch (error) {
         console.error('[ChatUI] switchChatuiCharacterAndNewChat failed', error);
+        cancelTempChatDraft();
         pushToast('error', '操作失败');
     }
 }
 
 /**
  * Open a specific past chat, switching character if necessary.
- * Works cross-character. ST fires CHAT_CHANGED on success → sidebar auto-refresh.
- * @param {string} avatar  Stable character avatar identifier
- * @param {string} fileName  Bare chat file name (no .jsonl)
+ * @param {string} avatar Stable character avatar identifier.
+ * @param {string} fileName Bare chat file name.
  * @returns {Promise<void>}
  */
 export async function openChatuiChatForCharacter(avatar, fileName) {
@@ -185,7 +237,7 @@ export async function openChatuiChatForCharacter(avatar, fileName) {
         const result = await chatuiAdapter.sidebarActions.openChatForCharacter(avatar, fileName);
         if (result === 'notfound') pushToast('error', '角色或对话不存在');
         else if (result === 'busy') pushToast('info', '正在保存或生成，请稍候');
-        // 'ok' and 'already-open' are otherwise silent
+        else await _gcAbandonedTempChat();
     } catch (error) {
         console.error('[ChatUI] open chat for character failed', error);
         pushToast('error', '打开对话失败');

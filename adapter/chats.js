@@ -68,9 +68,10 @@ function _findCharacterIndexByAvatar(avatar) {
  * Read a character chat file without changing the active ST chat.
  * @param {number} characterId
  * @param {string} fileName Bare chat file name.
+ * @param {{ signal?: AbortSignal }} [options]
  * @returns {Promise<{ metadata: Record<string, any>|null, messages: any[] }|null>}
  */
-async function _readCharacterChatFile(characterId, fileName) {
+async function _readCharacterChatFile(characterId, fileName, { signal } = {}) {
     const characters = Array.isArray(getContext().characters) ? getContext().characters : [];
     const character = characters[characterId];
     const chName = typeof character?.name === 'string' ? character.name : '';
@@ -81,6 +82,7 @@ async function _readCharacterChatFile(characterId, fileName) {
         method: 'POST',
         headers: getRequestHeaders(),
         cache: 'no-cache',
+        signal,
         body: JSON.stringify({
             ch_name: chName,
             file_name: fileName,
@@ -126,6 +128,7 @@ function _chatTimestamp(lastMes) {
  * @property {string} displayName
  * @property {number} messageCount
  * @property {string} preview
+ * @property {string} fileSize
  * @property {number} lastMesTs
  * @property {string} lastMesLabel
  * @property {boolean} isCurrent
@@ -138,33 +141,83 @@ function _chatTimestamp(lastMes) {
  * @property {string} name          Display name
  * @property {string} thumbnailUrl  From getThumbnailUrl('avatar', avatar) or '' for avatar==='none'
  * @property {boolean} isCurrent    Whether this is the currently-active character
- * @property {ChatListItemDto[]} chats  Up to 5, newest-first
- * @property {boolean} chatsLoaded  Whether chats have been successfully fetched
+ * @property {number} dateLastChatTs
+ * @property {number} chatSize
+ * @property {ChatListItemDto[]} chats
+ * @property {number} visibleCount
+ * @property {boolean} chatsLoaded
+ * @property {boolean} fullyLoaded
+ * @property {null|'backfill'|'more'|'refresh'|'error'} pending
+ */
+
+/**
+ * @typedef {object} CharacterSummaryDto
+ * @property {string} avatar
+ * @property {string} name
+ * @property {string} thumbnailUrl
+ * @property {boolean} fav
+ * @property {boolean} isCurrent
+ * @property {number} charId
+ * @property {number} dateLastChatTs
+ * @property {number} chatSize
  */
 
 /**
  * Shared mapping from a raw ST chat summary entry to a ChatListItemDto.
+ * Handles both recent rows (`chat_items`/`mes`) and search rows
+ * (`message_count`/`preview_message`).
  * @param {Record<string, any>} entry
  * @param {string} currentChatName  Bare session name from _stripChatExt(getCurrentChatDetails()?.sessionName)
  * @param {boolean} ownerMatchesCurrent Whether this chat belongs to the current character
  * @returns {ChatListItemDto}
  */
 function _mapChatEntry(entry, currentChatName, ownerMatchesCurrent = true) {
-    const fileName = _stripChatExt(entry.file_name);
+    const fileName = _stripChatExt(entry.file_name ?? entry.file_id);
     const { ts, label } = _chatTimestamp(entry.last_mes);
     // ST fills `mes` with a bracketed placeholder for empty chats/messages;
     // blank it so the row preview stays clean.
-    const rawPreview = typeof entry.mes === 'string' ? entry.mes : '';
+    const rawPreview = typeof entry.preview_message === 'string'
+        ? entry.preview_message
+        : (typeof entry.mes === 'string' ? entry.mes : '');
     const preview = /^\[The (chat|message) is empty\]$/.test(rawPreview) ? '' : rawPreview;
+    const messageCount = typeof entry.message_count === 'number'
+        ? entry.message_count
+        : (typeof entry.chat_items === 'number' ? entry.chat_items : 0);
     return {
         fileName,
         displayName: fileName,
-        messageCount: typeof entry.chat_items === 'number' ? entry.chat_items : 0,
+        messageCount,
         preview,
+        fileSize: typeof entry.file_size === 'string' ? entry.file_size : '',
         lastMesTs: ts,
         lastMesLabel: label,
         isCurrent: ownerMatchesCurrent && fileName !== '' && fileName === currentChatName,
     };
+}
+
+/**
+ * @param {unknown} value
+ * @returns {number}
+ */
+function _finiteNumber(value) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+}
+
+/**
+ * @param {ReturnType<typeof getContext>} [ctx]
+ * @returns {{ currentChatName: string, currentAvatar: string }}
+ */
+function _getCurrentChatMatch(ctx = getContext()) {
+    const currentChatName = _stripChatExt(getCurrentChatDetails()?.sessionName);
+    const currentCharId = !ctx.groupId
+        ? _getCurrentCharacterId(ctx)
+        : null;
+    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
+    const currentAvatar = currentCharId !== null && typeof characters[currentCharId]?.avatar === 'string'
+        ? characters[currentCharId].avatar
+        : '';
+    return { currentChatName, currentAvatar };
 }
 
 /**
@@ -216,67 +269,98 @@ async function _listChatsForCharacter(charIndex, { limit = null } = {}) {
 }
 
 /**
- * List up to 5 most-recent chats for ANY character by index.
- * @param {number} charIndex
- * @returns {Promise<ChatListItemDto[]>}
+ * Header-only character groups from ST's in-memory character list.
+ * No network calls.
+ * @returns {CharConversationGroupDto[]}
  */
-export async function listChatsForCharacter(charIndex) {
-    try {
-        return await _listChatsForCharacter(charIndex, { limit: 5 });
-    } catch {
-        return [];
-    }
+export function listCharacterConversationHeaders() {
+    const ctx = getContext();
+    const rawChars = Array.isArray(ctx.characters) ? ctx.characters : [];
+    const currentCharId = !ctx.groupId ? _getCurrentCharacterId(ctx) : null;
+
+    return rawChars
+        .map((char, index) => {
+            const entry = /** @type {Record<string, any>} */ (char ?? {});
+            const avatar = typeof entry.avatar === 'string' ? entry.avatar : '';
+            const name = typeof entry.name === 'string' ? entry.name : '';
+            const chatSize = _finiteNumber(entry.chat_size);
+            const dateLastChatTs = _finiteNumber(entry.date_last_chat);
+            return {
+                charId: index,
+                avatar,
+                name,
+                thumbnailUrl: avatar && avatar !== 'none' ? getThumbnailUrl('avatar', avatar) : '',
+                isCurrent: currentCharId !== null && index === currentCharId,
+                dateLastChatTs,
+                chatSize,
+                chats: [],
+                visibleCount: 0,
+                chatsLoaded: false,
+                fullyLoaded: false,
+                pending: null,
+            };
+        })
+        .filter(group => group.name && group.avatar && group.chatSize > 0)
+        .sort((a, b) => b.dateLastChatTs - a.dateLastChatTs);
 }
 
 /**
- * Build the character-grouped conversation list for the sidebar.
- * Characters are sorted by date_last_chat (most recently active first), capped at 50.
- * For each, fetches up to 5 chats via listChatsForCharacter (all in parallel).
- * @returns {Promise<CharConversationGroupDto[]>}
+ * Recent chat rows across all entities. Only single-character rows are returned.
+ * @param {{ max?: number, signal?: AbortSignal }} [options]
+ * @returns {Promise<Array<{ avatar: string, chat: ChatListItemDto }>>}
  */
-export async function listCharacterConversations() {
-    const ctx = getContext();
-    const rawChars = Array.isArray(ctx.characters) ? ctx.characters : [];
-
-    // Keep only valid single-character entries (no placeholders)
-    const indexed = rawChars
-        .map((char, index) => ({ char, index }))
-        .filter(({ char }) => char && typeof char.name === 'string' && char.name);
-
-    const currentCharId = !ctx.groupId
-        ? (ctx.characterId !== undefined && ctx.characterId !== null ? Number(ctx.characterId) : -1)
-        : -1;
-
-    // Sort by date_last_chat descending (most recently active first)
-    const sorted = indexed
-        .slice()
-        .sort((a, b) => ((b.char.date_last_chat || 0) - (a.char.date_last_chat || 0)));
-
-    // Cap the recency list at 50, but always include the active character so
-    // stale date_last_chat metadata cannot make the current owner disappear.
-    const top = sorted.slice(0, 50);
-    const currentEntry = currentCharId >= 0 ? indexed.find(({ index }) => index === currentCharId) : null;
-    const capped = currentEntry && !top.some(({ index }) => index === currentCharId)
-        ? [currentEntry, ...top]
-        : top;
-
-    const results = await Promise.allSettled(
-        capped.map(({ index }) => listChatsForCharacter(index)),
-    );
-
-    return capped.map(({ char, index }, i) => {
-        const result = results[i];
-        const avatar = typeof char.avatar === 'string' ? char.avatar : '';
-        return {
-            charId: index,
-            avatar,
-            name: typeof char.name === 'string' ? char.name : '',
-            thumbnailUrl: avatar && avatar !== 'none' ? getThumbnailUrl('avatar', avatar) : '',
-            isCurrent: index === currentCharId,
-            chats: result.status === 'fulfilled' ? result.value : [],
-            chatsLoaded: result.status === 'fulfilled',
-        };
+export async function listRecentCharacterChatRows({ max = 100, signal } = {}) {
+    const response = await fetch('/api/chats/recent', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        cache: 'no-cache',
+        signal,
+        body: JSON.stringify({ max, metadata: false }),
     });
+    if (!response.ok) throw new Error('recent-chats-failed');
+
+    const data = await response.json();
+    const rows = Array.isArray(data) ? data : [];
+    const { currentChatName, currentAvatar } = _getCurrentChatMatch();
+    return rows
+        .map(row => /** @type {Record<string, any>} */ (row ?? {}))
+        .filter(row => typeof row.avatar === 'string' && row.avatar && !row.group)
+        .map(row => ({
+            avatar: row.avatar,
+            chat: _mapChatEntry(row, currentChatName, row.avatar === currentAvatar),
+        }))
+        .filter(row => row.chat.fileName);
+}
+
+/**
+ * List chats for a character avatar via the same search endpoint ST's native
+ * past-chats popup uses.
+ * @param {string} avatar
+ * @param {{ limit?: number|null, signal?: AbortSignal }} [options]
+ * @returns {Promise<{ chats: ChatListItemDto[], totalCount: number }>}
+ */
+export async function listChatsForCharacterAvatar(avatar, { limit = null, signal } = {}) {
+    if (typeof avatar !== 'string' || !avatar) return { chats: [], totalCount: 0 };
+    const response = await fetch('/api/chats/search', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        cache: 'no-cache',
+        signal,
+        body: JSON.stringify({ query: '', avatar_url: avatar }),
+    });
+    if (!response.ok) throw new Error('character-chat-search-failed');
+
+    const data = await response.json();
+    const rows = Array.isArray(data) ? data : [];
+    const { currentChatName, currentAvatar } = _getCurrentChatMatch();
+    const chats = rows
+        .map(row => _mapChatEntry(/** @type {Record<string, any>} */ (row ?? {}), currentChatName, avatar === currentAvatar))
+        .filter(chat => chat.fileName)
+        .sort((a, b) => b.lastMesTs - a.lastMesTs);
+    return {
+        chats: typeof limit === 'number' ? chats.slice(0, limit) : chats,
+        totalCount: chats.length,
+    };
 }
 
 /**
@@ -336,7 +420,7 @@ export async function openChatForCharacter(avatar, fileName) {
  * `avatar` is the STABLE id (the numeric chid index is unstable across
  * getCharacters() reloads, so never persist it); isCurrent compares the index
  * to getContext().characterId (= stringified this_chid).
- * @returns {Array<{ avatar: string, name: string, thumbnailUrl: string, fav: boolean, isCurrent: boolean }>}
+ * @returns {CharacterSummaryDto[]}
  */
 export function listCharacters() {
     const ctx = getContext();
@@ -348,11 +432,14 @@ export function listCharacters() {
         const entry = /** @type {Record<string, any>} */ (char ?? {});
         const avatar = typeof entry.avatar === 'string' ? entry.avatar : '';
         return {
+            charId: index,
             avatar,
             name: typeof entry.name === 'string' ? entry.name : '',
             thumbnailUrl: avatar && avatar !== 'none' ? getThumbnailUrl('avatar', avatar) : '',
             fav: entry.fav === true || entry.fav === 'true',
             isCurrent: hasCurrent && !ctx.groupId && String(index) === String(currentId),
+            dateLastChatTs: _finiteNumber(entry.date_last_chat),
+            chatSize: _finiteNumber(entry.chat_size),
         };
     });
 }

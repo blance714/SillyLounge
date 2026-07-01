@@ -1,6 +1,5 @@
 import type { createRoot } from 'preact/compat/client';
 import { getChatuiState } from '../store/chat-store.js';
-import { getSidebarState } from '../store/sidebar-store.js';
 import { getConfig } from '../store/config-store.js';
 import {
     triggerChatuiMessageAction,
@@ -9,10 +8,57 @@ import {
 
 export type ChatuiState = ReturnType<typeof getChatuiState>;
 export type ChatuiMessage = ChatuiState['chat']['messages'][number];
-export type ChatuiSidebarState = ReturnType<typeof getSidebarState>;
-export type ChatListItem = ChatuiSidebarState['chats'][number];
-export type CharacterSummary = ChatuiSidebarState['characters'][number];
-export type CharConversationGroup = ChatuiSidebarState['charGroups'][number];
+export type ChatListItem = {
+    fileName: string;
+    displayName: string;
+    messageCount: number;
+    preview: string;
+    fileSize: string;
+    lastMesTs: number;
+    lastMesLabel: string;
+    isCurrent: boolean;
+};
+export type CharacterSummary = {
+    avatar: string;
+    name: string;
+    thumbnailUrl: string;
+    fav: boolean;
+    isCurrent: boolean;
+    charId: number;
+    chatSize: number;
+    dateLastChatTs: number;
+};
+export type CharConversationGroup = {
+    charId: number;
+    avatar: string;
+    name: string;
+    thumbnailUrl: string;
+    isCurrent: boolean;
+    dateLastChatTs: number;
+    chatSize: number;
+    chats: ChatListItem[];
+    visibleCount: number;
+    chatsLoaded: boolean;
+    fullyLoaded: boolean;
+    pending: null | 'backfill' | 'more' | 'refresh' | 'error';
+};
+export type ChatuiSidebarState = {
+    header: {
+        sessionName: string;
+        characterName: string;
+        avatarImgURL: string;
+        isGroup: boolean;
+    };
+    characters: CharacterSummary[];
+    chats: ChatListItem[];
+    loading: boolean;
+    error: string | null;
+    charGroups: CharConversationGroup[];
+    charGroupsLoading: boolean;
+    charGroupsError: string | null;
+    loadMoreCharacterChats: (avatar: string) => Promise<void>;
+    retryCharacterChats: (avatar: string) => Promise<void>;
+};
 export type ChatuiConfig = ReturnType<typeof getConfig>;
 // Source of truth: MESSAGE_HEADERS / MessageHeaderValue in store/config-store.js
 // (mirrors the SidebarForm literal-union pattern in components/sidebar/Sidebar.tsx).

@@ -1,6 +1,6 @@
 import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { useSidebarData } from '../../hooks.js';
+import { useSidebarBasics } from '../../hooks.js';
 import { CharacterConversationList } from './CharacterConversationList.js';
 import { NewChatButton } from './NewChatButton.js';
 import { SettingsEntry } from './SettingsEntry.js';
@@ -35,7 +35,8 @@ export function Sidebar({
     onNavigate: () => void;
     isTempChatActive: boolean;
 }): ComponentChild {
-    const { header } = useSidebarData();
+    const { characters, getDraftSnapshot, header } = useSidebarBasics();
+    const currentAvatar = characters.find(char => char.isCurrent)?.avatar ?? '';
 
     const scheduleNavigateClose = () => {
         window.setTimeout(onNavigate, 0);
@@ -83,7 +84,13 @@ export function Sidebar({
                     </button>
                 </header>
                 <div className="cui-root-sidebar-top">
-                    <NewChatButton disabled={!header.characterName || header.isGroup} active={isTempChatActive} onNavigate={onNavigate} />
+                    <NewChatButton
+                        avatar={currentAvatar}
+                        draftSnapshot={currentAvatar ? getDraftSnapshot(currentAvatar) : { fileNames: [], complete: false }}
+                        disabled={!currentAvatar || !header.characterName || header.isGroup}
+                        active={isTempChatActive}
+                        onNavigate={onNavigate}
+                    />
                 </div>
                 <CharacterConversationList />
                 <SettingsEntry onNavigate={onNavigate} />
