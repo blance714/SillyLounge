@@ -2,8 +2,8 @@
  * SillyTavern-ChatUI · selector adapter
  */
 
-import { getUserAvatars, setUserAvatar, user_avatar } from '../../../../personas.js';
-import { getContext } from './internals.js';
+import { getUserAvatars, setUserAvatar, user_avatar } from '@st/personas';
+import { getContext } from '@st/st-context';
 
 // ── Selector chips (preset / model / persona quick-switch) ─────────────────────
 
@@ -22,7 +22,7 @@ function _presetOptions() {
     if (!pm) return [];
     const names = pm.getAllPresets() ?? [];
     const current = pm.getSelectedPresetName();
-    return names.map(name => ({ value: name, label: name, selected: name === current }));
+    return names.map((name: any) => ({ value: name, label: name, selected: name === current }));
 }
 
 /**
@@ -65,7 +65,7 @@ async function _personaOptions() {
  * @param {'preset'|'model'|'persona'} kind
  * @returns {Promise<{ value: string, label: string, selected: boolean }[]>}
  */
-export async function getSelectorOptions(kind) {
+export async function getSelectorOptions(kind: any) {
     if (kind === 'preset') return _presetOptions();
     if (kind === 'model') return _modelOptions();
     if (kind === 'persona') return _personaOptions();
@@ -76,9 +76,9 @@ export async function getSelectorOptions(kind) {
  * @param {'preset'|'model'|'persona'} kind
  * @returns {Promise<{ value: string, label: string }|null>}
  */
-export async function getSelectedSelector(kind) {
+export async function getSelectedSelector(kind: any) {
     const options = await getSelectorOptions(kind);
-    const current = options.find(option => option.selected);
+    const current = options.find((option: any) => option.selected);
     return current ? { value: current.value, label: current.label } : null;
 }
 
@@ -87,7 +87,7 @@ export async function getSelectedSelector(kind) {
  * @param {string} value
  * @returns {Promise<void>}
  */
-export async function selectSelector(kind, value) {
+export async function selectSelector(kind: any, value: any) {
     if (kind === 'preset') {
         const pm = _presetManager();
         if (!pm) return;

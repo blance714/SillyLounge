@@ -7,15 +7,15 @@
         "dev": "node ./scripts/dev.mjs",
         "runtime": "pnpm run build && node ./scripts/runtime.mjs",
         "typecheck": "tsc --noEmit",
-        "watch": "node ./scripts/build.mjs --watch"
+        "watch": "node ./scripts/dev.mjs"
     },
     "dependencies": {
         "@tanstack/react-query": "^5.101.2",
         "preact": "^10.29.2"
     },
     "devDependencies": {
-        "esbuild": "^0.28.1",
-        "typescript": "^5.9.3"
+        "typescript": "^5.9.3",
+        "vite": "^7.2.7"
     },
     "packageManager": "pnpm@11.9.0"
 }

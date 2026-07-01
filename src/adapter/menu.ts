@@ -4,17 +4,21 @@
 
 import { _dispatchClick } from './internals.js';
 
-/** @type {ReturnType<typeof setTimeout>|null} */
-let _attachmentAcceptRestoreTimer = null;
+type WandItemDto = {
+    id: string;
+    label: string;
+    iconHtml: string;
+};
 
-/** @type {(() => void)|null} */
-let _attachmentAcceptRestore = null;
+let _attachmentAcceptRestoreTimer: ReturnType<typeof setTimeout> | null = null;
+
+let _attachmentAcceptRestore: (() => void) | null = null;
 
 /**
  * @param {string} optionId
  * @returns {void}
  */
-export function triggerOptionsAction(optionId) {
+export function triggerOptionsAction(optionId: any) {
     if (typeof window.$ === 'function') {
         window.$(`#options #${optionId}`).trigger('click', [{ fromSlashCommand: true }]);
         return;
@@ -70,8 +74,8 @@ export function clearAttachmentPickerRestore() {
  * @param {string|null} accept
  * @returns {void}
  */
-export function openAttachmentPicker(accept = null) {
-    const input = /** @type {HTMLInputElement|null} */ (document.getElementById('file_form_input'));
+export function openAttachmentPicker(accept: string | null = null) {
+    const input = document.getElementById('file_form_input') as HTMLInputElement | null;
 
     if (input && accept !== null) {
         // Capture the original accept only when no restore cycle is pending, so a
@@ -101,7 +105,7 @@ export function openAttachmentPicker(accept = null) {
  * @param {Element} original
  * @returns {void}
  */
-export function triggerWandAction(original) {
+export function triggerWandAction(original: any) {
     _dispatchClick(original);
 }
 
@@ -122,9 +126,9 @@ export function listWandItems() {
     const wandMenu = document.getElementById('extensionsMenu');
     if (!wandMenu) return [];
 
-    const out = [];
+    const out: WandItemDto[] = [];
     let seq = 0;
-    const consider = (el) => {
+    const consider = (el: Element) => {
         if (!(el instanceof HTMLElement)) return;
         if (el.classList.contains('displayNone')) return;
         if (window.getComputedStyle(el).display === 'none') return;
@@ -153,7 +157,7 @@ export function listWandItems() {
  * @param {string} id opaque id from listWandItems()
  * @returns {boolean}
  */
-export function triggerWandItem(id) {
+export function triggerWandItem(id: any) {
     const el = _wandItemMap.get(id);
     if (!el) return false;
     triggerWandAction(el);
@@ -193,7 +197,7 @@ export function getPendingAttachments() {
  * @param {string} id
  * @returns {void}
  */
-export function removePendingAttachment(id) {
+export function removePendingAttachment(id: any) {
     const input = _pendingInput();
     if (!input || !input.files) return;
 
@@ -211,11 +215,9 @@ export function removePendingAttachment(id) {
     _emitPendingChanged();
 }
 
-/** @type {Set<() => void>} */
-const _pendingListeners = new Set();
+const _pendingListeners = new Set<() => void>();
 
-/** @type {MutationObserver|null} */
-let _pendingObserver = null;
+let _pendingObserver: MutationObserver | null = null;
 
 /**
  * @returns {void}
@@ -237,7 +239,7 @@ function _emitPendingChanged() {
  * @param {() => void} handler
  * @returns {() => void}
  */
-export function subscribePendingChanged(handler) {
+export function subscribePendingChanged(handler: any) {
     if (!_pendingObserver) {
         const form = document.getElementById('file_form');
         if (form) {

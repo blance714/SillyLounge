@@ -18,6 +18,10 @@ import {
 } from './temp-chat-store.js';
 import { pushToast } from './toast-store.js';
 
+type ChatIdentity = { avatar: string; fileName: string } | null | undefined;
+type RecentRowsOptions = { max?: number; signal?: AbortSignal };
+type CharacterChatsOptions = { limit?: number | null; signal?: AbortSignal };
+
 /**
  * @returns {ReturnType<typeof getSidebarState>}
  */
@@ -29,7 +33,7 @@ export function getChatuiSidebarState() {
  * @param {Function} cb
  * @returns {() => void}
  */
-export function subscribeChatuiSidebar(cb) {
+export function subscribeChatuiSidebar(cb: (state: ReturnType<typeof getSidebarState>) => void) {
     return subscribeSidebarStore(cb);
 }
 
@@ -51,7 +55,7 @@ export function listChatuiCharacters() {
  * @param {{ max?: number, signal?: AbortSignal }} [options]
  * @returns {ReturnType<typeof chatuiAdapter.sidebarActions.listRecentCharacterChatRows>}
  */
-export function listChatuiRecentCharacterChatRows(options) {
+export function listChatuiRecentCharacterChatRows(options?: RecentRowsOptions) {
     return chatuiAdapter.sidebarActions.listRecentCharacterChatRows(options);
 }
 
@@ -60,11 +64,11 @@ export function listChatuiRecentCharacterChatRows(options) {
  * @param {{ limit?: number|null, signal?: AbortSignal }} [options]
  * @returns {ReturnType<typeof chatuiAdapter.sidebarActions.listChatsForCharacterAvatar>}
  */
-export function listChatuiChatsForCharacterAvatar(avatar, options) {
+export function listChatuiChatsForCharacterAvatar(avatar: string, options?: CharacterChatsOptions) {
     return chatuiAdapter.sidebarActions.listChatsForCharacterAvatar(avatar, options);
 }
 
-function _sameChatIdentity(a, b) {
+function _sameChatIdentity(a: ChatIdentity, b: ChatIdentity) {
     return !!a && !!b && a.avatar === b.avatar && a.fileName === b.fileName;
 }
 
@@ -130,7 +134,7 @@ async function _gcAbandonedTempChat() {
  * @param {string} avatar
  * @returns {Promise<void>}
  */
-export async function switchChatuiCharacter(avatar) {
+export async function switchChatuiCharacter(avatar: string) {
     try {
         const result = await chatuiAdapter.sidebarActions.switchCharacter(avatar);
         if (result === 'notfound') pushToast('error', '切换角色失败');
@@ -147,7 +151,7 @@ export async function switchChatuiCharacter(avatar) {
  * @param {string} fileName
  * @returns {Promise<void>}
  */
-export async function openChatuiChat(fileName) {
+export async function openChatuiChat(fileName: string) {
     try {
         await chatuiAdapter.sidebarActions.openCharacterChatByName(fileName);
         await _gcAbandonedTempChat();
@@ -163,7 +167,7 @@ export async function openChatuiChat(fileName) {
  * @param {string} newName
  * @returns {Promise<void>}
  */
-export async function renameChatuiChat(oldFileName, newName) {
+export async function renameChatuiChat(oldFileName: string, newName: string) {
     try {
         const ok = await chatuiAdapter.sidebarActions.renameCharacterChat(oldFileName, newName);
         if (!ok) pushToast('error', '重命名失败');
@@ -179,7 +183,7 @@ export async function renameChatuiChat(oldFileName, newName) {
  * @param {string} fileName
  * @returns {Promise<void>}
  */
-export async function deleteChatuiChat(avatar, fileName) {
+export async function deleteChatuiChat(avatar: string, fileName: string) {
     try {
         const ok = await chatuiAdapter.sidebarActions.deleteCharacterChat(avatar, fileName);
         if (ok) {
@@ -212,7 +216,7 @@ export async function newChatuiChat() {
  * @param {string} avatar Stable character avatar.
  * @returns {Promise<void>}
  */
-export async function switchChatuiCharacterAndNewChat(avatar) {
+export async function switchChatuiCharacterAndNewChat(avatar: string) {
     try {
         const result = await chatuiAdapter.sidebarActions.switchCharacter(avatar);
         if (result === 'notfound') { cancelTempChatDraft(); pushToast('error', '切换角色失败'); return; }
@@ -232,7 +236,7 @@ export async function switchChatuiCharacterAndNewChat(avatar) {
  * @param {string} fileName Bare chat file name.
  * @returns {Promise<void>}
  */
-export async function openChatuiChatForCharacter(avatar, fileName) {
+export async function openChatuiChatForCharacter(avatar: string, fileName: string) {
     try {
         const result = await chatuiAdapter.sidebarActions.openChatForCharacter(avatar, fileName);
         if (result === 'notfound') pushToast('error', '角色或对话不存在');

@@ -47,7 +47,7 @@ export function ensureChatuiRoot() {
  * @param {number} level
  * @returns {void}
  */
-function applyShieldLevel(level) {
+function applyShieldLevel(level: any) {
     const normalizedLevel = Math.max(0, Number(level) || 0);
 
     document.body.setAttribute(SHIELD_LEVEL_ATTRIBUTE, String(normalizedLevel));
@@ -69,7 +69,7 @@ function clearShieldLevel() {
  * @param {number} level
  * @returns {void}
  */
-export function setStDomShieldLevel(level) {
+export function setStDomShieldLevel(level: any) {
     ensureChatuiRoot();
     applyShieldLevel(level);
 }

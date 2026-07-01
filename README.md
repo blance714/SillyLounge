@@ -44,7 +44,7 @@ Then run:
 pnpm run dev
 ```
 
-`dev` watches the Preact/TSX build and runtime extension files, then keeps the
+`dev` watches the Vite build inputs and runtime extension files, then keeps the
 `.runtime/SillyTavern-ChatUI` install directory synced.
 
 ## Docs
@@ -57,13 +57,13 @@ pnpm run dev
 The generated runtime directory intentionally excludes:
 
 - `node_modules/`
+- `.pnpm-store/`
 - `package.json`
 - `tsconfig.json`
 - `scripts/`
-- `ui/*.ts`
-- `ui/*.tsx`
-- `ui/components/`
+- `src/`
 - docs and source-only contracts
 
-It includes the SillyTavern manifest, runtime JS/CSS modules, and built Preact
-assets under `dist/`.
+Authored source now lives under `src/`. Vite compiles the runtime modules into
+`dist/runtime/` and the Preact app into `dist/root-app.mjs`; `pnpm run runtime`
+then syncs the SillyTavern-loadable tree into `.runtime/SillyTavern-ChatUI`.

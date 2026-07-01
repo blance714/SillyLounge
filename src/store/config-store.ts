@@ -11,28 +11,17 @@
 import { chatuiAdapter } from '../adapter/st-adapter.js';
 import { createStore } from './create-store.js';
 
-// ── Types (JSDoc) ─────────────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────────────────────────────────
 
-/**
- * Identity-header density for character messages (DESIGN §5.A):
- *   'icon' = avatar + name (+time), 'name' = name (+time) only, 'none' = nothing.
- * @typedef {'icon'|'name'|'none'} MessageHeaderValue
- */
+export type MessageHeaderValue = 'icon' | 'name' | 'none';
+export type ComposerLinesValue = 'multi' | 'single';
 
-/**
- * Composer line mode (DESIGN §4.2):
- *   'multi'  = tall auto-growing textarea, selector B on its own row below;
- *   'single' = compact one-line input, selector B relocated into the ＋ menu top.
- * @typedef {'multi'|'single'} ComposerLinesValue
- */
-
-/**
- * @typedef {object} ChatuiConfig
- * @property {MessageHeaderValue} headerGroup Header mode used in group chats.
- * @property {MessageHeaderValue} headerSolo  Header mode used in solo chats.
- * @property {ComposerLinesValue} composerLines Composer single/multi-line mode.
- * @property {string[]} plusPinned ＋menu tool ids promoted to top tiles (DESIGN §4.3).
- */
+export type ChatuiConfig = {
+    headerGroup: MessageHeaderValue;
+    headerSolo: MessageHeaderValue;
+    composerLines: ComposerLinesValue;
+    plusPinned: string[];
+};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -41,14 +30,14 @@ import { createStore } from './create-store.js';
  * defaults, validation, and the settings select order.
  * @type {MessageHeaderValue[]}
  */
-export const MESSAGE_HEADERS = ['icon', 'name', 'none'];
+export const MESSAGE_HEADERS: MessageHeaderValue[] = ['icon', 'name', 'none'];
 
 /**
  * Canonical ordered list of composer line modes — single source for default,
  * validation, and the settings select order.
  * @type {ComposerLinesValue[]}
  */
-export const COMPOSER_LINES = ['multi', 'single'];
+export const COMPOSER_LINES: ComposerLinesValue[] = ['multi', 'single'];
 
 /**
  * Canonical ordered list of ＋menu tool ids — the single source of truth for which
@@ -57,7 +46,7 @@ export const COMPOSER_LINES = ['multi', 'single'];
  * persisted plusPinned setting. Same contract as the enums above.
  * @type {string[]}
  */
-export const PLUS_TOOL_IDS = ['photos', 'files', 'continue', 'impersonate', 'regenerate'];
+export const PLUS_TOOL_IDS: string[] = ['photos', 'files', 'continue', 'impersonate', 'regenerate'];
 
 /** Max number of ＋menu tools that can be pinned as top tiles (DESIGN §4.3). */
 export const PLUS_PIN_CAP = 4;
@@ -69,7 +58,7 @@ export const PLUS_PIN_CAP = 4;
  * solo chats stay clean (pure ChatGPT, no header). Composer defaults to multi-line.
  * @type {ChatuiConfig}
  */
-const DEFAULT_CONFIG = {
+const DEFAULT_CONFIG: ChatuiConfig = {
     headerGroup: 'icon',
     headerSolo: 'none',
     composerLines: 'multi',
@@ -79,7 +68,6 @@ const DEFAULT_CONFIG = {
     plusPinned: ['regenerate', 'continue'],
 };
 
-/** @type {ReturnType<typeof createStore<ChatuiConfig>>} */
 const _store = createStore(DEFAULT_CONFIG);
 
 /**
@@ -95,11 +83,11 @@ const _store = createStore(DEFAULT_CONFIG);
  * @param {unknown} raw
  * @returns {string[]}
  */
-function normalizePlusPinned(raw) {
+function normalizePlusPinned(raw: unknown): string[] {
     if (!Array.isArray(raw)) return [...DEFAULT_CONFIG.plusPinned];
 
-    const seen = new Set();
-    const out = [];
+    const seen = new Set<string>();
+    const out: string[] = [];
     for (const id of raw) {
         if (typeof id !== 'string') continue;
         if (!PLUS_TOOL_IDS.includes(id)) continue;
@@ -124,7 +112,7 @@ export function getConfig() {
  * @param {(config: ChatuiConfig) => void} fn
  * @returns {() => void} Unsubscribe function.
  */
-export function subscribeConfig(fn) {
+export function subscribeConfig(fn: (config: ChatuiConfig) => void) {
     return _store.subscribe(fn);
 }
 
@@ -136,7 +124,7 @@ export function subscribeConfig(fn) {
  * @param {ChatuiConfig[K]} value
  * @returns {void}
  */
-export function setConfigValue(key, value) {
+export function setConfigValue<K extends keyof ChatuiConfig>(key: K, value: ChatuiConfig[K]) {
     const next = { ...getConfig(), [key]: value };
     _store.setState(next);
     chatuiAdapter.configActions.write(next);
@@ -149,7 +137,7 @@ export function setConfigValue(key, value) {
  * @param {MessageHeaderValue} value
  * @returns {void}
  */
-export function setMessageHeader(scope, value) {
+export function setMessageHeader(scope: 'group' | 'solo', value: MessageHeaderValue) {
     setConfigValue(scope === 'group' ? 'headerGroup' : 'headerSolo', value);
 }
 
@@ -158,7 +146,7 @@ export function setMessageHeader(scope, value) {
  * @param {ComposerLinesValue} value
  * @returns {void}
  */
-export function setComposerLines(value) {
+export function setComposerLines(value: ComposerLinesValue) {
     setConfigValue('composerLines', value);
 }
 
@@ -169,7 +157,7 @@ export function setComposerLines(value) {
  * @param {string[]} ids
  * @returns {void}
  */
-export function setPlusPinned(ids) {
+export function setPlusPinned(ids: string[]) {
     setConfigValue('plusPinned', normalizePlusPinned(ids));
 }
 
@@ -186,11 +174,10 @@ export function initConfigStore() {
     const persisted = chatuiAdapter.configActions.read();
 
     /** Coerce a persisted enum value to a known member, else fall back. */
-    const pick = (/** @type {string[]} */ allowed, /** @type {unknown} */ raw, /** @type {string} */ fallback) =>
-        allowed.includes(/** @type {string} */ (raw)) ? /** @type {any} */ (raw) : fallback;
+    const pick = <T extends string>(allowed: readonly T[], raw: unknown, fallback: T): T =>
+        typeof raw === 'string' && (allowed as readonly string[]).includes(raw) ? raw as T : fallback;
 
-    /** @type {ChatuiConfig} */
-    const normalized = {
+    const normalized: ChatuiConfig = {
         headerGroup: pick(MESSAGE_HEADERS, persisted.headerGroup, DEFAULT_CONFIG.headerGroup),
         headerSolo: pick(MESSAGE_HEADERS, persisted.headerSolo, DEFAULT_CONFIG.headerSolo),
         composerLines: pick(COMPOSER_LINES, persisted.composerLines, DEFAULT_CONFIG.composerLines),

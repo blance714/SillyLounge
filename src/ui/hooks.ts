@@ -27,6 +27,8 @@ const INITIAL_VISIBLE_COUNT = SIDEBAR_INITIAL_VISIBLE;
 const MORE_PAGE_SIZE = SIDEBAR_MORE_SIZE;
 const BACKFILL_CONCURRENCY = SIDEBAR_BACKFILL_CONCURRENCY;
 
+type CharacterChatsResult = { chats: ChatListItem[]; totalCount: number };
+
 function chatRecencyTs(chat: ChatListItem): number {
     return Number.isFinite(chat.lastMesTs) ? chat.lastMesTs : 0;
 }
@@ -111,7 +113,7 @@ export function useSidebarBasics(): {
     const currentChat = chatState.chat.currentChat;
 
     const header = headerQuery.data ?? { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false };
-    const characters = useMemo(() => (charactersQuery.data ?? []).map(character => ({
+    const characters = useMemo<CharacterSummary[]>(() => ((charactersQuery.data ?? []) as CharacterSummary[]).map((character: CharacterSummary) => ({
         ...character,
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
@@ -166,20 +168,20 @@ export function useSidebarData(): ChatuiSidebarState {
     const requestedBackfillRef = useRef<Set<string>>(new Set());
 
     const header = headerQuery.data ?? { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false };
-    const characters = useMemo(() => (charactersQuery.data ?? []).map(character => ({
+    const characters = useMemo<CharacterSummary[]>(() => ((charactersQuery.data ?? []) as CharacterSummary[]).map((character: CharacterSummary) => ({
         ...character,
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
 
-    const groupHeaders = useMemo(() => characters
-        .filter(character => character.avatar && character.name && finiteNumber(character.chatSize) > 0)
+    const groupHeaders = useMemo<CharacterSummary[]>(() => characters
+        .filter((character: CharacterSummary) => character.avatar && character.name && finiteNumber(character.chatSize) > 0)
         .slice()
-        .sort((a, b) => finiteNumber(b.dateLastChatTs) - finiteNumber(a.dateLastChatTs)), [characters]);
+        .sort((a: CharacterSummary, b: CharacterSummary) => finiteNumber(b.dateLastChatTs) - finiteNumber(a.dateLastChatTs)), [characters]);
 
-    const groupAvatarKey = useMemo(() => groupHeaders.map(group => group.avatar).join('\u0001'), [groupHeaders]);
+    const groupAvatarKey = useMemo(() => groupHeaders.map((group: CharacterSummary) => group.avatar).join('\u0001'), [groupHeaders]);
 
     useEffect(() => {
-        const keep = new Set(groupHeaders.map(group => group.avatar));
+        const keep = new Set(groupHeaders.map((group: CharacterSummary) => group.avatar));
         requestedBackfillRef.current = new Set([...requestedBackfillRef.current].filter(avatar => keep.has(avatar)));
         setPendingBackfillAvatars(prev => new Set([...prev].filter(avatar => keep.has(avatar))));
         setPendingMoreAvatars(prev => new Set([...prev].filter(avatar => keep.has(avatar))));
@@ -188,7 +190,7 @@ export function useSidebarData(): ChatuiSidebarState {
     }, [groupAvatarKey, groupHeaders]);
 
     const byCharacterQueries = useQueries({
-        queries: groupHeaders.map(group => {
+        queries: groupHeaders.map((group: CharacterSummary) => {
             const options = sidebarQueryOptions.byCharacter(group.avatar);
             return {
                 ...options,
@@ -199,7 +201,7 @@ export function useSidebarData(): ChatuiSidebarState {
 
     const byCharacterByAvatar = useMemo(() => {
         const map = new Map<string, (typeof byCharacterQueries)[number]>();
-        groupHeaders.forEach((group, index) => {
+        groupHeaders.forEach((group: CharacterSummary, index: number) => {
             map.set(group.avatar, byCharacterQueries[index]);
         });
         return map;
@@ -219,8 +221,8 @@ export function useSidebarData(): ChatuiSidebarState {
     }, [recentsQuery.data]);
 
     const backfillNeededAvatarKey = useMemo(() => groupHeaders
-        .filter(group => (recentsByAvatar.get(group.avatar) ?? []).length === 0)
-        .map(group => group.avatar)
+        .filter((group: CharacterSummary) => (recentsByAvatar.get(group.avatar) ?? []).length === 0)
+        .map((group: CharacterSummary) => group.avatar)
         .sort()
         .join('\u0001'), [groupHeaders, recentsByAvatar]);
 
@@ -279,7 +281,7 @@ export function useSidebarData(): ChatuiSidebarState {
         if (!avatar) return;
         setPendingMoreAvatars(prev => withSetValue(prev, avatar, true));
         try {
-            const result = await queryClient.fetchQuery(sidebarQueryOptions.byCharacter(avatar));
+            const result = await queryClient.fetchQuery(sidebarQueryOptions.byCharacter(avatar)) as CharacterChatsResult;
             setFailedFullAvatars(prev => withSetValue(prev, avatar, false));
             setVisibleCounts(prev => {
                 const current = Math.max(prev[avatar] ?? INITIAL_VISIBLE_COUNT, INITIAL_VISIBLE_COUNT);
@@ -310,9 +312,9 @@ export function useSidebarData(): ChatuiSidebarState {
         }
     }, [queryClient]);
 
-    const charGroups = useMemo(() => groupHeaders.map(group => {
+    const charGroups = useMemo<CharConversationGroup[]>(() => groupHeaders.map((group: CharacterSummary) => {
         const byCharacterQuery = byCharacterByAvatar.get(group.avatar);
-        const full = byCharacterQuery?.data;
+        const full = byCharacterQuery?.data as CharacterChatsResult | undefined;
         const visibleCount = Math.max(visibleCounts[group.avatar] ?? INITIAL_VISIBLE_COUNT, INITIAL_VISIBLE_COUNT);
         const recentChats = recentsByAvatar.get(group.avatar) ?? [];
         const draftActive = tempDraft?.avatar === group.avatar;
@@ -371,7 +373,7 @@ export function useSidebarData(): ChatuiSidebarState {
         visibleCounts,
     ]);
 
-    const currentGroup = charGroups.find(group => currentChat?.avatar === group.avatar);
+    const currentGroup = charGroups.find((group: CharConversationGroup) => currentChat?.avatar === group.avatar);
 
     return {
         header,

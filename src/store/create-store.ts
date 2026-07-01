@@ -4,27 +4,27 @@
  * Tiny observable state holder for UI-facing stores.
  */
 
-/**
- * @template T
- * @param {T} initialState
- * @returns {{ getState: () => T, setState: (nextState: T) => void, subscribe: (subscriber: (state: T) => void) => () => void }}
- */
-export function createStore(initialState) {
+export type Store<T> = {
+    getState: () => T;
+    setState: (nextState: T) => void;
+    subscribe: (subscriber: (state: T) => void) => () => void;
+};
+
+export function createStore<T>(initialState: T): Store<T> {
     let state = initialState;
-    /** @type {Set<(state: T) => void>} */
-    const subscribers = new Set();
+    const subscribers = new Set<(state: T) => void>();
 
     return {
-        getState() {
+        getState(): T {
             return state;
         },
-        setState(nextState) {
+        setState(nextState: T): void {
             state = nextState;
             for (const subscriber of subscribers) {
                 subscriber(state);
             }
         },
-        subscribe(subscriber) {
+        subscribe(subscriber: (state: T) => void): () => void {
             subscribers.add(subscriber);
             return () => subscribers.delete(subscriber);
         },

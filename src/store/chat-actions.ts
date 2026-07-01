@@ -9,12 +9,18 @@ import { chatuiAdapter } from '../adapter/st-adapter.js';
 export { stEventKeys as chatuiEventKeys } from '../adapter/st-adapter.js';
 import { pushToast, dismissToast } from './toast-store.js';
 
+export type ChatuiMessageAction = 'copy' | 'regen' | 'edit' | 'delete' | 'branch' | 'checkpoint' | 'hide';
+export type ChatuiShellAction = 'characters' | 'characterCreate' | 'groupChats' | 'aiConfig' | 'formatting' | 'worldInfo' | 'background' | 'userSettings' | 'extensions' | 'personas';
+export type ChatuiSelectorKind = 'preset' | 'model' | 'persona';
+export type ChatuiSwipeDirection = 'left' | 'right';
+export type ChatuiToastKind = 'info' | 'success' | 'error';
+
 /**
  * @param {number|string} messageId
  * @param {'copy'|'regen'|'edit'|'delete'|'branch'|'checkpoint'|'hide'} action
  * @returns {void}
  */
-export function triggerChatuiMessageAction(messageId, action) {
+export function triggerChatuiMessageAction(messageId: number | string, action: ChatuiMessageAction) {
     const result = chatuiAdapter.messageActions.triggerMessageActionById(messageId, action);
     if (action === 'copy') {
         Promise.resolve(result)
@@ -28,7 +34,7 @@ export function triggerChatuiMessageAction(messageId, action) {
  * @param {string} text
  * @returns {Promise<void>}
  */
-export async function saveEditedChatuiMessage(messageId, text) {
+export async function saveEditedChatuiMessage(messageId: number | string, text: string) {
     await chatuiAdapter.messageActions.saveMessageEditById(messageId, text);
 }
 
@@ -36,7 +42,7 @@ export async function saveEditedChatuiMessage(messageId, text) {
  * @param {string} text
  * @returns {Promise<void>}
  */
-export async function sendChatuiComposerMessage(text) {
+export async function sendChatuiComposerMessage(text: string) {
     await chatuiAdapter.composerActions.sendComposerMessage(text);
 }
 
@@ -52,7 +58,7 @@ export function stopChatuiGeneration() {
  * @param {'characters'|'characterCreate'|'groupChats'|'aiConfig'|'formatting'|'worldInfo'|'background'|'userSettings'|'extensions'|'personas'} action
  * @returns {void}
  */
-export function triggerChatuiShellAction(action) {
+export function triggerChatuiShellAction(action: ChatuiShellAction) {
     chatuiAdapter.shellActions.triggerShellAction(action);
 }
 
@@ -61,7 +67,7 @@ export function triggerChatuiShellAction(action) {
  * @param {number} mediaIndex
  * @returns {void}
  */
-export function openChatuiMessageMedia(messageId, mediaIndex) {
+export function openChatuiMessageMedia(messageId: number | string, mediaIndex: number) {
     chatuiAdapter.mediaActions.openMessageMedia(messageId, mediaIndex);
 }
 
@@ -70,7 +76,7 @@ export function openChatuiMessageMedia(messageId, mediaIndex) {
  * @param {number} fileIndex
  * @returns {void}
  */
-export function openChatuiMessageFile(messageId, fileIndex) {
+export function openChatuiMessageFile(messageId: number | string, fileIndex: number) {
     chatuiAdapter.mediaActions.openMessageFile(messageId, fileIndex);
 }
 
@@ -79,7 +85,7 @@ export function openChatuiMessageFile(messageId, fileIndex) {
  * @param {'left'|'right'} direction
  * @returns {void}
  */
-export function swipeChatuiMessage(messageId, direction) {
+export function swipeChatuiMessage(messageId: number | string, direction: ChatuiSwipeDirection) {
     chatuiAdapter.messageActions.swipeMessageById(messageId, direction);
 }
 
@@ -112,7 +118,7 @@ export function regenerateChatuiLast() {
  * @param {string|null} accept
  * @returns {void}
  */
-export function openChatuiAttachmentPicker(accept = null) {
+export function openChatuiAttachmentPicker(accept: string | null = null) {
     chatuiAdapter.menuActions.openAttachmentPicker(accept);
 }
 
@@ -122,7 +128,7 @@ export function openChatuiAttachmentPicker(accept = null) {
  * @param {(...args: any[]) => void} handler
  * @returns {() => void}
  */
-export function subscribeChatuiEvent(key, handler) {
+export function subscribeChatuiEvent(key: string, handler: (...args: any[]) => void) {
     return chatuiAdapter.subscribe(key, handler);
 }
 
@@ -137,7 +143,7 @@ export function listChatuiWandItems() {
  * @param {string} id
  * @returns {boolean}
  */
-export function triggerChatuiWandItem(id) {
+export function triggerChatuiWandItem(id: string) {
     return chatuiAdapter.menuActions.triggerWandItem(id);
 }
 
@@ -152,7 +158,7 @@ export function getChatuiPendingAttachments() {
  * @param {string} id
  * @returns {void}
  */
-export function removeChatuiPendingAttachment(id) {
+export function removeChatuiPendingAttachment(id: string) {
     chatuiAdapter.menuActions.removePendingAttachment(id);
 }
 
@@ -160,7 +166,7 @@ export function removeChatuiPendingAttachment(id) {
  * @param {() => void} handler
  * @returns {() => void}
  */
-export function subscribeChatuiPendingAttachments(handler) {
+export function subscribeChatuiPendingAttachments(handler: () => void) {
     return chatuiAdapter.menuActions.subscribePendingChanged(handler);
 }
 
@@ -168,7 +174,7 @@ export function subscribeChatuiPendingAttachments(handler) {
  * @param {'preset'|'model'|'persona'} kind
  * @returns {Promise<{ value: string, label: string, selected: boolean }[]>}
  */
-export function getChatuiSelectorOptions(kind) {
+export function getChatuiSelectorOptions(kind: ChatuiSelectorKind) {
     return chatuiAdapter.selectorActions.getSelectorOptions(kind);
 }
 
@@ -176,7 +182,7 @@ export function getChatuiSelectorOptions(kind) {
  * @param {'preset'|'model'|'persona'} kind
  * @returns {Promise<{ value: string, label: string }|null>}
  */
-export function getChatuiSelectedSelector(kind) {
+export function getChatuiSelectedSelector(kind: ChatuiSelectorKind) {
     return chatuiAdapter.selectorActions.getSelectedSelector(kind);
 }
 
@@ -185,7 +191,7 @@ export function getChatuiSelectedSelector(kind) {
  * @param {string} value
  * @returns {Promise<void>}
  */
-export function selectChatuiSelector(kind, value) {
+export function selectChatuiSelector(kind: ChatuiSelectorKind, value: string) {
     return chatuiAdapter.selectorActions.selectSelector(kind, value);
 }
 
@@ -194,7 +200,7 @@ export function selectChatuiSelector(kind, value) {
  * @param {() => void} cb
  * @returns {() => void}
  */
-export function subscribeChatuiSelectorSync(cb) {
+export function subscribeChatuiSelectorSync(cb: () => void) {
     const keys = ['PRESET_CHANGED', 'OAI_PRESET_CHANGED_AFTER', 'CONNECTION_PROFILE_LOADED', 'PERSONA_CHANGED', 'CHAT_CHANGED'];
     const offs = keys.map(key => chatuiAdapter.subscribe(key, cb));
     return () => offs.forEach(off => off());
@@ -215,7 +221,7 @@ export function listChatuiQuickReplies() {
  * @param {string} id opaque id from listChatuiQuickReplies()
  * @returns {boolean}
  */
-export function triggerChatuiQuickReply(id) {
+export function triggerChatuiQuickReply(id: string) {
     return chatuiAdapter.qrActions.triggerQuickReply(id);
 }
 
@@ -225,7 +231,7 @@ export function triggerChatuiQuickReply(id) {
  * @param {() => void} cb
  * @returns {() => void}
  */
-export function subscribeChatuiQuickReplies(cb) {
+export function subscribeChatuiQuickReplies(cb: () => void) {
     return chatuiAdapter.qrActions.subscribeQuickReplies(cb);
 }
 
@@ -236,7 +242,7 @@ export function subscribeChatuiQuickReplies(cb) {
  * @param {number} [ttl]
  * @returns {string}
  */
-export function notifyChatui(kind, text, ttl) {
+export function notifyChatui(kind: ChatuiToastKind, text: string, ttl?: number) {
     return pushToast(kind, text, ttl);
 }
 
@@ -244,7 +250,7 @@ export function notifyChatui(kind, text, ttl) {
  * @param {string} id
  * @returns {void}
  */
-export function dismissChatuiToast(id) {
+export function dismissChatuiToast(id: string) {
     dismissToast(id);
 }
 
@@ -258,7 +264,7 @@ export function dismissChatuiToast(id) {
  * @param {Element} hostEl          ChatUI host container
  * @returns {boolean}
  */
-export function mountChatuiStDrawer(drawerContentId, hostEl) {
+export function mountChatuiStDrawer(drawerContentId: string, hostEl: Element) {
     return chatuiAdapter.settingsActions.mountDrawer(drawerContentId, hostEl);
 }
 
@@ -267,7 +273,7 @@ export function mountChatuiStDrawer(drawerContentId, hostEl) {
  * @param {string} drawerContentId  id of the .drawer-content element
  * @returns {boolean}
  */
-export function unmountChatuiStDrawer(drawerContentId) {
+export function unmountChatuiStDrawer(drawerContentId: string) {
     return chatuiAdapter.settingsActions.unmountDrawer(drawerContentId);
 }
 

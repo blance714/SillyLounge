@@ -2,21 +2,21 @@
  * SillyTavern-ChatUI · composer adapter
  */
 
-import { sendTextareaMessage } from '../../../../../script.js';
+import { sendTextareaMessage } from '@st/script';
 import { _dispatchClick } from './internals.js';
 
 /**
  * @returns {HTMLTextAreaElement|null}
  */
-export function getNativeComposerTextarea() {
-    return /** @type {HTMLTextAreaElement|null} */ (document.getElementById('send_textarea'));
+export function getNativeComposerTextarea(): HTMLTextAreaElement | null {
+    return document.getElementById('send_textarea') as HTMLTextAreaElement | null;
 }
 
 /**
  * @param {string} text
  * @returns {void}
  */
-export function setNativeComposerText(text) {
+export function setNativeComposerText(text: any) {
     const textarea = getNativeComposerTextarea();
     if (!textarea) return;
 
@@ -29,7 +29,7 @@ export function setNativeComposerText(text) {
  * @param {string} text
  * @returns {Promise<void>}
  */
-export async function sendComposerMessage(text) {
+export async function sendComposerMessage(text: any) {
     setNativeComposerText(text);
     await sendTextareaMessage();
 }

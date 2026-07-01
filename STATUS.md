@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-06-28
+Last updated: 2026-07-01
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
@@ -21,22 +21,23 @@ SillyTavern page/runtime
   |
   | manifest loads index.js + style.css
   v
-index.js  (master enable toggle + setup/teardown orchestration)
+src/index.ts -> index.js
+        (master enable toggle + setup/teardown orchestration)
   |
-  +-- shield/st-dom-shield.js
+  +-- src/shield/st-dom-shield.ts -> shield/st-dom-shield.js
   |     owns body.chatui-active, #chatui-root, and the shield level
   |     (parks native #chat / #send_form off-screen; promotes #chatui-root)
   |
-  +-- adapter/  (the ONLY layer that touches ST internals)
+  +-- src/adapter/ -> adapter/  (the ONLY layer that touches ST internals)
   |     st-adapter.js is the frozen facade; behavior split across
   |     internals · messages · composer · media · menu · selectors ·
   |     shell · chats · qr · config · settings submodules; returns plain DTOs
   |
-  +-- store/  (ST-free observable view-model, createStore factory)
+  +-- src/store/ -> store/  (ST-free observable view-model, createStore factory)
   |     chat · sidebar · config · ui · toast stores + *-actions facades
   |
-  +-- ui/root.js -> dist/root-app.mjs
-        Preact/compat app built from ui/app.tsx; reads stores via hooks,
+  +-- src/ui/root.ts -> ui/root.js -> dist/root-app.mjs
+        Preact/compat app built from src/ui/app.tsx; reads stores via hooks,
         mutates via the ui/actions.ts barrel
 ```
 
@@ -50,45 +51,47 @@ SUPERSEDED historical records.
 ## Source Layout
 
 ```text
-index.js                  entry: master enable toggle + setup/teardown
 manifest.json             extension descriptor
 style.css                 :root vars + shield rules + .cui-root-* app styles
-adapter/                  ST runtime boundary — facade + per-domain submodules
-  st-adapter.js           frozen facade (groups the submodule actions)
-  internals.js            shared ST context / event / dispatch helpers
-  messages.js  composer.js  media.js  menu.js  selectors.js
-  shell.js     chats.js     qr.js     config.js
-store/                    ST-free observable view-model (createStore factory)
-  create-store.js         tiny observable store primitive
-  chat-store.js / chat-actions.js
-  sidebar-store.js / sidebar-actions.js
-  temp-chat-store.js      single new-chat draft pointer (localStorage), replaces the old pending-new-chat marker
-  config-store.js         persisted per-feature config (via adapter/config.js)
-  ui-store.js             ephemeral session UI state (settings mode / drawer selection)
-  toast-store.js          ChatUI feedback layer
-shield/
-  st-dom-shield.js        #chatui-root + body.chatui-active + shield levels
-ui/
-  app.tsx                 root Preact shell (two-pane sidebar | chat; settings swaps both panes)
-  root.js                 stable runtime wrapper for dist/root-app.mjs
-  actions.ts hooks.ts format.ts types.ts
-  components/
-    Composer  PlusMenu  QRBar  SelectorChip  AttachmentChips
-    MessageItem  TopbarMenu  ConfirmDialog  Toaster
-    composer/ NewChatCharacterPicker
-    sidebar/  Sidebar CharacterConversationList CharacterSwitcher
-              ChatRow NewChatButton SettingsEntry
-    settings/ SettingsNav SettingsContent ChatUiSettingsContent StDrawerHost
-    config/   ConfigSelect PlusPinEditor
-    message/  ActionButton MenuItem MessageActions MessageAvatar
-              MessageEditor MessageMedia MessageReasoning
+src/
+  index.ts                entry: master enable toggle + setup/teardown
+  adapter/                ST runtime boundary — facade + per-domain submodules
+    st-adapter.ts         frozen facade (groups the submodule actions)
+    internals.ts          shared ST context / event / dispatch helpers
+    messages.ts  composer.ts  media.ts  menu.ts  selectors.ts
+    shell.ts     chats.ts     qr.ts     config.ts     settings.ts
+  store/                  ST-free observable view-model (createStore factory)
+    create-store.ts       tiny observable store primitive
+    chat-store.ts / chat-actions.ts
+    sidebar-store.ts / sidebar-actions.ts
+    temp-chat-store.ts    single new-chat draft pointer (localStorage), replaces the old pending-new-chat marker
+    config-store.ts       persisted per-feature config (via adapter/config.ts)
+    ui-store.ts           ephemeral session UI state (settings mode / drawer selection)
+    toast-store.ts        ChatUI feedback layer
+  shield/
+    st-dom-shield.ts      #chatui-root + body.chatui-active + shield levels
+  ui/
+    app.tsx               root Preact shell (two-pane sidebar | chat; settings swaps both panes)
+    root.ts               stable runtime wrapper for dist/root-app.mjs
+    actions.ts hooks.ts format.ts types.ts sidebar-queries.ts query-client.ts
+    components/
+      Composer  PlusMenu  QRBar  SelectorChip  AttachmentChips
+      MessageItem  TopbarMenu  ConfirmDialog  Toaster
+      composer/ NewChatCharacterPicker
+      sidebar/  Sidebar CharacterConversationList NewChatButton SettingsEntry
+      settings/ SettingsNav SettingsContent ChatUiSettingsContent StDrawerHost
+      config/   ConfigSelect PlusPinEditor
+      message/  ActionButton MenuItem MessageActions MessageAvatar
+                MessageEditor MessageMedia MessageReasoning
+  types/st-externals.d.ts SillyTavern host-module declarations
 scripts/                  build / dev / runtime-sync tooling
-dist/                     generated browser bundle (gitignored)
+dist/                     generated browser output (gitignored)
 ```
 
 The extension installer does not build plugins. Authored Preact/TSX is bundled
-with esbuild into `dist/root-app.mjs`; `pnpm run runtime` syncs the loadable
-tree into `.runtime/SillyTavern-ChatUI`.
+with Vite into `dist/root-app.mjs`; runtime TS modules are compiled with Vite
+into `dist/runtime/`, and `pnpm run runtime` syncs the loadable tree into
+`.runtime/SillyTavern-ChatUI`.
 
 ---
 
@@ -102,8 +105,8 @@ layer, and the ChatUI-native settings shell.
 SillyTavern still owns: chat persistence, generation/regeneration, settings,
 extension events, file previews, and all native drawer panel contents. ChatUI may
 temporarily host a live ST drawer inside its settings shell, but only through
-`adapter/settings.js` + `StDrawerHost`; UI code never reaches into the drawer DOM
-directly. The native `#chat` and `#send_form` stay alive in the DOM (parked
+`src/adapter/settings.ts` + `StDrawerHost`; UI code never reaches into the
+drawer DOM directly. The native `#chat` and `#send_form` stay alive in the DOM (parked
 off-screen by the shield) because ST render/update/send/edit semantics still flow
 through them; the adapter bridges ChatUI intents into those native pipelines.
 
@@ -112,10 +115,10 @@ through them; the adapter bridges ChatUI intents into those native pipelines.
 - UI code must not import ST core modules or read ST DOM as state.
 - Only the `adapter/` layer may touch ST internals or dispatch native DOM.
 - The store must not know ST selectors; the adapter must not import the store.
-- Bundled UI reaches the store only through `ui/actions.ts` / `ui/hooks.ts`
-  (esbuild marks `../store/*` external relative to the `ui/app.tsx` entry, so a
+- Bundled UI reaches the store only through `src/ui/actions.ts` / `src/ui/hooks.ts`
+  (Vite/Rollup marks `../store/*` external relative to the `src/ui/app.tsx` entry, so a
   deep component importing `../../../store/*` would wrongly bundle the ST graph).
-- `dist/` is generated; authored UI changes belong in `ui/`.
+- `dist/` is generated; authored changes belong in `src/`.
 
 ---
 
@@ -153,14 +156,13 @@ rename/delete re-validates the authoritative chat identity before destructive
 calls, temp-draft creation is serialized, and ＋新对话 is disabled/inert in group
 chats.
 
-Automated checks after the parallel review-fix pass (2026-06-27):
+Automated checks for the current migration pass:
 
-- `./node_modules/.bin/tsc --noEmit`
-- `node ./scripts/build.mjs`
-- `node ./scripts/runtime.mjs`
-- focused `npx --no-install eslint` on the runtime-loaded extension files
-- `node --check` on touched adapter/store files and both built bundles
-- `shasum dist/root-app.mjs .runtime/SillyTavern-ChatUI/dist/root-app.mjs`
+- `CI=true pnpm run typecheck`
+- `CI=true pnpm run build`
+- `CI=true pnpm run runtime`
+- `git diff --check`
+- `node --check` on representative generated runtime modules and the UI bundle
 
 Still owed: continue / impersonate / regenerate (`#options` sim-click), stop, and
 the broader mobile/sidebar regression pass.

@@ -8,28 +8,22 @@ const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
 export const DEFAULT_RUNTIME_DIR = path.join(PROJECT_ROOT, '.runtime', 'SillyTavern-ChatUI');
 
 const RUNTIME_PATHS = [
-    'manifest.json',
-    'index.js',
-    'style.css',
-    'adapter',
-    'store',
-    'shield',
-    'ui/root.js',
-    'dist/root-app.mjs',
-    'dist/root-app.mjs.map',
+    { source: 'manifest.json', target: 'manifest.json' },
+    { source: 'style.css', target: 'style.css' },
+    { source: 'dist/runtime', target: '.' },
+    { source: 'dist/root-app.mjs', target: 'dist/root-app.mjs' },
+    { source: 'dist/root-app.mjs.map', target: 'dist/root-app.mjs.map' },
 ];
 
 export const WATCHED_RUNTIME_PREFIXES = [
-    'adapter/',
-    'store/',
-    'shield/',
+    'src/',
 ];
 
 export const WATCHED_RUNTIME_FILES = new Set([
     'manifest.json',
-    'index.js',
     'style.css',
-    'ui/root.js',
+    'package.json',
+    'tsconfig.json',
 ]);
 
 /**
@@ -60,11 +54,15 @@ export async function syncRuntime(targetDir = process.env.CHATUI_RUNTIME_DIR || 
     await fs.rm(tmpDir, { recursive: true, force: true });
     await fs.mkdir(tmpDir, { recursive: true });
 
-    for (const relativePath of RUNTIME_PATHS) {
-        const source = path.join(PROJECT_ROOT, relativePath);
-        const target = path.join(tmpDir, relativePath);
+    for (const entry of RUNTIME_PATHS) {
+        const source = path.join(PROJECT_ROOT, entry.source);
+        const target = path.join(tmpDir, entry.target);
         await fs.mkdir(path.dirname(target), { recursive: true });
-        await fs.cp(source, target, { recursive: true });
+        if (entry.target === '.') {
+            await fs.cp(source, tmpDir, { recursive: true });
+        } else {
+            await fs.cp(source, target, { recursive: true });
+        }
     }
 
     await fs.rm(targetDir, { recursive: true, force: true });

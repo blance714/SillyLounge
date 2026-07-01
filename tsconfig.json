@@ -1,14 +1,13 @@
 {
     "compilerOptions": {
-        "allowJs": true,
         "baseUrl": ".",
-        "checkJs": false,
         "jsx": "react",
         "jsxFactory": "React.createElement",
         "jsxFragmentFactory": "React.Fragment",
         "module": "ESNext",
         "moduleResolution": "Bundler",
         "noEmit": true,
+        "skipLibCheck": true,
         "paths": {
             "react": ["./node_modules/preact/compat/src/index.d.ts"],
             "react-dom": ["./node_modules/preact/compat/src/index.d.ts"],
@@ -21,7 +20,8 @@
         "types": []
     },
     "include": [
-        "ui/**/*.ts",
-        "ui/**/*.tsx"
+        "src/**/*.d.ts",
+        "src/**/*.ts",
+        "src/**/*.tsx"
     ]
 }

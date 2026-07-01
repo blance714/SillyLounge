@@ -11,21 +11,25 @@ import { createStore } from './create-store.js';
 
 const TEMP_CHAT_STORAGE_KEY = 'chatui:tempChat';
 
-/**
- * @typedef {{ avatar: string, fileName: string }} TempChatPointer
- */
+export type TempChatPointer = { avatar: string; fileName: string };
 
-/**
- * @typedef {{ avatar: string, knownFileNames: string[], complete: boolean }} TempChatDraft
- */
+export type TempChatDraft = {
+    avatar: string;
+    knownFileNames: string[];
+    complete: boolean;
+};
 
-/** @type {{ tempChat: TempChatPointer|null, optimisticDraft: TempChatDraft|null }} */
-const _initialState = {
+type TempChatState = {
+    tempChat: TempChatPointer | null;
+    optimisticDraft: TempChatDraft | null;
+};
+
+const _initialState: TempChatState = {
     tempChat: null,
     optimisticDraft: null,
 };
 
-const _store = createStore(_initialState);
+const _store = createStore<TempChatState>(_initialState);
 
 /**
  * @returns {Storage|null}
@@ -42,8 +46,8 @@ function _storage() {
  * @param {unknown} value
  * @returns {TempChatPointer|null}
  */
-function _normalizePointer(value) {
-    const entry = /** @type {Record<string, unknown>|null} */ (value && typeof value === 'object' ? value : null);
+function _normalizePointer(value: unknown): TempChatPointer | null {
+    const entry = (value && typeof value === 'object' ? value : null) as Record<string, unknown> | null;
     const avatar = typeof entry?.avatar === 'string' ? entry.avatar : '';
     const fileName = _normalizeFileName(entry?.fileName);
     return avatar && fileName ? { avatar, fileName } : null;
@@ -53,7 +57,7 @@ function _normalizePointer(value) {
  * @param {unknown} value
  * @returns {string}
  */
-function _normalizeFileName(value) {
+function _normalizeFileName(value: unknown): string {
     return typeof value === 'string' ? value.replace(/\.jsonl$/i, '') : '';
 }
 
@@ -61,9 +65,9 @@ function _normalizeFileName(value) {
  * @param {unknown} value
  * @returns {string[]}
  */
-function _normalizeKnownFileNames(value) {
+function _normalizeKnownFileNames(value: unknown): string[] {
     if (!Array.isArray(value)) return [];
-    const seen = new Set();
+    const seen = new Set<string>();
     for (const item of value) {
         const fileName = _normalizeFileName(item);
         if (fileName) seen.add(fileName);
@@ -91,7 +95,7 @@ function _readStoredPointer() {
  * @param {TempChatPointer|null} ptr
  * @returns {void}
  */
-function _writeStoredPointer(ptr) {
+function _writeStoredPointer(ptr: TempChatPointer | null): void {
     const storage = _storage();
     if (!storage) return;
 
@@ -122,7 +126,7 @@ export function getTempChatDraft() {
  * @param {{ avatar: string, knownFileNames?: string[], complete?: boolean }} draft
  * @returns {void}
  */
-export function beginTempChatDraft(draft) {
+export function beginTempChatDraft(draft: { avatar: string; knownFileNames?: string[]; complete?: boolean }) {
     const avatar = typeof draft?.avatar === 'string' ? draft.avatar : '';
     if (!avatar) return;
     _store.setState({
@@ -150,7 +154,7 @@ export function cancelTempChatDraft() {
  * @param {TempChatPointer|null} ptr
  * @returns {void}
  */
-export function setTempChat(ptr) {
+export function setTempChat(ptr: TempChatPointer | null) {
     const next = _normalizePointer(ptr);
     _writeStoredPointer(next);
     _store.setState({
@@ -172,7 +176,7 @@ export function clearTempChat() {
  * @param {string} fileName
  * @returns {boolean}
  */
-export function isTempChat(avatar, fileName) {
+export function isTempChat(avatar: string, fileName: string) {
     const ptr = getTempChat();
     return !!ptr && ptr.avatar === avatar && ptr.fileName === _normalizeFileName(fileName);
 }
@@ -184,7 +188,7 @@ export function isTempChat(avatar, fileName) {
  * @param {string} fileName
  * @returns {boolean}
  */
-export function isTempChatDraft(avatar, fileName) {
+export function isTempChatDraft(avatar: string, fileName: string) {
     const normalized = _normalizeFileName(fileName);
     if (isTempChat(avatar, normalized)) return true;
     const ptr = getTempChat();
@@ -199,7 +203,7 @@ export function isTempChatDraft(avatar, fileName) {
  * @param {Function} cb
  * @returns {() => void}
  */
-export function subscribeTempChatStore(cb) {
+export function subscribeTempChatStore(cb: (state: TempChatState) => void) {
     return _store.subscribe(cb);
 }
 

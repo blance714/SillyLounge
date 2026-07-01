@@ -1,9 +1,10 @@
 # SillyTavern-ChatUI · Technical Architecture
 
-> **Status (2026-06-23): the migration described below is complete.** ChatUI is
+> **Status (2026-07-01): the migration described below is complete.** ChatUI is
 > an extension-hosted Preact app behind a narrow SillyTavern adapter. The
 > transitional Phase 1/2 layer that reshaped ST DOM in place has been removed
-> (see `STATUS.md` → "Legacy cleanup"). The Stage 0–5 narrative in §5 is kept as
+> (see `STATUS.md` → "Legacy cleanup"). Authored runtime and UI source now lives
+> under `src/` and is compiled by Vite. The Stage 0–5 narrative in §5 is kept as
 > the design record of how we got here; the "Current coverage" notes reflect the
 > end state. Native `#chat` / `#send_form` remain alive but parked off-screen by
 > the shield, as runtime/fallback surfaces only.
@@ -59,18 +60,22 @@ The extension runtime does not run a build step. Any framework code must
 therefore ship as built browser assets alongside the source:
 
 ```text
-ui/app.tsx         source entry of the ChatUI app
-ui/components/     authored Preact UI components
-dist/*.mjs         built extension runtime loaded by index.js
-ui/root.js         stable wrapper that re-exports the built app
+src/index.ts       source entry for the extension bootstrap
+src/adapter/       authored SillyTavern integration boundary
+src/store/         authored ChatUI view-model stores/actions
+src/shield/        authored DOM shield
+src/ui/app.tsx     source entry of the ChatUI app
+src/ui/components/ authored Preact UI components
+dist/runtime/      compiled runtime modules copied to the extension root
+dist/root-app.mjs  compiled UI bundle loaded by the runtime modules
 ```
 
 For local development, run the build from the extension directory:
 
 ```sh
-npm run build
-npm run watch
-npm run typecheck
+pnpm run build
+pnpm run dev
+pnpm run typecheck
 ```
 
 The preferred repository layout is a single ChatUI repository with two branch
@@ -156,10 +161,10 @@ Rules:
 
 Current exception: the settings shell can host selected SillyTavern drawer
 contents because those panels are still ST-owned configuration UIs. This is
-implemented only in `adapter/settings.js`: the adapter snapshots the exact live
-drawer node, original parent/sibling, classes, inline style, icon state, and
-drag handles before reparenting into `StDrawerHost`, then restores or parks the
-node on unmount. Preact components may ask the adapter to mount/unmount by
+implemented only in `src/adapter/settings.ts`: the adapter snapshots the exact
+live drawer node, original parent/sibling, classes, inline style, icon state,
+and drag handles before reparenting into `StDrawerHost`, then restores or parks
+the node on unmount. Preact components may ask the adapter to mount/unmount by
 drawer id, but must not inspect or mutate the hosted drawer DOM.
 
 ### 3.3 ChatUI Store
@@ -246,9 +251,10 @@ Current framework choice:
 
 - Preact with `preact/compat`.
 - TypeScript/TSX for authored UI components.
-- `esbuild` bundles only the UI framework/component layer.
-- Store, shield, and action modules stay external imports so runtime singletons
-  are shared with the extension bootstrap.
+- Vite compiles the runtime modules with preserved module boundaries.
+- Vite bundles the UI framework/component layer into `dist/root-app.mjs`.
+- Store, shield, and action modules stay external imports from the UI bundle so
+  runtime singletons are shared with the extension bootstrap.
 
 Responsibilities:
 
@@ -321,7 +327,7 @@ Targets:
 
 Current coverage:
 
-- Message layout/actions/extras, floating chrome, and plus-menu actions use `adapter/st-adapter.js` for ST state, events, generation status, and DOM fallbacks.
+- Message layout/actions/extras, floating chrome, and plus-menu actions use `src/adapter/st-adapter.ts` for ST state, events, generation status, and DOM fallbacks.
 - Remaining direct ST runtime imports are limited to the extension bootstrap/settings path and Phase 1 selector synchronization, pending later migration.
 
 ### Stage 2: Introduce Store
@@ -340,7 +346,7 @@ Current DOM-rewrite modules can initially subscribe to the store without changin
 
 Current coverage:
 
-- `store/chat-store.js` builds `ChatuiMessageDto` objects from `chatuiAdapter.getCurrentChat()`.
+- `src/store/chat-store.ts` builds `ChatuiMessageDto` objects from `chatuiAdapter.getCurrentChat()`.
 - Message layout/actions and floating chrome consume store DTO/state for role, group, swipe, and generate-button decisions.
 - DOM-derived values that do not yet exist in the raw chat model, such as rendered timestamp text and resolved non-forced avatar URLs, still have temporary DOM fallback in the relevant UI module.
 
@@ -360,8 +366,8 @@ Targets:
 
 Current coverage:
 
-- `shield/st-dom-shield.js` creates and removes `#chatui-root` with the global `chatui-active` gate.
-- `ui/root.js` mounts the built ChatUI-owned app shell into `#chatui-root`.
+- `src/shield/st-dom-shield.ts` creates and removes `#chatui-root` with the global `chatui-active` gate.
+- `src/ui/root.ts` mounts the built ChatUI-owned app shell into `#chatui-root`.
 - The root shell renders a Store-driven message list from `ChatuiMessageDto` objects and subscribes to store updates.
 - The root shell is visually parked by default; Stage 4 will deliberately promote it before hiding the original `#chat` surface.
 
@@ -381,7 +387,7 @@ Each item needs a dependency check before stronger hiding.
 
 Current coverage:
 
-- `shield/st-dom-shield.js` applies `data-chatui-shield-level="4"` by default while ChatUI is active (parking both the native `#chat` and `#send_form` surfaces).
+- `src/shield/st-dom-shield.ts` applies `data-chatui-shield-level="4"` by default while ChatUI is active (parking both the native `#chat` and `#send_form` surfaces).
 - Level 1 shields only lightweight native chrome that already has ChatUI replacements or Phase 2 restyling:
   - stock left-form menu/wand buttons replaced by ChatUI's plus menu,
   - native message name/timestamp chrome replaced by ChatUI identity headers,
@@ -402,14 +408,14 @@ experience.
 
 Current coverage:
 
-- `ui/root.js` is now a stable runtime wrapper around the built Preact app in `dist/root-app.mjs`.
-- `ui/app.tsx` renders `ChatuiMessageDto` objects into the ChatUI root as the primary message list.
-- Message UI is split across `ui/components/MessageItem.tsx` and
-  `ui/components/message/*.tsx`.
+- `src/ui/root.ts` is now a stable runtime wrapper around the built Preact app in `dist/root-app.mjs`.
+- `src/ui/app.tsx` renders `ChatuiMessageDto` objects into the ChatUI root as the primary message list.
+- Message UI is split across `src/ui/components/MessageItem.tsx` and
+  `src/ui/components/message/*.tsx`.
 - The root UI is authored as a Preact/compat TSX app, while store and adapter boundaries remain unchanged.
 - Message bodies use adapter-produced sanitized HTML from SillyTavern's existing `messageFormatting()` path.
 - Root messages render avatar/name/time metadata, swipe labels, reasoning details, Markdown/code blocks, code-copy affordances, and a root-level generating indicator.
-- Root message actions dispatch through `store/chat-actions.js`, which forwards intent to adapter by message id.
+- Root message actions dispatch through `src/store/chat-actions.ts`, which forwards intent to adapter by message id.
 - Supported root actions: copy, regenerate last character message, swipe left/right, edit, delete, branch, checkpoint, and hide.
 - Floating chat chrome reads the root scroll surface first and falls back to `#chat` only when root is unavailable.
 
@@ -425,12 +431,12 @@ Make message editing visible and controlled from the ChatUI-owned root surface.
 
 Current coverage:
 
-- `ui/components/message/MessageEditor.tsx` owns the inline edit surface for root messages.
+- `src/ui/components/message/MessageEditor.tsx` owns the inline edit surface for root messages.
 - Editing state is local to the Preact root app.
 - Save/cancel controls are rendered by ChatUI, not by SillyTavern's hidden
   message DOM.
-- `store/chat-actions.js` exposes `saveEditedChatuiMessage(messageId, text)`.
-- `adapter/st-adapter.js` saves through SillyTavern's native `messageEdit()`
+- `src/store/chat-actions.ts` exposes `saveEditedChatuiMessage(messageId, text)`.
+- `src/adapter/st-adapter.ts` saves through SillyTavern's native `messageEdit()`
   pipeline in the background so regex, macro, bias, swipe, persistence, and
   `MESSAGE_UPDATED` semantics stay aligned with ST.
 
@@ -448,13 +454,13 @@ composer alive as the runtime bridge.
 
 Current coverage:
 
-- `ui/components/Composer.tsx` renders a ChatUI-owned composer at the bottom of the root
+- `src/ui/components/Composer.tsx` renders a ChatUI-owned composer at the bottom of the root
   app.
-- Submit/stop controls dispatch through `store/chat-actions.js`.
-- `adapter/st-adapter.js` writes into the hidden native `#send_textarea` and
+- Submit/stop controls dispatch through `src/store/chat-actions.ts`.
+- `src/adapter/st-adapter.ts` writes into the hidden native `#send_textarea` and
   calls SillyTavern's exported `sendTextareaMessage()` path, preserving slash
   commands, macros, generation routing, and persistence semantics.
-- `shield/st-dom-shield.js` shields the original `#send_form` at level 4
+- `src/shield/st-dom-shield.ts` shields the original `#send_form` at level 4
   without removing it from the DOM.
 
 Still deferred:
@@ -470,10 +476,10 @@ owns the actual settings/list panel contents.
 
 Current coverage:
 
-- `ui/app.tsx` renders the root topbar, and `ui/components/ShellDrawer.tsx`
-  renders the side drawer.
-- Drawer actions dispatch named shell intents through `store/chat-actions.js`.
-- `adapter/st-adapter.js` maps shell intents to SillyTavern drawer controls
+- `src/ui/app.tsx` renders the root topbar and the current two-pane shell.
+- Settings mode renders ChatUI-owned navigation plus `src/ui/components/settings/StDrawerHost.tsx` for selected ST drawer contents.
+- Drawer/settings actions dispatch named shell intents through `src/store/chat-actions.ts`.
+- `src/adapter/st-adapter.ts` and `src/adapter/settings.ts` map those intents to SillyTavern drawer controls
   such as characters, groups, AI config, world info, personas, extensions, and
   user settings.
 
@@ -489,11 +495,11 @@ Render message attachments inside the ChatUI-owned message list.
 
 Current coverage:
 
-- `adapter/st-adapter.js` converts current and legacy ST attachment fields
+- `src/adapter/st-adapter.ts` converts current and legacy ST attachment fields
   (`extra.media`, `extra.files`, `extra.image`, `extra.video`,
   `extra.image_swipes`, and `extra.file`) into plain media/file DTOs.
-- `store/chat-store.js` exposes attachments on each `ChatuiMessageDto`.
-- `ui/components/message/MessageMedia.tsx` renders image, video, audio, and file attachments after the
+- `src/store/chat-store.ts` exposes attachments on each `ChatuiMessageDto`.
+- `src/ui/components/message/MessageMedia.tsx` renders image, video, audio, and file attachments after the
   message body.
 - Image/file open actions dispatch back through adapter fallbacks, so ST's
   preview/file logic remains the source of truth.
@@ -555,47 +561,63 @@ Current source organization:
 SillyTavern-ChatUI/
   package.json
   tsconfig.json
-  index.js
+  manifest.json
   style.css
+  src/
+    index.ts
+    adapter/
+      st-adapter.ts
+      internals.ts
+      messages.ts
+      composer.ts
+      media.ts
+      menu.ts
+      selectors.ts
+      shell.ts
+      chats.ts
+      qr.ts
+      config.ts
+      settings.ts
+    store/
+      create-store.ts
+      chat-store.ts
+      chat-actions.ts
+      sidebar-store.ts
+      sidebar-actions.ts
+      temp-chat-store.ts
+      config-store.ts
+      ui-store.ts
+      toast-store.ts
+    shield/
+      st-dom-shield.ts
+    ui/
+      root.ts
+      app.tsx
+      actions.ts
+      hooks.ts
+      format.ts
+      types.ts
+      components/
+    types/
+      st-externals.d.ts
   dist/
+    runtime/
+      index.js
+      adapter/
+      store/
+      shield/
+      ui/
     root-app.mjs
     root-app.mjs.map
   scripts/
     build.mjs
-    build-config.mjs
     dev.mjs
     runtime.mjs
-  adapter/
-    st-adapter.js
-  store/
-    chat-store.js
-    chat-actions.js
-  ui/
-    root.js
-    app.tsx
-    actions.ts
-    hooks.ts
-    format.ts
-    types.ts
-    components/
-      Composer.tsx
-      MessageItem.tsx
-      ShellDrawer.tsx
-      message/
-        ActionButton.tsx
-        MenuItem.tsx
-        MessageActions.tsx
-        MessageAvatar.tsx
-        MessageEditor.tsx
-        MessageMedia.tsx
-        MessageReasoning.tsx
-  shield/
-    st-dom-shield.js
 ```
 
-Runtime-only files still live at the extension root because SillyTavern loads
-the extension through `manifest.json`. Authored Preact code belongs under
-`ui/`; generated browser output belongs under `dist/`.
+Authored code belongs under `src/`; generated browser output belongs under
+`dist/`. Runtime-only files still appear at the synced extension root because
+SillyTavern loads the extension through `manifest.json`.
 
 ---
 

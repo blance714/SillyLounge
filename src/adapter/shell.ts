@@ -8,7 +8,7 @@ import { _dispatchClick } from './internals.js';
  * @param {string} selector
  * @returns {Element|null}
  */
-function getElement(selector) {
+function getElement(selector: any) {
     return document.querySelector(selector);
 }
 
@@ -16,7 +16,7 @@ function getElement(selector) {
  * @param {string} selector
  * @returns {void}
  */
-function clickElement(selector) {
+function clickElement(selector: any) {
     const element = getElement(selector);
     if (element) _dispatchClick(element);
 }
@@ -25,7 +25,7 @@ function clickElement(selector) {
  * @param {string} drawerSelector
  * @returns {void}
  */
-function openDrawer(drawerSelector) {
+function openDrawer(drawerSelector: any) {
     const drawer = getElement(drawerSelector);
     if (!drawer) return;
 
@@ -40,7 +40,7 @@ function openDrawer(drawerSelector) {
  * @param {string} selector
  * @returns {void}
  */
-function openRightDrawerPanel(selector) {
+function openRightDrawerPanel(selector: any) {
     openDrawer('#rightNavHolder');
     setTimeout(() => clickElement(selector), 0);
 }
@@ -49,7 +49,7 @@ function openRightDrawerPanel(selector) {
  * @param {string} action
  * @returns {void}
  */
-export function triggerShellAction(action) {
+export function triggerShellAction(action: any) {
     switch (action) {
         case 'characters': openRightDrawerPanel('#rm_button_characters'); break;
         case 'characterCreate': openRightDrawerPanel('#rm_button_create'); break;

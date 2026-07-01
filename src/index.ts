@@ -11,8 +11,8 @@
  * as the visible chat surface; the store exposes DTOs; the Preact root renders.
  */
 
-import { extension_settings } from '../../../extensions.js';
-import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
+import { extension_settings } from '@st/extensions';
+import { saveSettingsDebounced, eventSource, event_types } from '@st/script';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { initSidebarStore, teardownSidebarStore } from './store/sidebar-store.js';
 import { initConfigStore } from './store/config-store.js';
@@ -137,7 +137,7 @@ function injectSettingsUI() {
 
     // Inline-drawer chevron toggle (we build the markup ourselves, so wire it manually).
     const drawerToggle = wrapper.querySelector('.inline-drawer-toggle');
-    const drawerContent = /** @type {HTMLElement} */ (wrapper.querySelector('.inline-drawer-content'));
+    const drawerContent = wrapper.querySelector('.inline-drawer-content') as HTMLElement | null;
     const drawerIcon = wrapper.querySelector('.inline-drawer-icon');
 
     if (drawerToggle && drawerContent && drawerIcon) {
@@ -155,7 +155,8 @@ function injectSettingsUI() {
     // message headers, composer lines, ＋menu pins) now lives in the in-app ChatUI
     // settings panel (ui/components/config/ConfigPanel) — this native drawer keeps
     // only the master enable toggle, the bootstrap that must exist while ChatUI is off.
-    const enabledCb = /** @type {HTMLInputElement} */ (document.getElementById('chatui_enabled'));
+    const enabledCb = document.getElementById('chatui_enabled') as HTMLInputElement | null;
+    if (!enabledCb) return;
     enabledCb.addEventListener('change', () => {
         const settings = getSettings();
         settings.enabled = enabledCb.checked;

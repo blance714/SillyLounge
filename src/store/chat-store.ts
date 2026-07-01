@@ -10,29 +10,88 @@ import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
 import { createStore } from './create-store.js';
 import { clearTempChat, getTempChat } from './temp-chat-store.js';
 
-/**
- * @typedef {object} ChatuiMessageDto
- * @property {number} id
- * @property {string} key
- * @property {'user'|'character'|'system'} role
- * @property {boolean} isUser
- * @property {boolean} isSystem
- * @property {boolean} isChar
- * @property {string} name
- * @property {string} text
- * @property {string} displayText
- * @property {string} html
- * @property {string|number|null} sendDate
- * @property {boolean} forceAvatar
- * @property {string} forceAvatarSrc
- * @property {{ id: number, count: number, hasMultiple: boolean, label: string }} swipe
- * @property {{ display: string, inline: boolean, mediaIndex: number, media: Array<{ id: string, type: string, url: string, title: string, source: string, index: number }>, files: Array<{ id: string, name: string, url: string, size: number|null, type: string, index: number }> }} attachments
- * @property {{ type: string, isSmallSys: boolean, isToolCall: boolean, bookmarkLink: string, tokenCount: number|null, reasoning: string, reasoningHtml: string, reasoningDuration: number|string|null }} extra
- * @property {{ isLast: boolean, canShowCharActions: boolean, canShowUserMenu: boolean, canShowSwipe: boolean, needsGenerate: boolean }} ui
- */
+export type ChatuiMediaAttachment = {
+    id: string;
+    type: string;
+    url: string;
+    title: string;
+    source: string;
+    index: number;
+};
 
-/** @type {{ chat: { messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, chatKey: string, currentChat: { avatar: string, fileName: string }|null, isGroup: boolean, isGenerating: boolean, lastMessageNeedsGenerate: boolean }, ui: object }} */
-const _initialState = {
+export type ChatuiFileAttachment = {
+    id: string;
+    name: string;
+    url: string;
+    size: number | null;
+    type: string;
+    index: number;
+};
+
+export type ChatuiMessageDto = {
+    id: number;
+    key: string;
+    role: 'user' | 'character' | 'system';
+    isUser: boolean;
+    isSystem: boolean;
+    isChar: boolean;
+    name: string;
+    text: string;
+    displayText: string;
+    html: string;
+    sendDate: string | number | null;
+    forceAvatar: boolean;
+    forceAvatarSrc: string;
+    swipe: { id: number; count: number; hasMultiple: boolean; label: string };
+    attachments: {
+        display: string;
+        inline: boolean;
+        mediaIndex: number;
+        media: ChatuiMediaAttachment[];
+        files: ChatuiFileAttachment[];
+    };
+    extra: {
+        type: string;
+        isSmallSys: boolean;
+        isToolCall: boolean;
+        bookmarkLink: string;
+        tokenCount: number | null;
+        reasoning: string;
+        reasoningHtml: string;
+        reasoningDuration: number | string | null;
+    };
+    ui: {
+        isLast: boolean;
+        canShowCharActions: boolean;
+        canShowUserMenu: boolean;
+        canShowSwipe: boolean;
+        needsGenerate: boolean;
+    };
+};
+
+export type ChatuiChatIdentity = {
+    avatar: string;
+    fileName: string;
+};
+
+export type ChatuiStoreState = {
+    chat: {
+        messages: ChatuiMessageDto[];
+        byId: Record<string, ChatuiMessageDto>;
+        lastMessageId: number | null;
+        chatKey: string;
+        currentChat: ChatuiChatIdentity | null;
+        isGroup: boolean;
+        isGenerating: boolean;
+        lastMessageNeedsGenerate: boolean;
+    };
+    ui: {
+        openMessageMenuId: number | string | null;
+        openPlusMenu: boolean;
+    };
+};
+
+const _initialState: ChatuiStoreState = {
     chat: {
         messages: [],
         byId: {},
@@ -49,13 +108,11 @@ const _initialState = {
     },
 };
 
-const _store = createStore(_initialState);
+const _store = createStore<ChatuiStoreState>(_initialState);
 
-/** @type {Set<() => void>} */
-const _storeUnsubscribers = new Set();
+const _storeUnsubscribers = new Set<() => void>();
 
-/** @type {Array<() => void>} */
-let _unsubscribers = [];
+let _unsubscribers: Array<() => void> = [];
 
 /** @type {number} Pending requestAnimationFrame id for coalesced streaming refreshes. */
 let _streamFrame = 0;
@@ -64,7 +121,7 @@ let _streamFrame = 0;
  * @param {unknown} value
  * @returns {string}
  */
-function _string(value) {
+function _string(value: unknown): string {
     return typeof value === 'string' ? value : '';
 }
 
@@ -72,7 +129,7 @@ function _string(value) {
  * @param {unknown} value
  * @returns {number|null}
  */
-function _numberOrNull(value) {
+function _numberOrNull(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
@@ -82,20 +139,20 @@ function _numberOrNull(value) {
  * @param {number} lastMessageId
  * @returns {ChatuiMessageDto}
  */
-function _toMessageDto(raw, id, lastMessageId) {
-    const message = /** @type {Record<string, any>} */ (raw ?? {});
-    const extra = /** @type {Record<string, any>} */ (message.extra ?? {});
+function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: number): ChatuiMessageDto {
+    const message = raw ?? {};
+    const extra = (message.extra ?? {}) as Record<string, any>;
     const isUser = message.is_user === true;
     const isSystem = message.is_system === true;
     const isChar = !isUser && !isSystem;
     const swipeId = typeof message.swipe_id === 'number' ? message.swipe_id : 0;
     const swipeCount = Array.isArray(message.swipes) ? message.swipes.length : 0;
     const hasMultipleSwipes = swipeCount > 1;
-    const role = isUser ? 'user' : (isSystem ? 'system' : 'character');
+    const role: ChatuiMessageDto['role'] = isUser ? 'user' : (isSystem ? 'system' : 'character');
     const isLast = id === lastMessageId;
     const isSmallSys = extra.isSmallSys === true;
     const isToolCall = Array.isArray(extra.tool_invocations);
-    const attachments = chatuiAdapter.mediaActions.getMessageAttachments(message);
+    const attachments = chatuiAdapter.mediaActions.getMessageAttachments(message) as ChatuiMessageDto['attachments'];
     const reasoningText = _string(extra.reasoning_display_text) || _string(extra.reasoning);
 
     return {
@@ -151,10 +208,15 @@ function _toMessageDto(raw, id, lastMessageId) {
  * @param {Array<object>} rawMessages
  * @returns {{ messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, lastMessageNeedsGenerate: boolean }}
  */
-function _buildMessageDtos(rawMessages) {
+function _buildMessageDtos(rawMessages: Array<Record<string, any>>): {
+    messages: ChatuiMessageDto[];
+    byId: Record<string, ChatuiMessageDto>;
+    lastMessageId: number | null;
+    lastMessageNeedsGenerate: boolean;
+} {
     const lastMessageId = rawMessages.length ? rawMessages.length - 1 : null;
-    const byId = {};
-    const messages = rawMessages.map((message, id) => {
+    const byId: Record<string, ChatuiMessageDto> = {};
+    const messages = rawMessages.map((message: Record<string, any>, id: number) => {
         const dto = _toMessageDto(message, id, lastMessageId ?? -1);
         byId[dto.key] = dto;
         return dto;
@@ -172,7 +234,7 @@ function _buildMessageDtos(rawMessages) {
 /**
  * @returns {typeof _initialState}
  */
-export function getChatuiState() {
+export function getChatuiState(): ChatuiStoreState {
     return _store.getState();
 }
 
@@ -191,7 +253,7 @@ export function getMessageDtos() {
  * @param {number|string} messageId
  * @returns {ChatuiMessageDto|null}
  */
-export function getMessageDtoById(messageId) {
+export function getMessageDtoById(messageId: number | string) {
     return getChatuiState().chat.byId[String(messageId)] ?? null;
 }
 
@@ -209,7 +271,7 @@ export function getLastMessageDto() {
  * @param {Element} mesEl
  * @returns {ChatuiMessageDto|null}
  */
-export function getMessageDtoByElement(mesEl) {
+export function getMessageDtoByElement(mesEl: Element) {
     const messageId = mesEl.getAttribute('mesid');
     return messageId === null ? null : getMessageDtoById(messageId);
 }
@@ -218,7 +280,7 @@ export function getMessageDtoByElement(mesEl) {
  * @param {Function} subscriber
  * @returns {() => void}
  */
-export function subscribeChatuiStore(subscriber) {
+export function subscribeChatuiStore(subscriber: (state: ChatuiStoreState) => void) {
     const unsubscribe = _store.subscribe(subscriber);
     _storeUnsubscribers.add(unsubscribe);
     return () => {
@@ -260,7 +322,7 @@ export function refreshChatuiStore() {
  * @param {number|string} messageId
  * @returns {void}
  */
-export function refreshChatuiMessage(messageId) {
+export function refreshChatuiMessage(messageId: number | string) {
     const id = Number(messageId);
     const rawMessages = chatuiAdapter.getCurrentChat();
     const state = getChatuiState();
@@ -330,12 +392,12 @@ export function initChatuiStore() {
 
     const refreshNow = () => refreshChatuiStore();
     const refreshSoon = () => setTimeout(() => refreshChatuiStore(), 0);
-    const refreshMessage = messageId => refreshChatuiMessage(messageId);
-    const refreshSentMessage = messageId => {
+    const refreshMessage = (messageId: number | string) => refreshChatuiMessage(messageId);
+    const refreshSentMessage = (messageId: number | string) => {
         _clearTempChatIfCurrent();
         refreshChatuiMessage(messageId);
     };
-    const refreshUpdatedMessage = messageId => {
+    const refreshUpdatedMessage = (messageId: number | string) => {
         _clearTempChatIfCurrent();
         refreshChatuiMessage(messageId);
     };

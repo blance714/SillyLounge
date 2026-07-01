@@ -12,20 +12,19 @@
 
 import { createStore } from './create-store.js';
 
-/**
- * @typedef {object} ChatuiUiState
- * @property {boolean} settingsOpen Whether the app is in settings mode.
- * @property {string|null} activeSettingsId The active settings entry id, or null if none selected.
- */
+export type ChatuiUiState = {
+    /** Whether the app is in settings mode. */
+    settingsOpen: boolean;
+    /** The active settings entry id, or null if none selected. */
+    activeSettingsId: string | null;
+};
 
-/** @type {ChatuiUiState} */
-const INITIAL_STATE = {
+const INITIAL_STATE: ChatuiUiState = {
     settingsOpen: false,
     activeSettingsId: null,
 };
 
-/** @type {ReturnType<typeof createStore<ChatuiUiState>>} */
-const _store = createStore(INITIAL_STATE);
+const _store = createStore<ChatuiUiState>(INITIAL_STATE);
 
 /**
  * @returns {ChatuiUiState}
@@ -38,7 +37,7 @@ export function getUiState() {
  * @param {(state: ChatuiUiState) => void} fn
  * @returns {() => void} Unsubscribe function.
  */
-export function subscribeUiStore(fn) {
+export function subscribeUiStore(fn: (state: ChatuiUiState) => void) {
     return _store.subscribe(fn);
 }
 
@@ -49,7 +48,7 @@ export function subscribeUiStore(fn) {
  * @param {string} [id]
  * @returns {void}
  */
-export function openSettings(id) {
+export function openSettings(id?: string) {
     const s = _store.getState();
     const nextId = id ?? s.activeSettingsId ?? 'st:left-nav-panel';
     if (s.settingsOpen && s.activeSettingsId === nextId) return;
@@ -71,7 +70,7 @@ export function closeSettings() {
  * @param {string} id
  * @returns {void}
  */
-export function setActiveSettings(id) {
+export function setActiveSettings(id: string) {
     if (!_store.getState().settingsOpen) return;
     if (_store.getState().activeSettingsId === id) return;
     _store.setState({ ..._store.getState(), activeSettingsId: id });

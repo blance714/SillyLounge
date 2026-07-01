@@ -8,17 +8,15 @@
 
 import { createStore } from './create-store.js';
 
-/**
- * @typedef {object} ChatuiToast
- * @property {string} id
- * @property {'info'|'success'|'error'} kind
- * @property {string} text
- */
+export type ChatuiToast = {
+    id: string;
+    kind: 'info' | 'success' | 'error';
+    text: string;
+};
 
-/** @type {Array<ChatuiToast>} */
-const _initialToasts = [];
+const _initialToasts: ChatuiToast[] = [];
 
-const _store = createStore(_initialToasts);
+const _store = createStore<ChatuiToast[]>(_initialToasts);
 
 /** @type {number} */
 let _seq = 0;
@@ -37,7 +35,7 @@ export function getToasts() {
  * @param {(toasts: Array<ChatuiToast>) => void} subscriber
  * @returns {() => void}
  */
-export function subscribeToasts(subscriber) {
+export function subscribeToasts(subscriber: (toasts: ChatuiToast[]) => void) {
     return _store.subscribe(subscriber);
 }
 
@@ -49,7 +47,7 @@ export function subscribeToasts(subscriber) {
  * @param {number} [ttl=4000]
  * @returns {string} the toast id
  */
-export function pushToast(kind, text, ttl = 4000) {
+export function pushToast(kind: ChatuiToast['kind'], text: string, ttl = 4000) {
     const id = `toast-${_seq++}`;
     _store.setState([...getToasts(), { id, kind, text }]);
 
@@ -63,7 +61,7 @@ export function pushToast(kind, text, ttl = 4000) {
  * @param {string} id
  * @returns {void}
  */
-export function dismissToast(id) {
+export function dismissToast(id: string) {
     const timer = _timers.get(id);
     if (timer) {
         clearTimeout(timer);
