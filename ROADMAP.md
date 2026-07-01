@@ -25,11 +25,11 @@ Last updated: 2026-07-01
   `@st/*`、`process.env`、错误绝对 import、明显的浏览器不可用 Node global。
 - 已接入 `pnpm run runtime` 末尾;也可单独跑 `pnpm run check:runtime`。
 
-### 3. 构建脚本整理(2026-07-03)
+### ~~3. 构建脚本整理(2026-07-03)~~ ✅
 
-- 拆小 `scripts/build.mjs`:runtime build、UI build、ST external rewrite、
+- 已拆小 `scripts/build.mjs`:runtime build、UI build、ST external rewrite、
   browser define 分开命名。
-- 保持当前行为不变,只降低维护成本;不引入没用到的 `vite.config.*`。
+- 保持当前行为不变,未引入没用到的 `vite.config.*`;重构前后产物 checksum 一致。
 
 ### 4. Adapter 类型边界收窄(2026-07-04 ~ 2026-07-05)
 
