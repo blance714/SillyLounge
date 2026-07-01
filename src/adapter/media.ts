@@ -4,28 +4,47 @@
 
 import { _dispatchClick, getMessageElementById } from './internals.js';
 
-/**
- * @param {unknown} value
- * @returns {string}
- */
-function _string(value: any) {
+type UnknownRecord = Record<string, unknown>;
+
+export type MediaAttachmentDto = {
+    id: string;
+    type: string;
+    url: string;
+    title: string;
+    source: string;
+    index: number;
+};
+
+export type FileAttachmentDto = {
+    id: string;
+    name: string;
+    url: string;
+    size: number | null;
+    type: string;
+    index: number;
+};
+
+export type MessageAttachmentsDto = {
+    display: string;
+    inline: boolean;
+    mediaIndex: number;
+    media: MediaAttachmentDto[];
+    files: FileAttachmentDto[];
+};
+
+function isRecord(value: unknown): value is UnknownRecord {
+    return value !== null && typeof value === 'object';
+}
+
+function _string(value: unknown): string {
     return typeof value === 'string' ? value : '';
 }
 
-/**
- * @param {unknown} value
- * @returns {number|null}
- */
-function _numberOrNull(value: any) {
+function _numberOrNull(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
-/**
- * @param {Record<string, any>} attachment
- * @param {number} index
- * @returns {{ id: string, type: string, url: string, title: string, source: string, index: number }}
- */
-function toMediaDto(attachment: any, index: any) {
+function toMediaDto(attachment: UnknownRecord, index: number): MediaAttachmentDto {
     const type = _string(attachment.type) || 'image';
     const url = _string(attachment.url);
     const title = _string(attachment.title) || _string(attachment.name) || url.split('/').pop() || type;
@@ -40,12 +59,7 @@ function toMediaDto(attachment: any, index: any) {
     };
 }
 
-/**
- * @param {Record<string, any>} file
- * @param {number} index
- * @returns {{ id: string, name: string, url: string, size: number|null, type: string, index: number }}
- */
-function toFileDto(file: any, index: any) {
+function toFileDto(file: UnknownRecord, index: number): FileAttachmentDto {
     const name = _string(file.name) || _string(file.url).split('/').pop() || 'Attachment';
 
     return {
@@ -58,19 +72,15 @@ function toFileDto(file: any, index: any) {
     };
 }
 
-/**
- * @param {object} rawMessage
- * @returns {{ display: string, inline: boolean, mediaIndex: number, media: Array<object>, files: Array<object> }}
- */
-export function getMessageAttachments(rawMessage: any) {
-    const message = /** @type {Record<string, any>} */ (rawMessage ?? {});
-    const extra = /** @type {Record<string, any>} */ (message.extra ?? {});
+export function getMessageAttachments(rawMessage: unknown): MessageAttachmentsDto {
+    const message = isRecord(rawMessage) ? rawMessage : {};
+    const extra = isRecord(message.extra) ? message.extra : {};
     const media = Array.isArray(extra.media)
         ? extra.media
         : [
             ...(_string(extra.image) ? [{ type: 'image', url: _string(extra.image), title: _string(extra.title) }] : []),
             ...(_string(extra.video) ? [{ type: 'video', url: _string(extra.video), title: _string(extra.title) }] : []),
-            ...(Array.isArray(extra.image_swipes) ? extra.image_swipes.map((url: any) => ({ type: 'image', url: _string(url), title: _string(extra.title) })) : []),
+            ...(Array.isArray(extra.image_swipes) ? extra.image_swipes.map(url => ({ type: 'image', url: _string(url), title: _string(extra.title) })) : []),
         ];
     const files = Array.isArray(extra.files)
         ? extra.files
@@ -82,21 +92,16 @@ export function getMessageAttachments(rawMessage: any) {
         inline: extra.inline_image !== false,
         mediaIndex: typeof extra.media_index === 'number' ? extra.media_index : 0,
         media: media
-            .filter((item: any) => item && typeof item === 'object')
-            .map((item: any, index: any) => toMediaDto(/** @type {Record<string, any>} */ (item), index))
-            .filter((item: any) => item.url),
+            .filter(isRecord)
+            .map((item, index) => toMediaDto(item, index))
+            .filter(item => item.url),
         files: files
-            .filter((item: any) => item && typeof item === 'object')
-            .map((item: any, index: any) => toFileDto(/** @type {Record<string, any>} */ (item), index)),
+            .filter(isRecord)
+            .map((item, index) => toFileDto(item, index)),
     };
 }
 
-/**
- * @param {number|string} messageId
- * @param {number} mediaIndex
- * @returns {void}
- */
-export function openMessageMedia(messageId: any, mediaIndex: any) {
+export function openMessageMedia(messageId: number | string, mediaIndex: number): void {
     const mesEl = getMessageElementById(messageId);
     const button = mesEl?.querySelector(`.mes_media_container[data-index="${mediaIndex}"] .mes_media_enlarge`);
     if (button) {
@@ -108,12 +113,7 @@ export function openMessageMedia(messageId: any, mediaIndex: any) {
     if (media) _dispatchClick(media);
 }
 
-/**
- * @param {number|string} messageId
- * @param {number} fileIndex
- * @returns {void}
- */
-export function openMessageFile(messageId: any, fileIndex: any) {
+export function openMessageFile(messageId: number | string, fileIndex: number): void {
     const mesEl = getMessageElementById(messageId);
     const button = mesEl?.querySelector(`.mes_file_container[data-index="${fileIndex}"] .mes_file_open`);
     if (button) _dispatchClick(button);

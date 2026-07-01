@@ -152,7 +152,7 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
     const isLast = id === lastMessageId;
     const isSmallSys = extra.isSmallSys === true;
     const isToolCall = Array.isArray(extra.tool_invocations);
-    const attachments = chatuiAdapter.mediaActions.getMessageAttachments(message) as ChatuiMessageDto['attachments'];
+    const attachments = chatuiAdapter.mediaActions.getMessageAttachments(message);
     const reasoningText = _string(extra.reasoning_display_text) || _string(extra.reasoning);
 
     return {

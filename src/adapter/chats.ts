@@ -18,33 +18,120 @@ import {
 import { timestampToMoment } from '@st/utils';
 import { getContext } from './internals.js';
 
+type UnknownRecord = Record<string, unknown>;
+
+type StContext = {
+    characterId?: unknown;
+    groupId?: unknown;
+    characters?: unknown[];
+    reloadCurrentChat?: () => Promise<void> | void;
+};
+
+type StCharacter = UnknownRecord & {
+    avatar?: unknown;
+    name?: unknown;
+    chat?: unknown;
+    chat_size?: unknown;
+    date_last_chat?: unknown;
+    fav?: unknown;
+};
+
+type ReadChatFileOptions = { signal?: AbortSignal };
+type CharacterChatSnapshot = { metadata: UnknownRecord | null; messages: UnknownRecord[] };
+
+export type ChatListItemDto = {
+    fileName: string;
+    displayName: string;
+    messageCount: number;
+    preview: string;
+    fileSize: string;
+    lastMesTs: number;
+    lastMesLabel: string;
+    isCurrent: boolean;
+};
+
+export type CharConversationGroupDto = {
+    charId: number;
+    avatar: string;
+    name: string;
+    thumbnailUrl: string;
+    isCurrent: boolean;
+    dateLastChatTs: number;
+    chatSize: number;
+    chats: ChatListItemDto[];
+    visibleCount: number;
+    chatsLoaded: boolean;
+    fullyLoaded: boolean;
+    pending: null | 'backfill' | 'more' | 'refresh' | 'error';
+};
+
+export type CharacterSummaryDto = {
+    avatar: string;
+    name: string;
+    thumbnailUrl: string;
+    fav: boolean;
+    isCurrent: boolean;
+    charId: number;
+    dateLastChatTs: number;
+    chatSize: number;
+};
+
+export type CurrentChatHeaderDto = {
+    sessionName: string;
+    characterName: string;
+    avatarImgURL: string;
+    isGroup: boolean;
+};
+
+export type CurrentChatIdentityDto = {
+    avatar: string;
+    fileName: string;
+};
+
+type ChatSwitchStatus = 'ok' | 'notfound' | 'already-open' | 'busy';
+type CharacterSwitchStatus = 'ok' | 'notfound' | 'busy';
+type CharacterChatsOptions = { limit?: number | null; signal?: AbortSignal };
+
 // ── Sidebar / conversation list (Region 5) ────────────────────────────────────
 
-/**
- * Strip ST's `.jsonl` chat extension. ST's chat-list endpoint returns names
- * WITH the extension, but open/rename/delete all expect the bare name.
- * @param {unknown} fileName
- * @returns {string}
- */
-function _stripChatExt(fileName: any) {
+function isRecord(value: unknown): value is UnknownRecord {
+    return value !== null && typeof value === 'object';
+}
+
+function asRecord(value: unknown): UnknownRecord {
+    return isRecord(value) ? value : {};
+}
+
+function _string(value: unknown): string {
+    return typeof value === 'string' ? value : '';
+}
+
+function _getContext(): StContext {
+    return getContext() as StContext;
+}
+
+function _getCharacters(ctx: StContext = _getContext()): StCharacter[] {
+    return Array.isArray(ctx.characters)
+        ? ctx.characters.map(character => asRecord(character) as StCharacter)
+        : [];
+}
+
+// ST chat-list endpoints return `.jsonl` names; open/rename/delete expect bare names.
+function _stripChatExt(fileName: unknown): string {
     return typeof fileName === 'string' ? fileName.replace(/\.jsonl$/i, '') : '';
 }
 
-/**
- * ChatUI treats a fresh new chat as any loaded chat/file with no user turn yet.
- * This includes zero-message and greeting-only chats.
- * @param {unknown} messages
- * @returns {boolean}
- */
-function _hasNoUserTurn(messages: any) {
-    return !Array.isArray(messages) || !messages.some(message => message?.is_user === true);
+// ChatUI treats zero-message and greeting-only chats as fresh new chats.
+function _hasNoUserTurn(messages: unknown): boolean {
+    return !Array.isArray(messages)
+        || !messages.some(message => isRecord(message) && message.is_user === true);
 }
 
 /**
- * @param {ReturnType<typeof getContext>} [ctx]
+ * @param {StContext} [ctx]
  * @returns {number|null}
  */
-function _getCurrentCharacterId(ctx = getContext()) {
+function _getCurrentCharacterId(ctx: StContext = _getContext()): number | null {
     const windowChid = typeof window !== 'undefined'
         ? /** @type {Window & { this_chid?: unknown }} */ (window).this_chid
         : undefined;
@@ -55,13 +142,8 @@ function _getCurrentCharacterId(ctx = getContext()) {
     return Number.isInteger(id) && id >= 0 ? id : null;
 }
 
-/**
- * @param {string} avatar
- * @returns {number}
- */
-function _findCharacterIndexByAvatar(avatar: any) {
-    const characters = Array.isArray(getContext().characters) ? getContext().characters : [];
-    return characters.findIndex((c: any) => c?.avatar === avatar);
+function _findCharacterIndexByAvatar(avatar: string): number {
+    return _getCharacters().findIndex(character => character.avatar === avatar);
 }
 
 /**
@@ -69,20 +151,17 @@ function _findCharacterIndexByAvatar(avatar: any) {
  * @param {number} characterId
  * @param {string} fileName Bare chat file name.
  * @param {{ signal?: AbortSignal }} [options]
- * @returns {Promise<{ metadata: Record<string, any>|null, messages: any[] }|null>}
+ * @returns {Promise<CharacterChatSnapshot|null>}
  */
-type ReadChatFileOptions = { signal?: AbortSignal };
-type CharacterChatSnapshot = { metadata: Record<string, any> | null; messages: any[] };
-
 async function _readCharacterChatFile(
     characterId: number,
     fileName: string,
     { signal }: ReadChatFileOptions = {},
 ): Promise<CharacterChatSnapshot | null> {
-    const characters = Array.isArray(getContext().characters) ? getContext().characters : [];
+    const characters = _getCharacters();
     const character = characters[characterId];
-    const chName = typeof character?.name === 'string' ? character.name : '';
-    const avatar = typeof character?.avatar === 'string' ? character.avatar : '';
+    const chName = _string(character?.name);
+    const avatar = _string(character?.avatar);
     if (!chName || !avatar || !fileName) return null;
 
     const response = await fetch('/api/chats/get', {
@@ -98,22 +177,23 @@ async function _readCharacterChatFile(
     });
     if (!response.ok) return null;
 
-    const data = await response.json();
+    const data = await response.json() as unknown;
     if (!Array.isArray(data) || data.length === 0) return null;
 
     const [header, ...messages] = data;
-    const metadata = header && typeof header === 'object' ? (header.chat_metadata ?? null) : null;
-    return { metadata, messages };
+    const metadataValue = isRecord(header) ? header.chat_metadata : null;
+    const metadata = isRecord(metadataValue) ? metadataValue : null;
+    return { metadata, messages: messages.map(asRecord) };
 }
 
 /**
  * Normalize a chat's `last_mes` (epoch-ms number for empty chats, or an ST date
  * string for non-empty ones) into a sort key + a compact display label, using
  * ST's own timestampToMoment so parsing matches native behaviour.
- * @param {number|string} lastMes
+ * @param {unknown} lastMes
  * @returns {{ ts: number, label: string }}
  */
-function _chatTimestamp(lastMes: any) {
+function _chatTimestamp(lastMes: unknown): { ts: number; label: string } {
     const moment = timestampToMoment(lastMes);
     if (!moment || typeof moment.isValid !== 'function' || !moment.isValid()) {
         return { ts: 0, label: '' };
@@ -130,55 +210,15 @@ function _chatTimestamp(lastMes: any) {
 }
 
 /**
- * @typedef {object} ChatListItemDto
- * @property {string} fileName
- * @property {string} displayName
- * @property {number} messageCount
- * @property {string} preview
- * @property {string} fileSize
- * @property {number} lastMesTs
- * @property {string} lastMesLabel
- * @property {boolean} isCurrent
- */
-
-/**
- * @typedef {object} CharConversationGroupDto
- * @property {number} charId        Numeric index in characters[] (session-scoped, not stable across reload)
- * @property {string} avatar        Stable character identifier (file name, e.g. "Alice.png")
- * @property {string} name          Display name
- * @property {string} thumbnailUrl  From getThumbnailUrl('avatar', avatar) or '' for avatar==='none'
- * @property {boolean} isCurrent    Whether this is the currently-active character
- * @property {number} dateLastChatTs
- * @property {number} chatSize
- * @property {ChatListItemDto[]} chats
- * @property {number} visibleCount
- * @property {boolean} chatsLoaded
- * @property {boolean} fullyLoaded
- * @property {null|'backfill'|'more'|'refresh'|'error'} pending
- */
-
-/**
- * @typedef {object} CharacterSummaryDto
- * @property {string} avatar
- * @property {string} name
- * @property {string} thumbnailUrl
- * @property {boolean} fav
- * @property {boolean} isCurrent
- * @property {number} charId
- * @property {number} dateLastChatTs
- * @property {number} chatSize
- */
-
-/**
  * Shared mapping from a raw ST chat summary entry to a ChatListItemDto.
  * Handles both recent rows (`chat_items`/`mes`) and search rows
  * (`message_count`/`preview_message`).
- * @param {Record<string, any>} entry
+ * @param {UnknownRecord} entry
  * @param {string} currentChatName  Bare session name from _stripChatExt(getCurrentChatDetails()?.sessionName)
  * @param {boolean} ownerMatchesCurrent Whether this chat belongs to the current character
  * @returns {ChatListItemDto}
  */
-function _mapChatEntry(entry: any, currentChatName: any, ownerMatchesCurrent = true) {
+function _mapChatEntry(entry: UnknownRecord, currentChatName: string, ownerMatchesCurrent = true): ChatListItemDto {
     const fileName = _stripChatExt(entry.file_name ?? entry.file_id);
     const { ts, label } = _chatTimestamp(entry.last_mes);
     // ST fills `mes` with a bracketed placeholder for empty chats/messages;
@@ -202,28 +242,22 @@ function _mapChatEntry(entry: any, currentChatName: any, ownerMatchesCurrent = t
     };
 }
 
-/**
- * @param {unknown} value
- * @returns {number}
- */
-function _finiteNumber(value: any) {
+function _finiteNumber(value: unknown): number {
     const number = Number(value);
     return Number.isFinite(number) ? number : 0;
 }
 
 /**
- * @param {ReturnType<typeof getContext>} [ctx]
+ * @param {StContext} [ctx]
  * @returns {{ currentChatName: string, currentAvatar: string }}
  */
-function _getCurrentChatMatch(ctx = getContext()) {
+function _getCurrentChatMatch(ctx: StContext = _getContext()): { currentChatName: string; currentAvatar: string } {
     const currentChatName = _stripChatExt(getCurrentChatDetails()?.sessionName);
     const currentCharId = !ctx.groupId
         ? _getCurrentCharacterId(ctx)
         : null;
-    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const currentAvatar = currentCharId !== null && typeof characters[currentCharId]?.avatar === 'string'
-        ? characters[currentCharId].avatar
-        : '';
+    const characters = _getCharacters(ctx);
+    const currentAvatar = currentCharId !== null ? _string(characters[currentCharId]?.avatar) : '';
     return { currentChatName, currentAvatar };
 }
 
@@ -234,18 +268,17 @@ function _getCurrentChatMatch(ctx = getContext()) {
  * selected (Mode A is single-character).
  * @returns {Promise<ChatListItemDto[]>}
  */
-export async function listCharacterChats() {
-    const ctx = getContext();
+export async function listCharacterChats(): Promise<ChatListItemDto[]> {
+    const ctx = _getContext();
     if (ctx.groupId) return [];
     const characterId = ctx.characterId;
     if (characterId === undefined || characterId === null || characterId === '') return [];
 
-    const raw = await getPastCharacterChats(Number(characterId));
+    const raw = await getPastCharacterChats(Number(characterId)) as unknown;
     const currentName = _stripChatExt(getCurrentChatDetails()?.sessionName);
 
     const items = (Array.isArray(raw) ? raw : []).map(chat => {
-        const entry = /** @type {Record<string, any>} */ (chat ?? {});
-        return _mapChatEntry(entry, currentName, true);
+        return _mapChatEntry(asRecord(chat), currentName, true);
     });
 
     items.sort((a, b) => b.lastMesTs - a.lastMesTs);
@@ -259,17 +292,16 @@ export async function listCharacterChats() {
  * @param {{ limit?: number|null }} [options]
  * @returns {Promise<ChatListItemDto[]>}
  */
-async function _listChatsForCharacter(charIndex: any, { limit = null } = {}) {
-    const raw = await getPastCharacterChats(charIndex);
-    const ctx = getContext();
+async function _listChatsForCharacter(charIndex: number, { limit = null }: { limit?: number | null } = {}): Promise<ChatListItemDto[]> {
+    const raw = await getPastCharacterChats(charIndex) as unknown;
+    const ctx = _getContext();
     const currentName = _stripChatExt(getCurrentChatDetails()?.sessionName);
     const currentCharId = !ctx.groupId && ctx.characterId !== undefined && ctx.characterId !== null
         ? Number(ctx.characterId)
         : -1;
     const ownerMatchesCurrent = Number(charIndex) === currentCharId;
     const items = (Array.isArray(raw) ? raw : []).map(chat => {
-        const entry = /** @type {Record<string, any>} */ (chat ?? {});
-        return _mapChatEntry(entry, currentName, ownerMatchesCurrent);
+        return _mapChatEntry(asRecord(chat), currentName, ownerMatchesCurrent);
     });
     items.sort((a, b) => b.lastMesTs - a.lastMesTs);
     return typeof limit === 'number' ? items.slice(0, limit) : items;
@@ -280,16 +312,15 @@ async function _listChatsForCharacter(charIndex: any, { limit = null } = {}) {
  * No network calls.
  * @returns {CharConversationGroupDto[]}
  */
-export function listCharacterConversationHeaders() {
-    const ctx = getContext();
-    const rawChars = Array.isArray(ctx.characters) ? ctx.characters : [];
+export function listCharacterConversationHeaders(): CharConversationGroupDto[] {
+    const ctx = _getContext();
+    const rawChars = _getCharacters(ctx);
     const currentCharId = !ctx.groupId ? _getCurrentCharacterId(ctx) : null;
 
     return rawChars
-        .map((char: any, index: any) => {
-            const entry = /** @type {Record<string, any>} */ (char ?? {});
-            const avatar = typeof entry.avatar === 'string' ? entry.avatar : '';
-            const name = typeof entry.name === 'string' ? entry.name : '';
+        .map((entry, index): CharConversationGroupDto => {
+            const avatar = _string(entry.avatar);
+            const name = _string(entry.name);
             const chatSize = _finiteNumber(entry.chat_size);
             const dateLastChatTs = _finiteNumber(entry.date_last_chat);
             return {
@@ -307,8 +338,8 @@ export function listCharacterConversationHeaders() {
                 pending: null,
             };
         })
-        .filter((group: any) => group.name && group.avatar && group.chatSize > 0)
-        .sort((a: any, b: any) => b.dateLastChatTs - a.dateLastChatTs);
+        .filter(group => group.name && group.avatar && group.chatSize > 0)
+        .sort((a, b) => b.dateLastChatTs - a.dateLastChatTs);
 }
 
 /**
@@ -316,7 +347,9 @@ export function listCharacterConversationHeaders() {
  * @param {{ max?: number, signal?: AbortSignal }} [options]
  * @returns {Promise<Array<{ avatar: string, chat: ChatListItemDto }>>}
  */
-export async function listRecentCharacterChatRows({ max = 100, signal }: { max?: number; signal?: AbortSignal } = {}) {
+export async function listRecentCharacterChatRows(
+    { max = 100, signal }: { max?: number; signal?: AbortSignal } = {},
+): Promise<Array<{ avatar: string; chat: ChatListItemDto }>> {
     const response = await fetch('/api/chats/recent', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -326,16 +359,19 @@ export async function listRecentCharacterChatRows({ max = 100, signal }: { max?:
     });
     if (!response.ok) throw new Error('recent-chats-failed');
 
-    const data = await response.json();
+    const data = await response.json() as unknown;
     const rows = Array.isArray(data) ? data : [];
     const { currentChatName, currentAvatar } = _getCurrentChatMatch();
     return rows
-        .map(row => /** @type {Record<string, any>} */ (row ?? {}))
-        .filter(row => typeof row.avatar === 'string' && row.avatar && !row.group)
-        .map(row => ({
-            avatar: row.avatar,
-            chat: _mapChatEntry(row, currentChatName, row.avatar === currentAvatar),
-        }))
+        .map(asRecord)
+        .filter(row => _string(row.avatar) && !row.group)
+        .map(row => {
+            const avatar = _string(row.avatar);
+            return {
+                avatar,
+                chat: _mapChatEntry(row, currentChatName, avatar === currentAvatar),
+            };
+        })
         .filter(row => row.chat.fileName);
 }
 
@@ -348,8 +384,8 @@ export async function listRecentCharacterChatRows({ max = 100, signal }: { max?:
  */
 export async function listChatsForCharacterAvatar(
     avatar: string,
-    { limit = null, signal }: { limit?: number | null; signal?: AbortSignal } = {},
-) {
+    { limit = null, signal }: CharacterChatsOptions = {},
+): Promise<{ chats: ChatListItemDto[]; totalCount: number }> {
     if (typeof avatar !== 'string' || !avatar) return { chats: [], totalCount: 0 };
     const response = await fetch('/api/chats/search', {
         method: 'POST',
@@ -360,11 +396,11 @@ export async function listChatsForCharacterAvatar(
     });
     if (!response.ok) throw new Error('character-chat-search-failed');
 
-    const data = await response.json();
+    const data = await response.json() as unknown;
     const rows = Array.isArray(data) ? data : [];
     const { currentChatName, currentAvatar } = _getCurrentChatMatch();
     const chats = rows
-        .map(row => _mapChatEntry(/** @type {Record<string, any>} */ (row ?? {}), currentChatName, avatar === currentAvatar))
+        .map(row => _mapChatEntry(asRecord(row), currentChatName, avatar === currentAvatar))
         .filter(chat => chat.fileName)
         .sort((a, b) => b.lastMesTs - a.lastMesTs);
     return {
@@ -379,10 +415,10 @@ export async function listChatsForCharacterAvatar(
  * @param {string} fileName  Chat file name (bare or with .jsonl)
  * @returns {Promise<'ok'|'notfound'|'already-open'|'busy'>}
  */
-export async function openChatForCharacter(avatar: any, fileName: any) {
-    const ctx = getContext();
-    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const index = characters.findIndex((c: any) => c?.avatar === avatar);
+export async function openChatForCharacter(avatar: string, fileName: string): Promise<ChatSwitchStatus> {
+    const ctx = _getContext();
+    const characters = _getCharacters(ctx);
+    const index = characters.findIndex(character => character.avatar === avatar);
     if (index < 0) return 'notfound';
     const character = characters[index];
 
@@ -397,7 +433,7 @@ export async function openChatForCharacter(avatar: any, fileName: any) {
         return 'ok';
     } else {
         if (isChatSaving) return 'busy';
-        const previousChat = typeof character?.chat === 'string' ? character.chat : '';
+        const previousChat = _string(character?.chat);
         try {
             // Pre-set the desired chat file so selectCharacterById's getChat()
             // call loads it directly. On success, persist with the same exported
@@ -406,11 +442,11 @@ export async function openChatForCharacter(avatar: any, fileName: any) {
             character.chat = bareName;
             await selectCharacterById(index);
 
-            const latest = getContext();
+            const latest = _getContext();
             const selectedTarget = !latest.groupId && String(latest.characterId) === String(index);
             const openedTargetChat = _stripChatExt(getCurrentChatDetails()?.sessionName) === bareName;
             if (!selectedTarget || !openedTargetChat) {
-                const latestCharacters = Array.isArray(latest.characters) ? latest.characters : [];
+                const latestCharacters = _getCharacters(latest);
                 if (latestCharacters[index]) latestCharacters[index].chat = previousChat;
                 return 'busy';
             }
@@ -418,7 +454,7 @@ export async function openChatForCharacter(avatar: any, fileName: any) {
             await createOrEditCharacter(new CustomEvent('newChat'));
             return 'ok';
         } catch (error) {
-            const latestCharacters = Array.isArray(getContext().characters) ? getContext().characters : [];
+            const latestCharacters = _getCharacters();
             if (latestCharacters[index]) latestCharacters[index].chat = previousChat;
             throw error;
         }
@@ -432,19 +468,18 @@ export async function openChatForCharacter(avatar: any, fileName: any) {
  * to getContext().characterId (= stringified this_chid).
  * @returns {CharacterSummaryDto[]}
  */
-export function listCharacters() {
-    const ctx = getContext();
-    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
+export function listCharacters(): CharacterSummaryDto[] {
+    const ctx = _getContext();
+    const characters = _getCharacters(ctx);
     const currentId = ctx.characterId;
     const hasCurrent = currentId !== undefined && currentId !== null && currentId !== '';
 
-    return characters.map((char: any, index: any) => {
-        const entry = /** @type {Record<string, any>} */ (char ?? {});
-        const avatar = typeof entry.avatar === 'string' ? entry.avatar : '';
+    return characters.map((entry, index) => {
+        const avatar = _string(entry.avatar);
         return {
             charId: index,
             avatar,
-            name: typeof entry.name === 'string' ? entry.name : '',
+            name: _string(entry.name),
             thumbnailUrl: avatar && avatar !== 'none' ? getThumbnailUrl('avatar', avatar) : '',
             fav: entry.fav === true || entry.fav === 'true',
             isCurrent: hasCurrent && !ctx.groupId && String(index) === String(currentId),
@@ -465,16 +500,16 @@ export function listCharacters() {
  * @param {string} avatar
  * @returns {Promise<'ok'|'notfound'|'busy'>}
  */
-export async function switchCharacter(avatar: any) {
+export async function switchCharacter(avatar: string): Promise<CharacterSwitchStatus> {
     if (typeof avatar !== 'string' || !avatar) return 'notfound';
-    const ctx = getContext();
-    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const index = characters.findIndex((c: any) => c?.avatar === avatar);
+    const ctx = _getContext();
+    const characters = _getCharacters(ctx);
+    const index = characters.findIndex(character => character.avatar === avatar);
     if (index < 0) return 'notfound';
     if (!ctx.groupId && String(ctx.characterId) === String(index)) return 'ok';
 
     await selectCharacterById(index);
-    return String(getContext().characterId) === String(index) ? 'ok' : 'busy';
+    return String(_getContext().characterId) === String(index) ? 'ok' : 'busy';
 }
 
 /**
@@ -482,13 +517,13 @@ export async function switchCharacter(avatar: any) {
  * object down to a boolean so no live ST object escapes the adapter.
  * @returns {{ sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean }}
  */
-export function getCurrentChatHeader() {
-    const details = /** @type {Record<string, any>} */ (getCurrentChatDetails() ?? {});
+export function getCurrentChatHeader(): CurrentChatHeaderDto {
+    const details = asRecord(getCurrentChatDetails());
     return {
         sessionName: _stripChatExt(details.sessionName),
-        characterName: typeof details.characterName === 'string' ? details.characterName : '',
-        avatarImgURL: typeof details.avatarImgURL === 'string' ? details.avatarImgURL : '',
-        isGroup: !!getContext().groupId,
+        characterName: _string(details.characterName),
+        avatarImgURL: _string(details.avatarImgURL),
+        isGroup: !!_getContext().groupId,
     };
 }
 
@@ -497,15 +532,15 @@ export function getCurrentChatHeader() {
  * character, or a missing session name.
  * @returns {{ avatar: string, fileName: string }|null}
  */
-export function getCurrentChatIdentity() {
-    const ctx = getContext();
+export function getCurrentChatIdentity(): CurrentChatIdentityDto | null {
+    const ctx = _getContext();
     if (ctx.groupId) return null;
 
     const characterId = _getCurrentCharacterId(ctx);
     if (characterId === null) return null;
 
-    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const avatar = typeof characters[characterId]?.avatar === 'string' ? characters[characterId].avatar : '';
+    const characters = _getCharacters(ctx);
+    const avatar = _string(characters[characterId]?.avatar);
     const fileName = _stripChatExt(getCurrentChatDetails()?.sessionName);
 
     return avatar && fileName ? { avatar, fileName } : null;
@@ -518,7 +553,7 @@ export function getCurrentChatIdentity() {
  * @param {string} fileName
  * @returns {Promise<void>}
  */
-export async function openCharacterChatByName(fileName: any) {
+export async function openCharacterChatByName(fileName: string): Promise<void> {
     const name = _stripChatExt(fileName);
     if (!name) return;
     await openCharacterChat(name);
@@ -528,18 +563,18 @@ export async function openCharacterChatByName(fileName: any) {
  * Create a new chat for the currently-selected character.
  * @returns {Promise<void>}
  */
-export async function newCharacterChat() {
+export async function newCharacterChat(): Promise<void> {
     await doNewChat({ deleteCurrentChat: false });
 }
 
 /**
  * Re-read a temp chat immediately before deleting it. Missing files are treated
- * as already gone; files containing any user turn are kept.
+ * as already gone; files containing a user turn are kept.
  * @param {string} avatar
  * @param {string} fileName Bare chat file name.
  * @returns {Promise<boolean>}
  */
-export async function deleteChatFileIfSafe(avatar: any, fileName: any) {
+export async function deleteChatFileIfSafe(avatar: string, fileName: string): Promise<boolean> {
     const bareName = _stripChatExt(fileName);
     const index = _findCharacterIndexByAvatar(avatar);
     if (index < 0 || !bareName) return false;
@@ -570,7 +605,7 @@ export async function deleteChatFileIfSafe(avatar: any, fileName: any) {
  * @param {string} newName
  * @returns {Promise<boolean>}
  */
-export async function renameCharacterChat(oldFileName: any, newName: any) {
+export async function renameCharacterChat(oldFileName: string, newName: string): Promise<boolean> {
     const oldBare = _stripChatExt(oldFileName);
     const next = typeof newName === 'string' ? _stripChatExt(newName).trim() : '';
     if (!oldBare || !next) return false;
@@ -587,10 +622,10 @@ export async function renameCharacterChat(oldFileName: any, newName: any) {
  * @param {string} fileName
  * @returns {Promise<boolean>}
  */
-export async function deleteCharacterChat(avatar: any, fileName: any) {
-    const ctx = getContext();
-    const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const index = characters.findIndex((c: any) => c?.avatar === avatar);
+export async function deleteCharacterChat(avatar: string, fileName: string): Promise<boolean> {
+    const ctx = _getContext();
+    const characters = _getCharacters(ctx);
+    const index = characters.findIndex(character => character.avatar === avatar);
     const bareName = _stripChatExt(fileName);
     if (index < 0 || !bareName) return false;
 
@@ -603,10 +638,11 @@ export async function deleteCharacterChat(avatar: any, fileName: any) {
     const deleted = !remainingChats.some(chat => chat.fileName === bareName);
     if (!deleted) return false;
 
-    if (wasCurrent && typeof getContext().reloadCurrentChat === 'function') {
+    const latest = _getContext();
+    if (wasCurrent && typeof latest.reloadCurrentChat === 'function') {
         // ST set the character's chat to the newest remaining (or a fresh) chat
         // without loading it; reload so the main surface leaves the deleted chat.
-        await getContext().reloadCurrentChat();
+        await latest.reloadCurrentChat();
     }
     return true;
 }
