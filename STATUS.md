@@ -142,9 +142,10 @@ sends or edits the greeting.
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
-- **Short-term migration hardening** — Day 1 docs are pinned down; Day 2 adds
-  generated artifact checks for unresolved `@st/*`, `process.env` / Node globals,
-  and bad browser import specifiers.
+- **Short-term migration hardening** — Day 1-3 are done: build/runtime docs are
+  pinned down, generated artifact checks are wired into `runtime`, and
+  `scripts/build.mjs` now has named runtime/UI/ST-external/browser-define sections.
+  Next: adapter type-boundary tightening.
 - **§7 config deepening** — selector-slot placement, ＋menu drag-reorder editor.
 - **Remaining sim-click write paths** (`#options` / drawers) → ST exports.
 - Group-chat conversation list, search 🔍, Mode B global list.
