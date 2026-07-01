@@ -116,6 +116,10 @@ const reactAliases = {
     'react/jsx-dev-runtime': 'preact/compat/jsx-dev-runtime',
 };
 
+const browserDefines = {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+};
+
 export async function buildAll() {
     await fs.rm(path.join(PROJECT_ROOT, 'dist'), { recursive: true, force: true });
 
@@ -124,6 +128,7 @@ export async function buildAll() {
         configFile: false,
         publicDir: false,
         logLevel: 'info',
+        define: browserDefines,
         build: {
             target: 'es2020',
             outDir: RUNTIME_OUT_DIR,
@@ -152,6 +157,7 @@ export async function buildAll() {
         configFile: false,
         publicDir: false,
         logLevel: 'info',
+        define: browserDefines,
         resolve: {
             alias: reactAliases,
         },
