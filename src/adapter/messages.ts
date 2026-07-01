@@ -19,14 +19,36 @@ import {
     stEventKeys,
 } from './internals.js';
 
-/**
- * @param {Element} mesEl
- * @returns {string}
- */
-export function getSwipeLabel(mesEl: any) {
-    const msg = getMessageByElement(mesEl);
+type MessageId = number | string;
+export type MessageAction = 'copy' | 'regen' | 'edit' | 'branch' | 'checkpoint' | 'hide' | 'delete';
+export type SwipeDirection = 'left' | 'right';
+
+type StMessage = {
+    mes?: unknown;
+    swipes?: unknown;
+    swipe_id?: unknown;
+    is_system?: unknown;
+    is_user?: unknown;
+};
+
+type DeleteSettingsContext = {
+    powerUserSettings?: {
+        confirm_message_delete?: unknown;
+    };
+};
+
+function asStMessage(value: unknown): StMessage | null {
+    return value !== null && typeof value === 'object' ? value as StMessage : null;
+}
+
+function reportAsyncFailure(work: unknown, message: string): void {
+    Promise.resolve(work).catch((error: unknown) => console.error(message, error));
+}
+
+export function getSwipeLabel(mesEl: Element): string {
+    const msg = asStMessage(getMessageByElement(mesEl));
     if (!msg || !Array.isArray(msg.swipes) || msg.swipes.length <= 1) return '';
-    const idx = msg.swipe_id ?? 0;
+    const idx = typeof msg.swipe_id === 'number' ? msg.swipe_id : 0;
     return `${idx + 1}​/​${msg.swipes.length}`;
 }
 
@@ -59,20 +81,12 @@ export function isOverflowActionVisible(
     return true;
 }
 
-/**
- * @param {Element} original
- * @returns {void}
- */
-export function triggerOverflowAction(original: any) {
+export function triggerOverflowAction(original: Element): void {
     _dispatchClick(original);
 }
 
-/**
- * @param {Element} mesEl
- * @returns {void}
- */
-export function copyMessage(mesEl: any) {
-    const msg = getMessageByElement(mesEl);
+export function copyMessage(mesEl: Element): Promise<unknown> {
+    const msg = asStMessage(getMessageByElement(mesEl));
     const text = typeof msg?.mes === 'string' ? msg.mes : '';
     return Promise.resolve(copyText(text));
 }
@@ -93,11 +107,7 @@ export function regenerateLast() {
     document.getElementById('option_regenerate')?.click();
 }
 
-/**
- * @param {Element} mesEl
- * @returns {void}
- */
-export function editMessage(mesEl: any) {
+export function editMessage(mesEl: Element): void {
     const $mes = _getJQueryMessage(mesEl);
     if ($mes) {
         $mes.find('.mes_edit').trigger('click');
@@ -116,7 +126,7 @@ export function editMessage(mesEl: any) {
  * @param {string} text
  * @returns {Promise<void>}
  */
-export async function saveMessageEditById(mesId: any, text: any) {
+export async function saveMessageEditById(mesId: MessageId, text: string): Promise<void> {
     const normalizedId = Number(mesId);
     if (!Number.isFinite(normalizedId)) {
         throw new Error(`[ChatUI/adapter] Invalid message id for edit: ${mesId}`);
@@ -143,51 +153,35 @@ export async function saveMessageEditById(mesId: any, text: any) {
 
     const updated = _waitForEvent(
         stEventKeys.MESSAGE_UPDATED,
-        (updatedMessageId: any) => Number(updatedMessageId) === normalizedId,
+        (updatedMessageId: unknown) => Number(updatedMessageId) === normalizedId,
     );
     _dispatchClick(done);
     await updated;
 }
 
-/**
- * @param {Element} mesEl
- * @returns {void}
- */
-export function createBranch(mesEl: any) {
+export function createBranch(mesEl: Element): void {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
-    branchChat(mesId).catch((error: any) => console.error('[ChatUI/adapter] branchChat failed', error));
+    reportAsyncFailure(branchChat(mesId), '[ChatUI/adapter] branchChat failed');
 }
 
-/**
- * @param {Element} mesEl
- * @returns {void}
- */
-export function createCheckpoint(mesEl: any) {
+export function createCheckpoint(mesEl: Element): void {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
-    createNewBookmark(mesId).catch((error: any) => console.error('[ChatUI/adapter] createNewBookmark failed', error));
+    reportAsyncFailure(createNewBookmark(mesId), '[ChatUI/adapter] createNewBookmark failed');
 }
 
-/**
- * @param {Element} mesEl
- * @returns {void}
- */
-export function toggleHideMessage(mesEl: any) {
+export function toggleHideMessage(mesEl: Element): void {
     const mesId = _getMessageId(mesEl);
-    const msg = getMessageById(mesId);
+    const msg = asStMessage(getMessageById(mesId));
     if (!msg) return;
     // Source of truth is the message flag (is_system), not native button
     // visibility — reading the DOM could pick the wrong direction.
     const action = msg.is_system === true ? unhideChatMessage(mesId) : hideChatMessage(mesId);
-    action.catch((error: any) => console.error('[ChatUI/adapter] toggle hide failed', error));
+    reportAsyncFailure(action, '[ChatUI/adapter] toggle hide failed');
 }
 
-/**
- * @param {Element} mesEl
- * @returns {void}
- */
-export function deleteMessage(mesEl: any) {
+export function deleteMessage(mesEl: Element): void {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
 
@@ -198,42 +192,36 @@ export function deleteMessage(mesEl: any) {
     // when removing the last message that has multiple swipes, drop only the
     // selected swipe rather than the whole message. (fromSlashCommand is always
     // false from the ChatUI surface.)  See ST script.js .mes_edit_delete handler.
-    const message = getMessageById(mesId);
-    const confirm = !!getContext().powerUserSettings?.confirm_message_delete;
+    const message = asStMessage(getMessageById(mesId));
+    const confirm = !!(getContext() as DeleteSettingsContext).powerUserSettings?.confirm_message_delete;
     const swipes = Array.isArray(message?.swipes) ? message.swipes : [];
-    const selectedSwipe = message?.swipe_id ?? undefined;
-    const isLast = mesId === getCurrentChat().length - 1;
+    const selectedSwipe = typeof message?.swipe_id === 'number' ? message.swipe_id : undefined;
+    const isLast = mesId === (getCurrentChat() as unknown[]).length - 1;
     const deleteOnlySwipe = confirm
         && !message?.is_user
         && swipes.length > 1
         && isLast
         && selectedSwipe !== undefined;
 
-    stDeleteMessage(mesId, deleteOnlySwipe ? selectedSwipe : undefined, confirm)
-        .catch((error: any) => console.error('[ChatUI/adapter] deleteMessage failed', error));
+    reportAsyncFailure(
+        stDeleteMessage(mesId, deleteOnlySwipe ? selectedSwipe : undefined, confirm),
+        '[ChatUI/adapter] deleteMessage failed',
+    );
 }
 
-/**
- * @param {Element} mesEl
- * @param {'left'|'right'} direction
- * @returns {void}
- */
-export function swipeMessage(mesEl: any, direction: any) {
+export function swipeMessage(mesEl: Element, direction: SwipeDirection): void {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
     // Call ST's exported swipe() with forceMesId (it tolerates a null event when
     // forceMesId is a number) instead of clicking the off-screen .swipe_left /
     // .swipe_right buttons. direction 'left'|'right' matches ST's SWIPE_DIRECTION.
-    stSwipe(null, direction, { forceMesId: mesId, message: getMessageById(mesId) ?? undefined })
-        .catch((error: any) => console.error('[ChatUI/adapter] swipe failed', error));
+    reportAsyncFailure(
+        stSwipe(null, direction, { forceMesId: mesId, message: getMessageById(mesId) ?? undefined }),
+        '[ChatUI/adapter] swipe failed',
+    );
 }
 
-/**
- * @param {Element} mesEl
- * @param {string} action
- * @returns {void}
- */
-export function triggerMessageAction(mesEl: any, action: any) {
+export function triggerMessageAction(mesEl: Element, action: MessageAction): Promise<unknown> | void {
     switch (action) {
         case 'copy':       return copyMessage(mesEl);
 
@@ -247,12 +235,7 @@ export function triggerMessageAction(mesEl: any, action: any) {
     }
 }
 
-/**
- * @param {number|string} mesId
- * @param {string} action
- * @returns {void}
- */
-export function triggerMessageActionById(mesId: any, action: any) {
+export function triggerMessageActionById(mesId: MessageId, action: MessageAction): Promise<unknown> | void {
     if (action === 'regen') {
         regenerateMessage();
         return;
@@ -263,12 +246,7 @@ export function triggerMessageActionById(mesId: any, action: any) {
     return triggerMessageAction(mesEl, action);
 }
 
-/**
- * @param {number|string} mesId
- * @param {'left'|'right'} direction
- * @returns {void}
- */
-export function swipeMessageById(mesId: any, direction: any) {
+export function swipeMessageById(mesId: MessageId, direction: SwipeDirection): void {
     const mesEl = getMessageElementById(mesId);
     if (!mesEl) return;
     swipeMessage(mesEl, direction);

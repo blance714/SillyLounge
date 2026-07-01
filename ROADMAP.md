@@ -31,10 +31,10 @@ Last updated: 2026-07-01
   browser define 分开命名。
 - 保持当前行为不变,未引入没用到的 `vite.config.*`;重构前后产物 checksum 一致。
 
-### 4. Adapter 类型边界收窄(2026-07-04 ~ 2026-07-05)
+### ~~4. Adapter 类型边界收窄(2026-07-04 ~ 2026-07-05)~~ ✅
 
-- 优先收 `src/adapter/chats.ts`、`media.ts`、`messages.ts` 的显式 `any`。
-- 目标不是一次性全类型化 ST,而是给 ChatUI 输出 DTO 和输入参数建立本地类型。
+- 已收 `src/adapter/chats.ts`、`media.ts`、`messages.ts` 的显式 `any`。
+- 已给 ChatUI 输出 DTO 和输入参数建立本地类型;未尝试一次性全类型化 ST host。
 
 ### 5. 回归清单落地(2026-07-06)
 
