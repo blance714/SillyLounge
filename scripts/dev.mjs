@@ -1,51 +1,52 @@
 import fs from 'node:fs';
-import path from 'node:path';
-import esbuild from 'esbuild';
-import { buildOptions } from './build-config.mjs';
+import { buildAll } from './build.mjs';
 import { DEFAULT_RUNTIME_DIR, isRuntimeSourcePath, syncRuntime } from './runtime.mjs';
 
-let syncTimer = null;
+let timer = null;
+let running = false;
+let queuedReason = null;
 
-/**
- * @param {string} reason
- * @returns {void}
- */
-function scheduleRuntimeSync(reason) {
-    if (syncTimer) clearTimeout(syncTimer);
-    syncTimer = setTimeout(async () => {
-        try {
-            await syncRuntime();
-            console.log(`[ChatUI] runtime synced (${reason}) -> ${DEFAULT_RUNTIME_DIR}`);
-        } catch (error) {
-            console.error('[ChatUI] runtime sync failed', error);
+async function rebuildAndSync(reason) {
+    if (running) {
+        queuedReason = reason;
+        return;
+    }
+
+    running = true;
+    try {
+        await buildAll();
+        await syncRuntime();
+        console.log(`[ChatUI] rebuilt + runtime synced (${reason}) -> ${DEFAULT_RUNTIME_DIR}`);
+    } catch (error) {
+        console.error('[ChatUI] rebuild failed', error);
+    } finally {
+        running = false;
+        if (queuedReason) {
+            const next = queuedReason;
+            queuedReason = null;
+            schedule(next);
         }
-    }, 80);
+    }
 }
 
-const context = await esbuild.context({
-    ...buildOptions,
-    plugins: [
-        {
-            name: 'chatui-runtime-sync',
-            setup(build) {
-                build.onEnd((result) => {
-                    if (result.errors.length > 0) return;
-                    scheduleRuntimeSync('build');
-                });
-            },
-        },
-    ],
-});
+function schedule(reason) {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+        timer = null;
+        void rebuildAndSync(reason);
+    }, 120);
+}
 
-await context.watch();
+await rebuildAndSync('initial');
 
 fs.watch('.', { recursive: true }, (_eventType, filename) => {
     if (!filename) return;
-    if (!isRuntimeSourcePath(filename.toString())) return;
-    scheduleRuntimeSync(filename.toString());
+    const normalized = filename.toString();
+    if (!isRuntimeSourcePath(normalized)) return;
+    schedule(normalized);
 });
 
 console.log(`[ChatUI] dev mode running. ST should load ${DEFAULT_RUNTIME_DIR}`);
-console.log('[ChatUI] watching TSX build and runtime files...');
+console.log('[ChatUI] watching src/, manifest.json, style.css, package.json, and tsconfig.json...');
 
 await new Promise(() => {});

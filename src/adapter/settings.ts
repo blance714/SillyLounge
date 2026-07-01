@@ -50,7 +50,7 @@ const PARKING_ROOT_ID = 'chatui-st-drawer-parking';
  * @param {Element} el
  * @returns {string}
  */
-function getClassName(el) {
+function getClassName(el: any) {
     return el.getAttribute('class') || '';
 }
 
@@ -58,7 +58,7 @@ function getClassName(el) {
  * @param {Element} el
  * @returns {string}
  */
-function getCssText(el) {
+function getCssText(el: any) {
     return el instanceof HTMLElement ? el.style.cssText : '';
 }
 
@@ -66,7 +66,7 @@ function getCssText(el) {
  * @param {Element} el
  * @param {string} cssText
  */
-function setCssText(el, cssText) {
+function setCssText(el: any, cssText: any) {
     if (el instanceof HTMLElement) {
         el.style.cssText = cssText;
     }
@@ -77,7 +77,7 @@ function setCssText(el, cssText) {
  * @param {string} name
  * @param {string|null} value
  */
-function restoreAttr(el, name, value) {
+function restoreAttr(el: any, name: any, value: any) {
     if (value === null) {
         el.removeAttribute(name);
     } else {
@@ -90,7 +90,7 @@ function restoreAttr(el, name, value) {
  * @param {Element|null} parent
  * @returns {Element|null}
  */
-function findDrawerIcon(node, parent) {
+function findDrawerIcon(node: any, parent: any) {
     return parent?.querySelector('.drawer-toggle .drawer-icon')
         || node.parentElement?.querySelector('.drawer-toggle .drawer-icon')
         || null;
@@ -121,7 +121,7 @@ function getParkingRoot() {
  * @param {OriginalPosition} pos
  * @returns {boolean}
  */
-function restoreToOriginalParent(pos) {
+function restoreToOriginalParent(pos: any) {
     const { node, parent, nextSibling, hostEl } = pos;
     if (!parent || !parent.isConnected) {
         return false;
@@ -140,7 +140,7 @@ function restoreToOriginalParent(pos) {
  * @param {OriginalPosition} pos
  * @returns {boolean}
  */
-function parkHostedDrawer(pos) {
+function parkHostedDrawer(pos: any) {
     const parkingRoot = getParkingRoot();
     if (!parkingRoot) {
         return false;
@@ -152,7 +152,7 @@ function parkHostedDrawer(pos) {
 /**
  * @param {OriginalPosition} pos
  */
-function restoreSnapshot(pos) {
+function restoreSnapshot(pos: any) {
     const { node, className, cssText, dataDragged, chatuiHostedAttr, icon, iconClassName, iconCssText } = pos;
 
     node.setAttribute('class', className);
@@ -225,7 +225,7 @@ export function listStSettingsEntries() {
  * @param {Element} hostEl          ChatUI-owned container to append the node into
  * @returns {boolean}               true on success
  */
-export function mountStDrawer(drawerContentId, hostEl) {
+export function mountStDrawer(drawerContentId: any, hostEl: any) {
     if (_positions.has(drawerContentId)) {
         console.warn(`[chatui/settings] mountStDrawer: "${drawerContentId}" already mounted`);
         return false;
@@ -294,7 +294,7 @@ export function mountStDrawer(drawerContentId, hostEl) {
     // right-nav-panel: refresh the hotswap favorites row after reparenting.
     // favsToHotswap is from RossAscends-mods; it's async but we fire-and-forget.
     if (drawerContentId === 'right-nav-panel') {
-        import('../../../../../scripts/RossAscends-mods.js')
+        import('@st/scripts/RossAscends-mods')
             .then(({ favsToHotswap }) => favsToHotswap())
             .catch(() => {});
     }
@@ -314,7 +314,7 @@ export function mountStDrawer(drawerContentId, hostEl) {
  * @param {string} drawerContentId  id attribute of the .drawer-content element
  * @returns {boolean}               true if a mounted entry was found and restored
  */
-export function unmountStDrawer(drawerContentId) {
+export function unmountStDrawer(drawerContentId: any) {
     const pos = _positions.get(drawerContentId);
     if (!pos) {
         console.warn(`[chatui/settings] unmountStDrawer: "${drawerContentId}" not mounted`);

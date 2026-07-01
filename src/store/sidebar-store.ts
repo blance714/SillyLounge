@@ -8,7 +8,23 @@
 
 import { createStore } from './create-store.js';
 
-const _initialState = {
+export type ChatuiSidebarCompatState = {
+    header: {
+        sessionName: string;
+        characterName: string;
+        avatarImgURL: string;
+        isGroup: boolean;
+    };
+    characters: unknown[];
+    chats: unknown[];
+    loading: boolean;
+    error: string | null;
+    charGroups: unknown[];
+    charGroupsLoading: boolean;
+    charGroupsError: string | null;
+};
+
+const _initialState: ChatuiSidebarCompatState = {
     header: { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false },
     characters: [],
     chats: [],
@@ -19,12 +35,12 @@ const _initialState = {
     charGroupsError: null,
 };
 
-const _store = createStore(_initialState);
+const _store = createStore<ChatuiSidebarCompatState>(_initialState);
 
 /**
  * @returns {typeof _initialState}
  */
-export function getSidebarState() {
+export function getSidebarState(): ChatuiSidebarCompatState {
     return _store.getState();
 }
 
@@ -32,7 +48,7 @@ export function getSidebarState() {
  * @param {Function} subscriber
  * @returns {() => void}
  */
-export function subscribeSidebarStore(subscriber) {
+export function subscribeSidebarStore(subscriber: (state: ChatuiSidebarCompatState) => void) {
     return _store.subscribe(subscriber);
 }
 

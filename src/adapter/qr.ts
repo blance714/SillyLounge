@@ -10,6 +10,13 @@
 
 import { _dispatchClick } from './internals.js';
 
+type QuickReplyDto = {
+    id: string;
+    label: string;
+    title: string;
+    iconHtml: string;
+};
+
 /** @type {Map<string, HTMLElement>} */
 const _qrItemMap = new Map();
 
@@ -27,13 +34,13 @@ export function listQuickReplies() {
     const bar = document.getElementById('qr--bar') || document.getElementById('qr--popout');
     if (!bar) return [];
 
-    const out = [];
+    const out: QuickReplyDto[] = [];
     let seq = 0;
 
     /**
      * @param {Element} el
      */
-    const consider = (el) => {
+    const consider = (el: any) => {
         if (!(el instanceof HTMLElement)) return;
         // Skip hidden via class or computed style.
         if (el.classList.contains('qr--hidden')) return;
@@ -84,7 +91,7 @@ export function listQuickReplies() {
  * @param {string} id opaque id from listQuickReplies()
  * @returns {boolean} true if the element was found and clicked
  */
-export function triggerQuickReply(id) {
+export function triggerQuickReply(id: any) {
     const el = _qrItemMap.get(id);
     if (!el) return false;
     _dispatchClick(el);
@@ -99,9 +106,9 @@ export function triggerQuickReply(id) {
  * @param {() => void} cb
  * @returns {() => void} unsubscribe
  */
-export function subscribeQuickReplies(cb) {
+export function subscribeQuickReplies(cb: any) {
     /** @type {number|null} */
-    let pendingFrame = null;
+    let pendingFrame: number | null = null;
 
     const flush = () => {
         pendingFrame = null;
@@ -118,7 +125,7 @@ export function subscribeQuickReplies(cb) {
     };
 
     /** @type {MutationObserver[]} */
-    const observers = [];
+    const observers: MutationObserver[] = [];
 
     // Docked bar: ST rebuilds #qr--bar inside #send_form on chat / set changes.
     const sendForm = document.getElementById('send_form');

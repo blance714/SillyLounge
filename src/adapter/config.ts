@@ -6,7 +6,7 @@
  * is allowed to touch the ST persistence layer for user-facing config values.
  */
 
-import { saveSettingsDebounced } from '../../../../../script.js';
+import { saveSettingsDebounced } from '@st/script';
 import { getContext } from './internals.js';
 
 /** Settings namespace key — must match index.js MODULE constant. */
@@ -31,7 +31,7 @@ export function read() {
  * @param {Record<string, unknown>} config
  * @returns {void}
  */
-export function write(config) {
+export function write(config: any) {
     const settings = getContext().extensionSettings;
     if (!settings[MODULE]) {
         settings[MODULE] = {};

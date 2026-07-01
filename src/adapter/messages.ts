@@ -2,10 +2,10 @@
  * SillyTavern-ChatUI · message adapter
  */
 
-import { deleteMessage as stDeleteMessage, isGenerating, messageEdit, swipe as stSwipe } from '../../../../../script.js';
-import { copyText } from '../../../../utils.js';
-import { branchChat, createNewBookmark } from '../../../../bookmarks.js';
-import { hideChatMessage, unhideChatMessage } from '../../../../chats.js';
+import { deleteMessage as stDeleteMessage, isGenerating, messageEdit, swipe as stSwipe } from '@st/script';
+import { copyText } from '@st/utils';
+import { branchChat, createNewBookmark } from '@st/bookmarks';
+import { hideChatMessage, unhideChatMessage } from '@st/chats';
 import {
     _dispatchClick,
     _getJQueryMessage,
@@ -23,7 +23,7 @@ import {
  * @param {Element} mesEl
  * @returns {string}
  */
-export function getSwipeLabel(mesEl) {
+export function getSwipeLabel(mesEl: any) {
     const msg = getMessageByElement(mesEl);
     if (!msg || !Array.isArray(msg.swipes) || msg.swipes.length <= 1) return '';
     const idx = msg.swipe_id ?? 0;
@@ -35,7 +35,10 @@ export function getSwipeLabel(mesEl) {
  * @param {{ isSystem?: boolean, mediaDisplay?: string }} messageMeta
  * @returns {boolean}
  */
-export function isOverflowActionVisible(item, messageMeta = {}) {
+export function isOverflowActionVisible(
+    item: HTMLElement,
+    messageMeta: { isSystem?: boolean; mediaDisplay?: string } = {},
+) {
     const { isSystem = false, mediaDisplay = '' } = messageMeta;
 
     if (item.classList.contains('displayNone')) return false;
@@ -60,7 +63,7 @@ export function isOverflowActionVisible(item, messageMeta = {}) {
  * @param {Element} original
  * @returns {void}
  */
-export function triggerOverflowAction(original) {
+export function triggerOverflowAction(original: any) {
     _dispatchClick(original);
 }
 
@@ -68,7 +71,7 @@ export function triggerOverflowAction(original) {
  * @param {Element} mesEl
  * @returns {void}
  */
-export function copyMessage(mesEl) {
+export function copyMessage(mesEl: any) {
     const msg = getMessageByElement(mesEl);
     const text = typeof msg?.mes === 'string' ? msg.mes : '';
     return Promise.resolve(copyText(text));
@@ -94,7 +97,7 @@ export function regenerateLast() {
  * @param {Element} mesEl
  * @returns {void}
  */
-export function editMessage(mesEl) {
+export function editMessage(mesEl: any) {
     const $mes = _getJQueryMessage(mesEl);
     if ($mes) {
         $mes.find('.mes_edit').trigger('click');
@@ -113,7 +116,7 @@ export function editMessage(mesEl) {
  * @param {string} text
  * @returns {Promise<void>}
  */
-export async function saveMessageEditById(mesId, text) {
+export async function saveMessageEditById(mesId: any, text: any) {
     const normalizedId = Number(mesId);
     if (!Number.isFinite(normalizedId)) {
         throw new Error(`[ChatUI/adapter] Invalid message id for edit: ${mesId}`);
@@ -126,7 +129,7 @@ export async function saveMessageEditById(mesId, text) {
 
     await messageEdit(normalizedId);
 
-    const textarea = /** @type {HTMLTextAreaElement|null} */ (mesEl.querySelector('.edit_textarea'));
+    const textarea = mesEl.querySelector('.edit_textarea') as HTMLTextAreaElement | null;
     if (!textarea) {
         throw new Error(`[ChatUI/adapter] Native edit textarea not found for message: ${normalizedId}`);
     }
@@ -140,7 +143,7 @@ export async function saveMessageEditById(mesId, text) {
 
     const updated = _waitForEvent(
         stEventKeys.MESSAGE_UPDATED,
-        updatedMessageId => Number(updatedMessageId) === normalizedId,
+        (updatedMessageId: any) => Number(updatedMessageId) === normalizedId,
     );
     _dispatchClick(done);
     await updated;
@@ -150,41 +153,41 @@ export async function saveMessageEditById(mesId, text) {
  * @param {Element} mesEl
  * @returns {void}
  */
-export function createBranch(mesEl) {
+export function createBranch(mesEl: any) {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
-    branchChat(mesId).catch(error => console.error('[ChatUI/adapter] branchChat failed', error));
+    branchChat(mesId).catch((error: any) => console.error('[ChatUI/adapter] branchChat failed', error));
 }
 
 /**
  * @param {Element} mesEl
  * @returns {void}
  */
-export function createCheckpoint(mesEl) {
+export function createCheckpoint(mesEl: any) {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
-    createNewBookmark(mesId).catch(error => console.error('[ChatUI/adapter] createNewBookmark failed', error));
+    createNewBookmark(mesId).catch((error: any) => console.error('[ChatUI/adapter] createNewBookmark failed', error));
 }
 
 /**
  * @param {Element} mesEl
  * @returns {void}
  */
-export function toggleHideMessage(mesEl) {
+export function toggleHideMessage(mesEl: any) {
     const mesId = _getMessageId(mesEl);
     const msg = getMessageById(mesId);
     if (!msg) return;
     // Source of truth is the message flag (is_system), not native button
     // visibility — reading the DOM could pick the wrong direction.
     const action = msg.is_system === true ? unhideChatMessage(mesId) : hideChatMessage(mesId);
-    action.catch(error => console.error('[ChatUI/adapter] toggle hide failed', error));
+    action.catch((error: any) => console.error('[ChatUI/adapter] toggle hide failed', error));
 }
 
 /**
  * @param {Element} mesEl
  * @returns {void}
  */
-export function deleteMessage(mesEl) {
+export function deleteMessage(mesEl: any) {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
 
@@ -207,7 +210,7 @@ export function deleteMessage(mesEl) {
         && selectedSwipe !== undefined;
 
     stDeleteMessage(mesId, deleteOnlySwipe ? selectedSwipe : undefined, confirm)
-        .catch(error => console.error('[ChatUI/adapter] deleteMessage failed', error));
+        .catch((error: any) => console.error('[ChatUI/adapter] deleteMessage failed', error));
 }
 
 /**
@@ -215,14 +218,14 @@ export function deleteMessage(mesEl) {
  * @param {'left'|'right'} direction
  * @returns {void}
  */
-export function swipeMessage(mesEl, direction) {
+export function swipeMessage(mesEl: any, direction: any) {
     const mesId = _getMessageId(mesEl);
     if (!Number.isFinite(mesId)) return;
     // Call ST's exported swipe() with forceMesId (it tolerates a null event when
     // forceMesId is a number) instead of clicking the off-screen .swipe_left /
     // .swipe_right buttons. direction 'left'|'right' matches ST's SWIPE_DIRECTION.
     stSwipe(null, direction, { forceMesId: mesId, message: getMessageById(mesId) ?? undefined })
-        .catch(error => console.error('[ChatUI/adapter] swipe failed', error));
+        .catch((error: any) => console.error('[ChatUI/adapter] swipe failed', error));
 }
 
 /**
@@ -230,7 +233,7 @@ export function swipeMessage(mesEl, direction) {
  * @param {string} action
  * @returns {void}
  */
-export function triggerMessageAction(mesEl, action) {
+export function triggerMessageAction(mesEl: any, action: any) {
     switch (action) {
         case 'copy':       return copyMessage(mesEl);
 
@@ -249,7 +252,7 @@ export function triggerMessageAction(mesEl, action) {
  * @param {string} action
  * @returns {void}
  */
-export function triggerMessageActionById(mesId, action) {
+export function triggerMessageActionById(mesId: any, action: any) {
     if (action === 'regen') {
         regenerateMessage();
         return;
@@ -265,7 +268,7 @@ export function triggerMessageActionById(mesId, action) {
  * @param {'left'|'right'} direction
  * @returns {void}
  */
-export function swipeMessageById(mesId, direction) {
+export function swipeMessageById(mesId: any, direction: any) {
     const mesEl = getMessageElementById(mesId);
     if (!mesEl) return;
     swipeMessage(mesEl, direction);

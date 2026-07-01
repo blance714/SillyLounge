@@ -14,8 +14,8 @@ import {
     openCharacterChat,
     renameChat,
     selectCharacterById,
-} from '../../../../../script.js';
-import { timestampToMoment } from '../../../../utils.js';
+} from '@st/script';
+import { timestampToMoment } from '@st/utils';
 import { getContext } from './internals.js';
 
 // ── Sidebar / conversation list (Region 5) ────────────────────────────────────
@@ -26,7 +26,7 @@ import { getContext } from './internals.js';
  * @param {unknown} fileName
  * @returns {string}
  */
-function _stripChatExt(fileName) {
+function _stripChatExt(fileName: any) {
     return typeof fileName === 'string' ? fileName.replace(/\.jsonl$/i, '') : '';
 }
 
@@ -36,7 +36,7 @@ function _stripChatExt(fileName) {
  * @param {unknown} messages
  * @returns {boolean}
  */
-function _hasNoUserTurn(messages) {
+function _hasNoUserTurn(messages: any) {
     return !Array.isArray(messages) || !messages.some(message => message?.is_user === true);
 }
 
@@ -59,9 +59,9 @@ function _getCurrentCharacterId(ctx = getContext()) {
  * @param {string} avatar
  * @returns {number}
  */
-function _findCharacterIndexByAvatar(avatar) {
+function _findCharacterIndexByAvatar(avatar: any) {
     const characters = Array.isArray(getContext().characters) ? getContext().characters : [];
-    return characters.findIndex(c => c?.avatar === avatar);
+    return characters.findIndex((c: any) => c?.avatar === avatar);
 }
 
 /**
@@ -71,7 +71,14 @@ function _findCharacterIndexByAvatar(avatar) {
  * @param {{ signal?: AbortSignal }} [options]
  * @returns {Promise<{ metadata: Record<string, any>|null, messages: any[] }|null>}
  */
-async function _readCharacterChatFile(characterId, fileName, { signal } = {}) {
+type ReadChatFileOptions = { signal?: AbortSignal };
+type CharacterChatSnapshot = { metadata: Record<string, any> | null; messages: any[] };
+
+async function _readCharacterChatFile(
+    characterId: number,
+    fileName: string,
+    { signal }: ReadChatFileOptions = {},
+): Promise<CharacterChatSnapshot | null> {
     const characters = Array.isArray(getContext().characters) ? getContext().characters : [];
     const character = characters[characterId];
     const chName = typeof character?.name === 'string' ? character.name : '';
@@ -106,7 +113,7 @@ async function _readCharacterChatFile(characterId, fileName, { signal } = {}) {
  * @param {number|string} lastMes
  * @returns {{ ts: number, label: string }}
  */
-function _chatTimestamp(lastMes) {
+function _chatTimestamp(lastMes: any) {
     const moment = timestampToMoment(lastMes);
     if (!moment || typeof moment.isValid !== 'function' || !moment.isValid()) {
         return { ts: 0, label: '' };
@@ -171,7 +178,7 @@ function _chatTimestamp(lastMes) {
  * @param {boolean} ownerMatchesCurrent Whether this chat belongs to the current character
  * @returns {ChatListItemDto}
  */
-function _mapChatEntry(entry, currentChatName, ownerMatchesCurrent = true) {
+function _mapChatEntry(entry: any, currentChatName: any, ownerMatchesCurrent = true) {
     const fileName = _stripChatExt(entry.file_name ?? entry.file_id);
     const { ts, label } = _chatTimestamp(entry.last_mes);
     // ST fills `mes` with a bracketed placeholder for empty chats/messages;
@@ -199,7 +206,7 @@ function _mapChatEntry(entry, currentChatName, ownerMatchesCurrent = true) {
  * @param {unknown} value
  * @returns {number}
  */
-function _finiteNumber(value) {
+function _finiteNumber(value: any) {
     const number = Number(value);
     return Number.isFinite(number) ? number : 0;
 }
@@ -252,7 +259,7 @@ export async function listCharacterChats() {
  * @param {{ limit?: number|null }} [options]
  * @returns {Promise<ChatListItemDto[]>}
  */
-async function _listChatsForCharacter(charIndex, { limit = null } = {}) {
+async function _listChatsForCharacter(charIndex: any, { limit = null } = {}) {
     const raw = await getPastCharacterChats(charIndex);
     const ctx = getContext();
     const currentName = _stripChatExt(getCurrentChatDetails()?.sessionName);
@@ -279,7 +286,7 @@ export function listCharacterConversationHeaders() {
     const currentCharId = !ctx.groupId ? _getCurrentCharacterId(ctx) : null;
 
     return rawChars
-        .map((char, index) => {
+        .map((char: any, index: any) => {
             const entry = /** @type {Record<string, any>} */ (char ?? {});
             const avatar = typeof entry.avatar === 'string' ? entry.avatar : '';
             const name = typeof entry.name === 'string' ? entry.name : '';
@@ -300,8 +307,8 @@ export function listCharacterConversationHeaders() {
                 pending: null,
             };
         })
-        .filter(group => group.name && group.avatar && group.chatSize > 0)
-        .sort((a, b) => b.dateLastChatTs - a.dateLastChatTs);
+        .filter((group: any) => group.name && group.avatar && group.chatSize > 0)
+        .sort((a: any, b: any) => b.dateLastChatTs - a.dateLastChatTs);
 }
 
 /**
@@ -309,7 +316,7 @@ export function listCharacterConversationHeaders() {
  * @param {{ max?: number, signal?: AbortSignal }} [options]
  * @returns {Promise<Array<{ avatar: string, chat: ChatListItemDto }>>}
  */
-export async function listRecentCharacterChatRows({ max = 100, signal } = {}) {
+export async function listRecentCharacterChatRows({ max = 100, signal }: { max?: number; signal?: AbortSignal } = {}) {
     const response = await fetch('/api/chats/recent', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -339,7 +346,10 @@ export async function listRecentCharacterChatRows({ max = 100, signal } = {}) {
  * @param {{ limit?: number|null, signal?: AbortSignal }} [options]
  * @returns {Promise<{ chats: ChatListItemDto[], totalCount: number }>}
  */
-export async function listChatsForCharacterAvatar(avatar, { limit = null, signal } = {}) {
+export async function listChatsForCharacterAvatar(
+    avatar: string,
+    { limit = null, signal }: { limit?: number | null; signal?: AbortSignal } = {},
+) {
     if (typeof avatar !== 'string' || !avatar) return { chats: [], totalCount: 0 };
     const response = await fetch('/api/chats/search', {
         method: 'POST',
@@ -369,10 +379,10 @@ export async function listChatsForCharacterAvatar(avatar, { limit = null, signal
  * @param {string} fileName  Chat file name (bare or with .jsonl)
  * @returns {Promise<'ok'|'notfound'|'already-open'|'busy'>}
  */
-export async function openChatForCharacter(avatar, fileName) {
+export async function openChatForCharacter(avatar: any, fileName: any) {
     const ctx = getContext();
     const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const index = characters.findIndex(c => c?.avatar === avatar);
+    const index = characters.findIndex((c: any) => c?.avatar === avatar);
     if (index < 0) return 'notfound';
     const character = characters[index];
 
@@ -428,7 +438,7 @@ export function listCharacters() {
     const currentId = ctx.characterId;
     const hasCurrent = currentId !== undefined && currentId !== null && currentId !== '';
 
-    return characters.map((char, index) => {
+    return characters.map((char: any, index: any) => {
         const entry = /** @type {Record<string, any>} */ (char ?? {});
         const avatar = typeof entry.avatar === 'string' ? entry.avatar : '';
         return {
@@ -455,11 +465,11 @@ export function listCharacters() {
  * @param {string} avatar
  * @returns {Promise<'ok'|'notfound'|'busy'>}
  */
-export async function switchCharacter(avatar) {
+export async function switchCharacter(avatar: any) {
     if (typeof avatar !== 'string' || !avatar) return 'notfound';
     const ctx = getContext();
     const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const index = characters.findIndex(c => c?.avatar === avatar);
+    const index = characters.findIndex((c: any) => c?.avatar === avatar);
     if (index < 0) return 'notfound';
     if (!ctx.groupId && String(ctx.characterId) === String(index)) return 'ok';
 
@@ -508,7 +518,7 @@ export function getCurrentChatIdentity() {
  * @param {string} fileName
  * @returns {Promise<void>}
  */
-export async function openCharacterChatByName(fileName) {
+export async function openCharacterChatByName(fileName: any) {
     const name = _stripChatExt(fileName);
     if (!name) return;
     await openCharacterChat(name);
@@ -529,7 +539,7 @@ export async function newCharacterChat() {
  * @param {string} fileName Bare chat file name.
  * @returns {Promise<boolean>}
  */
-export async function deleteChatFileIfSafe(avatar, fileName) {
+export async function deleteChatFileIfSafe(avatar: any, fileName: any) {
     const bareName = _stripChatExt(fileName);
     const index = _findCharacterIndexByAvatar(avatar);
     if (index < 0 || !bareName) return false;
@@ -537,7 +547,7 @@ export async function deleteChatFileIfSafe(avatar, fileName) {
     const current = getCurrentChatIdentity();
     if (current?.avatar === avatar && current?.fileName === bareName) return false;
 
-    let snapshot = null;
+    let snapshot: CharacterChatSnapshot | null = null;
     try {
         snapshot = await _readCharacterChatFile(index, bareName);
     } catch {
@@ -560,7 +570,7 @@ export async function deleteChatFileIfSafe(avatar, fileName) {
  * @param {string} newName
  * @returns {Promise<boolean>}
  */
-export async function renameCharacterChat(oldFileName, newName) {
+export async function renameCharacterChat(oldFileName: any, newName: any) {
     const oldBare = _stripChatExt(oldFileName);
     const next = typeof newName === 'string' ? _stripChatExt(newName).trim() : '';
     if (!oldBare || !next) return false;
@@ -577,10 +587,10 @@ export async function renameCharacterChat(oldFileName, newName) {
  * @param {string} fileName
  * @returns {Promise<boolean>}
  */
-export async function deleteCharacterChat(avatar, fileName) {
+export async function deleteCharacterChat(avatar: any, fileName: any) {
     const ctx = getContext();
     const characters = Array.isArray(ctx.characters) ? ctx.characters : [];
-    const index = characters.findIndex(c => c?.avatar === avatar);
+    const index = characters.findIndex((c: any) => c?.avatar === avatar);
     const bareName = _stripChatExt(fileName);
     if (index < 0 || !bareName) return false;
 

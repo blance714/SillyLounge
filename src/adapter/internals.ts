@@ -4,8 +4,8 @@
  * Shared ST runtime helpers for adapter submodules.
  */
 
-import { eventSource, event_types, getCurrentChatDetails, isGenerating, messageFormatting } from '../../../../../script.js';
-import { getContext } from '../../../../st-context.js';
+import { eventSource, event_types, getCurrentChatDetails, isGenerating, messageFormatting } from '@st/script';
+import { getContext } from '@st/st-context';
 
 export { getContext };
 
@@ -42,7 +42,7 @@ export const stEventKeys = Object.freeze({
  * @param {string} key
  * @returns {string}
  */
-export function _resolveEventKey(key) {
+export function _resolveEventKey(key: any) {
     const resolved = event_types[key];
     if (!resolved) throw new Error(`[ChatUI/adapter] Unknown ST event key: ${key}`);
     return resolved;
@@ -52,7 +52,7 @@ export function _resolveEventKey(key) {
  * @param {Element} mesEl
  * @returns {number}
  */
-export function _getMessageId(mesEl) {
+export function _getMessageId(mesEl: any) {
     return Number(mesEl.getAttribute('mesid'));
 }
 
@@ -60,7 +60,7 @@ export function _getMessageId(mesEl) {
  * @param {Element} mesEl
  * @returns {JQuery<HTMLElement>|null}
  */
-export function _getJQueryMessage(mesEl) {
+export function _getJQueryMessage(mesEl: any) {
     if (typeof window.$ !== 'function') return null;
     return window.$(mesEl);
 }
@@ -69,7 +69,7 @@ export function _getJQueryMessage(mesEl) {
  * @param {Element} button
  * @returns {void}
  */
-export function _dispatchClick(button) {
+export function _dispatchClick(button: any) {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 }
 
@@ -79,17 +79,16 @@ export function _dispatchClick(button) {
  * @param {number} timeoutMs
  * @returns {Promise<void>}
  */
-export function _waitForEvent(key, predicate, timeoutMs = 5000) {
+export function _waitForEvent(key: any, predicate: any, timeoutMs = 5000): Promise<void> {
     const type = _resolveEventKey(key);
 
     return new Promise((resolve, reject) => {
-        /** @type {ReturnType<typeof setTimeout>|null} */
-        let timer = null;
+        let timer: ReturnType<typeof setTimeout> | null = null;
         const cleanup = () => {
             if (timer !== null) clearTimeout(timer);
             eventSource.removeListener(type, handler);
         };
-        const handler = (...args) => {
+        const handler = (...args: any[]) => {
             if (!predicate(...args)) return;
             cleanup();
             resolve();
@@ -107,7 +106,7 @@ export function _waitForEvent(key, predicate, timeoutMs = 5000) {
  * @param {Element} mesEl
  * @returns {object|null}
  */
-export function getMessageByElement(mesEl) {
+export function getMessageByElement(mesEl: any) {
     const mesId = _getMessageId(mesEl);
     return getContext().chat?.[mesId] ?? null;
 }
@@ -116,7 +115,7 @@ export function getMessageByElement(mesEl) {
  * @param {number} mesId
  * @returns {object|null}
  */
-export function getMessageById(mesId) {
+export function getMessageById(mesId: any) {
     return getContext().chat?.[mesId] ?? null;
 }
 
@@ -126,7 +125,7 @@ export function getMessageById(mesId) {
  * @param {boolean} isReasoning
  * @returns {string}
  */
-export function formatMessageHtml(rawMessage, messageId, isReasoning = false) {
+export function formatMessageHtml(rawMessage: any, messageId: any, isReasoning = false) {
     const message = /** @type {Record<string, any>} */ (rawMessage ?? {});
     const extra = /** @type {Record<string, any>} */ (message.extra ?? {});
     const text = isReasoning
@@ -149,7 +148,7 @@ export function formatMessageHtml(rawMessage, messageId, isReasoning = false) {
  * @param {number|string} mesId
  * @returns {Element|null}
  */
-export function getMessageElementById(mesId) {
+export function getMessageElementById(mesId: any) {
     const normalizedId = Number(mesId);
     if (!Number.isFinite(normalizedId)) return null;
     return document.querySelector(`#chat .mes[mesid="${normalizedId}"]`);
@@ -201,7 +200,7 @@ export function getIsGroupChat() {
  * @param {Function} handler
  * @returns {() => void}
  */
-export function subscribe(key, handler) {
+export function subscribe(key: any, handler: any) {
     const type = _resolveEventKey(key);
     eventSource.on(type, handler);
     return () => eventSource.removeListener(type, handler);
