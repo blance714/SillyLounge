@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Roadmap
 
-Last updated: 2026-07-01
+Last updated: 2026-07-03
 
 三份文档的分工:`DESIGN.md` = 产品北极星(目标形态)、`STATUS.md` = 当前实现快照、
 **本文 = 完整度地图 + 剩余工作的优先级排期**。架构记录见 `ARCHITECTURE.md`。
@@ -42,6 +42,13 @@ Last updated: 2026-07-01
   解析集中到 `src/adapter/schema.ts`。
 - Zod 只停在 adapter 入站边界;UI/store 继续消费 ChatUI 自己的 DTO,不直接依赖
   ST schema。
+- **2026-07-03 补强**(commit `9edc130`):初版每个字段都是 `z.unknown()`,
+  只检查"是不是个对象",等于没校验,还因为 `safeParse` 克隆对象引入一个真
+  bug——`openChatForCharacter` 跨角色开对话时改的是克隆体的 `.chat`
+  字段,ST 读的是原对象,静默进错对话。已给三个 schema 补齐真实字段类型 +
+  `z.catch()` 安全兜底(与之前手动 coercion 语义一致),新增 `_getLiveCharacter()`
+  绕过校验层直接改活对象修好克隆语义 bug,顺手删掉 `chat-store.ts` 里重复的
+  `_string`/`_numberOrNull`。
 
 ### 5. 回归清单落地(2026-07-06)
 
@@ -89,12 +96,18 @@ Last updated: 2026-07-01
   - sidebar/chat 一致性修复:charGroups full rebuild 与 targeted patch 分 token,当前角色强制纳入最近列表,`isCurrent` 同时校验 owner+file,删除按目标 avatar 刷新并确认文件消失,跨角色打开 chat 失败会回滚预写。
   - UI 状态隔离:message edit/key 加 `chatKey`,Topbar rename/delete 捕获目标,移动端导航后关闭 sidebar,selector refresh 加 stale guard,teardown 清 toast timers。
   - 统一验证:direct `tsc --noEmit`、`build`、`runtime`、focused ESLint、`node --check`、dist/runtime bundle hash 均通过。
-- **M-G · TWO-PANE sidebar/settings + tempChat 草稿生命周期**(2026-06-28, just-landed/uncommitted):
+- **M-G · TWO-PANE sidebar/settings + tempChat 草稿生命周期**(commit `94c4df7`,2026-06-28):
   - 退役旧"三形态循环 + 配置 rail"和第三列 ConfigPanel;当前 shell 是 `Sidebar | chat`,settings 作为 mode swap 接管两 pane。
   - settings 左 pane 是返回 + ST drawers(默认顺序,含角色管理)+ ChatUI 区;右 pane 通过 embed engine move-not-clone 托管 live ST `.drawer-content`,并 precise restore。
   - sidebar 内容固定为 ＋新对话 → 角色分组会话列表 → 设置;角色 header 不高亮,＋新对话在草稿激活时作为 tab 高亮。
   - 新增 `store/temp-chat-store.js`:localStorage `chatui:tempChat` 的 `{avatar,fileName}` 指针,替代 `chat_metadata.chatui_isNewChat` / 消息数 freshness / navigation-time GC。草稿始终从列表隐藏;创建永远 `doNewChat`;替换时安全删除上一草稿;发送或编辑首楼即清指针并保留会话。
   - Codex adversarial review 修 3 个真问题并通过 browser live-test:topbar destructive target 改用权威 chat identity 并二次校验、temp-draft 创建串行化、群聊态 ＋新对话 disabled/inert。
+- **侧栏迁移 TanStack Query + 渐进式加载**(commit `27d9bcb`,2026-07-01):
+  侧栏 server-state 从自建 store 迁到 `@tanstack/react-query`(仅限 `ui/` 层,store 层不碰);角色分组懒加载(先 recents 后按需 backfill 全量)+ optimistic temp-chat draft(点击即时隐藏,不等 ST 落地)。经一轮 4-finding 对抗审查(启动期 backfill 误用 placeholder 空数据、失败 backfill 永不重试、optimistic draft 快照不全时误藏老对话、废弃草稿只在被替换时才回收)全部修复并逐条验证。
+- **全源码迁移 TypeScript + Vite**(commits `353beba`/`13af9bd`/`4c03f3d`/`84e9600`/`4f4a116`,2026-07-01):
+  `adapter/`/`store/`/`ui/` 从 esbuild 时代的 `.js`/`.tsx` 整体搬到 `src/` 下并转 `.ts`,`tsconfig` 恢复 `strict`;构建从 esbuild 切到 Vite(`dist/runtime` 走 preserveModules,`dist/root-app.mjs` 单独打包);新增 `scripts/check-runtime.mjs` 拦截生成产物里的 `@st/*`/`process.env`/坏 import;`chats`/`media`/`messages` 的 adapter 边界收窄掉显式 `any`。
+- **xhigh 对抗审查 + 修复**(commits `9edc130`/`be7c17f`,2026-07-03):
+  对整条迁移分支(`main...HEAD`)+ 未提交 WIP 跑了一轮 10 角度对抗审查(31 agent、约 320 万 token),发现 14 个真问题,其中 1 个致命——`ui/` → `src/ui/` 目录迁移后 `root.ts` 的产物引用路径少算一层,构建出来的插件**完全无法挂载**,静态检查(`check-runtime.mjs`)测不出来,只有实际跑一遍构建才能复现。其余:`openChatForCharacter` 因 Zod 克隆语义静默进错对话、幽灵附件 chip、settings 面板开合后滚动状态失焦(ref 依赖用了永不变的 ref 对象本身)、`as any` 绕过配置写入校验、UI 层手抄 DTO 类型脱节、`shell.ts` 死代码清理不干净、`sidebar-store.ts` 永远返回空初始态的死代码陷阱、若干处重复逻辑(菜单/QR 注册表、构建脚本 helper、字符串 coercion helper)。全部修复后又跑了一轮独立的 15-agent 逐条对抗复核 + 回归扫描确认无遗留,实机 live-test 通过(角色切换比之前更快)。
 
 ---
 
@@ -139,7 +152,27 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
 
 ## 当前分支
 
-`cleanup/remove-legacy-phase12`(main 仍在基线 `c97d8c2`)。已提交至 `e0d4199`;当前 M-G two-pane + tempChat work 仍在工作区,准备下一次提交:
-`8b8e203`(写路径加固 + adapter 拆分 + store 工厂)→ `abf212f`(M-E 配置薄地基)→ `50cb5e6`(M-D 内容区)→ `6f2fa01`(M-B 顶栏)→ `f1c4d6b`/`e9e8185`/`4d8bb48`(M-C 输入框)→ `25b5620`(M-B/M-C 审查修复)→ `d7a6025`(M-F 独立配置面 + 对抗审查修复)→ `e0d4199`(M-G S0 settings embed-engine POC checkpoint)。
-`e0d4199` 之后的当前未提交工作区完成 M-G:two-pane sidebar/settings shell、`tempChat` 草稿生命周期,以及 3 个 Codex adversarial-review fixes(topbar avatar/file mismatch、temp-draft creation serialization、group-chat New Chat inert)。
-**五大区主干已闭环,settings 已转为 two-pane mode swap,独立配置面已解锁 §7。** 下一阶段重心:提交 M-G、手机适配、§7 深化(选择框槽位 / ＋菜单拖拽排序)、剩余模拟点击写路径迁移。
+`cleanup/remove-legacy-phase12`(main 仍在基线 `c97d8c2`)。完整提交链(时间序):
+`8b8e203`(写路径加固 + adapter 拆分 + store 工厂)→ `abf212f`(M-E 配置薄地基)→
+`50cb5e6`(M-D 内容区)→ `6f2fa01`(M-B 顶栏)→
+`f1c4d6b`/`e9e8185`/`4d8bb48`(M-C 输入框)→ `25b5620`(M-B/M-C 审查修复)→
+`d7a6025`(M-F 独立配置面 + 对抗审查修复)→
+`e0d4199`(M-G S0 settings embed-engine POC checkpoint)→
+`94c4df7`(M-G two-pane sidebar/settings + tempChat)→
+`65f664d`(退役死组件 CharacterSwitcher/ChatRow)→ `2bf296a`(docs: CLAUDE.md)→
+`27d9bcb`(侧栏迁移 TanStack Query + 渐进式加载)→
+`353beba`(全源码迁移 TypeScript + Vite)→
+`13af9bd`/`4c03f3d`/`84e9600`/`4f4a116`(迁移收尾:browser env 修复、产物检查
+脚本、构建脚本拆分、adapter DTO 收窄)→
+`9edc130`(schema.ts 真校验 + 修复克隆语义 bug)→
+`be7c17f`(修复挂载路径致命 bug + 重构遗留死代码清理)。
+
+**工作区当前干净,无未提交改动。**
+
+**五大区主干已闭环,settings 已转为 two-pane mode swap,独立配置面已解锁 §7,
+侧栏已迁移到 TanStack Query,全源码已 TypeScript 化(Vite 构建)。**
+2026-07-03 对整条迁移分支做了一轮 xhigh 10-角度对抗审查,发现 14 个问题
+(含 1 个致命的挂载路径 bug,插件完全无法启动),全部修复并经独立第二轮
+对抗复核 + 回归扫描确认无遗留,实机 live-test 通过。下一阶段重心:回归测试
+清单落地、§7 深化(选择框槽位 / ＋菜单拖拽排序)、剩余模拟点击写路径迁移、
+手机适配。
