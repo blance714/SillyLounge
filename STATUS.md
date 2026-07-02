@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-01
+Last updated: 2026-07-03
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
@@ -58,7 +58,7 @@ src/
   adapter/                ST runtime boundary — facade + per-domain submodules
     st-adapter.ts         frozen facade (groups the submodule actions)
     internals.ts          shared ST context / event / dispatch helpers
-    schema.ts             Zod runtime schemas for raw ST/fetch/DOM adapter inputs
+    schema.ts             Zod runtime schemas (real per-field types + safe fallbacks) for raw ST/fetch/DOM adapter inputs
     messages.ts  composer.ts  media.ts  menu.ts  selectors.ts
     shell.ts     chats.ts     qr.ts     config.ts     settings.ts
   store/                  ST-free observable view-model (createStore factory)
@@ -148,8 +148,17 @@ sends or edits the greeting.
   `scripts/build.mjs` has named runtime/UI/ST-external/browser-define sections,
   and `chats` / `media` / `messages` adapter boundaries now expose local DTO and
   input types without explicit `any`; raw ST/fetch/DOM inputs now pass through
-  `src/adapter/schema.ts` Zod parsers before becoming ChatUI DTOs. Next:
-  regression checklist.
+  `src/adapter/schema.ts` Zod parsers before becoming ChatUI DTOs — as of
+  2026-07-03 these parsers do real per-field validation with safe fallbacks, not
+  just object-shape checks. Next: regression checklist.
+- **2026-07-03 xhigh adversarial review** of the full JS→TS/Vite/TanStack-Query
+  migration branch (`main...HEAD` + then-uncommitted WIP) found 14 issues,
+  including one critical build-breaking bug: the `ui/` → `src/ui/` directory
+  move left `root.ts`'s bundle import path one level short, so the extension
+  failed to mount at all in SillyTavern (static checks didn't catch it — only
+  an actual build reproduced it). All 14 fixed, independently re-verified by a
+  second adversarial pass, and confirmed live. See `ROADMAP.md`'s 已完成
+  section for the full list.
 - **§7 config deepening** — selector-slot placement, ＋menu drag-reorder editor.
 - **Remaining sim-click write paths** (`#options` / drawers) → ST exports.
 - Group-chat conversation list, search 🔍, Mode B global list.
@@ -168,7 +177,14 @@ chats.
 
 Manual smoke test after the TS/Vite migration looked OK on 2026-07-01.
 
-Automated checks for the current migration pass:
+**2026-07-03 fix-pass live-test**: after fixing the 14 findings from the xhigh
+adversarial review (including the build-breaking `root.ts` mount path — the
+extension did not mount at all before this fix), verified live in SillyTavern:
+loads correctly, no console errors, and character switching is noticeably
+faster than before (progressive sidebar loading + real schema validation
+replacing the fake/wasteful Zod object-shape checks).
+
+Automated checks for the current migration + fix pass:
 
 - `CI=true pnpm run typecheck`
 - `CI=true pnpm run build`
@@ -176,6 +192,10 @@ Automated checks for the current migration pass:
 - `CI=true pnpm run check:runtime` (standalone generated artifact check)
 - `git diff --check`
 - `node --check` on representative generated runtime modules and the UI bundle
+- 2026-07-03: a 31-agent xhigh adversarial review (10 finder angles + verify +
+  gap sweep) followed by a 15-agent independent re-verification pass (per-fix
+  adversarial check + regression sweep) — 14/14 findings confirmed fixed, zero
+  new regressions surfaced.
 
 Still owed: continue / impersonate / regenerate (`#options` sim-click), stop, and
 the broader mobile/sidebar regression pass.
