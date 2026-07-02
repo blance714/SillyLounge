@@ -2,7 +2,7 @@
  * SillyTavern-ChatUI · menu adapter
  */
 
-import { _dispatchClick } from './internals.js';
+import { _dispatchClick, buildLiveElementRegistry } from './internals.js';
 
 type WandItemDto = {
     id: string;
@@ -112,7 +112,23 @@ export function triggerWandAction(original: any) {
 // ── Wand / extension tools (proxy ST's #extensionsMenu items) ──────────────────
 
 /** @type {Map<string, HTMLElement>} */
-const _wandItemMap = new Map();
+const _wandItemMap = new Map<string, HTMLElement>();
+
+function wandItemCandidates(wandMenu: Element): Element[] {
+    const candidates: Element[] = [];
+
+    // Primary: items inside each .extension_container.
+    wandMenu.querySelectorAll('.extension_container').forEach(container => {
+        candidates.push(...Array.from(container.children));
+    });
+    // Fallback: items appended directly to #extensionsMenu (e.g. gallery).
+    Array.from(wandMenu.children).forEach(child => {
+        if (child instanceof HTMLElement && child.classList.contains('extension_container')) return;
+        candidates.push(child);
+    });
+
+    return candidates;
+}
 
 /**
  * Enumerate visible wand items from ST's #extensionsMenu. Rebuilds the internal
@@ -122,33 +138,16 @@ const _wandItemMap = new Map();
  * @returns {{ id: string, label: string, iconHtml: string }[]}
  */
 export function listWandItems() {
-    _wandItemMap.clear();
     const wandMenu = document.getElementById('extensionsMenu');
-    if (!wandMenu) return [];
-
-    const out: WandItemDto[] = [];
-    let seq = 0;
-    const consider = (el: Element) => {
-        if (!(el instanceof HTMLElement)) return;
-        if (el.classList.contains('displayNone')) return;
-        if (window.getComputedStyle(el).display === 'none') return;
-        const label = (el.querySelector('span')?.textContent || el.textContent || '').trim();
-        const iconEl = el.querySelector('.extensionsMenuExtensionButton, [class*="fa-"]');
-        const id = `wand-${seq++}`;
-        _wandItemMap.set(id, el);
-        out.push({ id, label, iconHtml: iconEl ? iconEl.outerHTML : '' });
-    };
-
-    // Primary: items inside each .extension_container.
-    wandMenu.querySelectorAll('.extension_container').forEach(container => {
-        Array.from(container.children).forEach(consider);
+    return buildLiveElementRegistry<WandItemDto>(wandMenu, _wandItemMap, {
+        idPrefix: 'wand',
+        elements: wandItemCandidates,
+        toDto: (el, id) => {
+            const label = (el.querySelector('span')?.textContent || el.textContent || '').trim();
+            const iconEl = el.querySelector('.extensionsMenuExtensionButton, [class*="fa-"]');
+            return { id, label, iconHtml: iconEl ? iconEl.outerHTML : '' };
+        },
     });
-    // Fallback: items appended directly to #extensionsMenu (e.g. gallery).
-    Array.from(wandMenu.children).forEach(child => {
-        if (child instanceof HTMLElement && child.classList.contains('extension_container')) return;
-        consider(child);
-    });
-    return out;
 }
 
 /**

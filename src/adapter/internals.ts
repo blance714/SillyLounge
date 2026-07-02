@@ -73,6 +73,44 @@ export function _dispatchClick(button: any) {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 }
 
+function _isHiddenLiveElement(element: HTMLElement) {
+    return element.classList.contains('qr--hidden')
+        || element.classList.contains('displayNone')
+        || window.getComputedStyle(element).display === 'none';
+}
+
+export function buildLiveElementRegistry<T>(
+    container: Element | null,
+    cache: Map<string, HTMLElement>,
+    {
+        idPrefix,
+        elements,
+        isHidden,
+        toDto,
+    }: {
+        idPrefix: string;
+        elements: (container: Element) => Iterable<Element>;
+        isHidden?: (element: HTMLElement) => boolean;
+        toDto: (element: HTMLElement, id: string) => T;
+    },
+): T[] {
+    cache.clear();
+    if (!container) return [];
+
+    const out: T[] = [];
+    let seq = 0;
+    for (const candidate of elements(container)) {
+        if (!(candidate instanceof HTMLElement)) continue;
+        if (_isHiddenLiveElement(candidate)) continue;
+        if (isHidden?.(candidate)) continue;
+
+        const id = `${idPrefix}-${seq++}`;
+        cache.set(id, candidate);
+        out.push(toDto(candidate, id));
+    }
+    return out;
+}
+
 /**
  * @param {string} key
  * @param {(...args: any[]) => boolean} predicate

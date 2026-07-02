@@ -7,7 +7,6 @@
  */
 
 import { chatuiAdapter } from '../adapter/st-adapter.js';
-import { getSidebarState, subscribeSidebarStore } from './sidebar-store.js';
 import {
     beginTempChatDraft,
     cancelTempChatDraft,
@@ -21,21 +20,6 @@ import { pushToast } from './toast-store.js';
 type ChatIdentity = { avatar: string; fileName: string } | null | undefined;
 type RecentRowsOptions = { max?: number; signal?: AbortSignal };
 type CharacterChatsOptions = { limit?: number | null; signal?: AbortSignal };
-
-/**
- * @returns {ReturnType<typeof getSidebarState>}
- */
-export function getChatuiSidebarState() {
-    return getSidebarState();
-}
-
-/**
- * @param {Function} cb
- * @returns {() => void}
- */
-export function subscribeChatuiSidebar(cb: (state: ReturnType<typeof getSidebarState>) => void) {
-    return subscribeSidebarStore(cb);
-}
 
 /**
  * @returns {ReturnType<typeof chatuiAdapter.sidebarActions.getCurrentChatHeader>}
