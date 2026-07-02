@@ -58,6 +58,7 @@ src/
   adapter/                ST runtime boundary — facade + per-domain submodules
     st-adapter.ts         frozen facade (groups the submodule actions)
     internals.ts          shared ST context / event / dispatch helpers
+    schema.ts             Zod runtime schemas for raw ST/fetch/DOM adapter inputs
     messages.ts  composer.ts  media.ts  menu.ts  selectors.ts
     shell.ts     chats.ts     qr.ts     config.ts     settings.ts
   store/                  ST-free observable view-model (createStore factory)
@@ -142,11 +143,13 @@ sends or edits the greeting.
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
-- **Short-term migration hardening** — Day 1-4 are done: build/runtime docs are
+- **Short-term migration hardening** — Day 1-4.5 are done: build/runtime docs are
   pinned down, generated artifact checks are wired into `runtime`,
   `scripts/build.mjs` has named runtime/UI/ST-external/browser-define sections,
   and `chats` / `media` / `messages` adapter boundaries now expose local DTO and
-  input types without explicit `any`. Next: regression checklist.
+  input types without explicit `any`; raw ST/fetch/DOM inputs now pass through
+  `src/adapter/schema.ts` Zod parsers before becoming ChatUI DTOs. Next:
+  regression checklist.
 - **§7 config deepening** — selector-slot placement, ＋menu drag-reorder editor.
 - **Remaining sim-click write paths** (`#options` / drawers) → ST exports.
 - Group-chat conversation list, search 🔍, Mode B global list.

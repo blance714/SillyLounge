@@ -12,7 +12,8 @@
     },
     "dependencies": {
         "@tanstack/react-query": "^5.101.2",
-        "preact": "^10.29.2"
+        "preact": "^10.29.2",
+        "zod": "^4.4.3"
     },
     "devDependencies": {
         "typescript": "^5.9.3",
