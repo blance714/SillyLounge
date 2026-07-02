@@ -36,6 +36,13 @@ Last updated: 2026-07-01
 - 已收 `src/adapter/chats.ts`、`media.ts`、`messages.ts` 的显式 `any`。
 - 已给 ChatUI 输出 DTO 和输入参数建立本地类型;未尝试一次性全类型化 ST host。
 
+### ~~4.5 Adapter runtime schema / Zod 化(2026-07-05)~~ ✅
+
+- 已引入 `zod`,把 `chats` / `media` / `messages` 的 ST raw input
+  解析集中到 `src/adapter/schema.ts`。
+- Zod 只停在 adapter 入站边界;UI/store 继续消费 ChatUI 自己的 DTO,不直接依赖
+  ST schema。
+
 ### 5. 回归清单落地(2026-07-06)
 
 - 写手动 checklist:加载、切角色、切对话、新对话/tempChat、发送、编辑、

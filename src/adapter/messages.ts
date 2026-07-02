@@ -18,18 +18,11 @@ import {
     getMessageElementById,
     stEventKeys,
 } from './internals.js';
+import { parseMessageRecord } from './schema.js';
 
 type MessageId = number | string;
 export type MessageAction = 'copy' | 'regen' | 'edit' | 'branch' | 'checkpoint' | 'hide' | 'delete';
 export type SwipeDirection = 'left' | 'right';
-
-type StMessage = {
-    mes?: unknown;
-    swipes?: unknown;
-    swipe_id?: unknown;
-    is_system?: unknown;
-    is_user?: unknown;
-};
 
 type DeleteSettingsContext = {
     powerUserSettings?: {
@@ -37,18 +30,18 @@ type DeleteSettingsContext = {
     };
 };
 
-function asStMessage(value: unknown): StMessage | null {
-    return value !== null && typeof value === 'object' ? value as StMessage : null;
-}
-
 function reportAsyncFailure(work: unknown, message: string): void {
     Promise.resolve(work).catch((error: unknown) => console.error(message, error));
 }
 
+function arrayLength(value: unknown): number {
+    return Array.isArray(value) ? value.length : 0;
+}
+
 export function getSwipeLabel(mesEl: Element): string {
-    const msg = asStMessage(getMessageByElement(mesEl));
-    if (!msg || !Array.isArray(msg.swipes) || msg.swipes.length <= 1) return '';
-    const idx = typeof msg.swipe_id === 'number' ? msg.swipe_id : 0;
+    const msg = parseMessageRecord(getMessageByElement(mesEl));
+    if (!msg || msg.swipes.length <= 1) return '';
+    const idx = msg.swipe_id ?? 0;
     return `${idx + 1}​/​${msg.swipes.length}`;
 }
 
@@ -85,10 +78,10 @@ export function triggerOverflowAction(original: Element): void {
     _dispatchClick(original);
 }
 
-export function copyMessage(mesEl: Element): Promise<unknown> {
-    const msg = asStMessage(getMessageByElement(mesEl));
-    const text = typeof msg?.mes === 'string' ? msg.mes : '';
-    return Promise.resolve(copyText(text));
+export async function copyMessage(mesEl: Element): Promise<void> {
+    const msg = parseMessageRecord(getMessageByElement(mesEl));
+    const text = msg?.mes ?? '';
+    await copyText(text);
 }
 
 /**
@@ -173,7 +166,7 @@ export function createCheckpoint(mesEl: Element): void {
 
 export function toggleHideMessage(mesEl: Element): void {
     const mesId = _getMessageId(mesEl);
-    const msg = asStMessage(getMessageById(mesId));
+    const msg = parseMessageRecord(getMessageById(mesId));
     if (!msg) return;
     // Source of truth is the message flag (is_system), not native button
     // visibility — reading the DOM could pick the wrong direction.
@@ -192,11 +185,11 @@ export function deleteMessage(mesEl: Element): void {
     // when removing the last message that has multiple swipes, drop only the
     // selected swipe rather than the whole message. (fromSlashCommand is always
     // false from the ChatUI surface.)  See ST script.js .mes_edit_delete handler.
-    const message = asStMessage(getMessageById(mesId));
+    const message = parseMessageRecord(getMessageById(mesId));
     const confirm = !!(getContext() as DeleteSettingsContext).powerUserSettings?.confirm_message_delete;
-    const swipes = Array.isArray(message?.swipes) ? message.swipes : [];
-    const selectedSwipe = typeof message?.swipe_id === 'number' ? message.swipe_id : undefined;
-    const isLast = mesId === (getCurrentChat() as unknown[]).length - 1;
+    const swipes = message?.swipes ?? [];
+    const selectedSwipe = message?.swipe_id;
+    const isLast = mesId === arrayLength(getCurrentChat()) - 1;
     const deleteOnlySwipe = confirm
         && !message?.is_user
         && swipes.length > 1
@@ -221,7 +214,7 @@ export function swipeMessage(mesEl: Element, direction: SwipeDirection): void {
     );
 }
 
-export function triggerMessageAction(mesEl: Element, action: MessageAction): Promise<unknown> | void {
+export function triggerMessageAction(mesEl: Element, action: MessageAction): Promise<void> | void {
     switch (action) {
         case 'copy':       return copyMessage(mesEl);
 
@@ -235,7 +228,7 @@ export function triggerMessageAction(mesEl: Element, action: MessageAction): Pro
     }
 }
 
-export function triggerMessageActionById(mesId: MessageId, action: MessageAction): Promise<unknown> | void {
+export function triggerMessageActionById(mesId: MessageId, action: MessageAction): Promise<void> | void {
     if (action === 'regen') {
         regenerateMessage();
         return;

@@ -3,8 +3,14 @@
  */
 
 import { _dispatchClick, getMessageElementById } from './internals.js';
-
-type UnknownRecord = Record<string, unknown>;
+import {
+    type UnknownRecord,
+    numberOrNull,
+    parseMessageRecord,
+    parseOptionalRecord,
+    parseRecordArray,
+    stringValue,
+} from './schema.js';
 
 export type MediaAttachmentDto = {
     id: string;
@@ -32,71 +38,59 @@ export type MessageAttachmentsDto = {
     files: FileAttachmentDto[];
 };
 
-function isRecord(value: unknown): value is UnknownRecord {
-    return value !== null && typeof value === 'object';
-}
-
-function _string(value: unknown): string {
-    return typeof value === 'string' ? value : '';
-}
-
-function _numberOrNull(value: unknown): number | null {
-    return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
 function toMediaDto(attachment: UnknownRecord, index: number): MediaAttachmentDto {
-    const type = _string(attachment.type) || 'image';
-    const url = _string(attachment.url);
-    const title = _string(attachment.title) || _string(attachment.name) || url.split('/').pop() || type;
+    const type = stringValue(attachment.type) || 'image';
+    const url = stringValue(attachment.url);
+    const title = stringValue(attachment.title) || stringValue(attachment.name) || url.split('/').pop() || type;
 
     return {
         id: `${index}:${type}:${url}`,
         type,
         url,
         title,
-        source: _string(attachment.source),
+        source: stringValue(attachment.source),
         index,
     };
 }
 
 function toFileDto(file: UnknownRecord, index: number): FileAttachmentDto {
-    const name = _string(file.name) || _string(file.url).split('/').pop() || 'Attachment';
+    const url = stringValue(file.url);
+    const name = stringValue(file.name) || url.split('/').pop() || 'Attachment';
 
     return {
-        id: `${index}:${name}:${_string(file.url)}`,
+        id: `${index}:${name}:${url}`,
         name,
-        url: _string(file.url),
-        size: _numberOrNull(file.size),
-        type: _string(file.type),
+        url,
+        size: numberOrNull(file.size),
+        type: stringValue(file.type),
         index,
     };
 }
 
 export function getMessageAttachments(rawMessage: unknown): MessageAttachmentsDto {
-    const message = isRecord(rawMessage) ? rawMessage : {};
-    const extra = isRecord(message.extra) ? message.extra : {};
+    const message = parseMessageRecord(rawMessage);
+    const extra = message?.extra ?? {};
     const media = Array.isArray(extra.media)
-        ? extra.media
+        ? parseRecordArray(extra.media)
         : [
-            ...(_string(extra.image) ? [{ type: 'image', url: _string(extra.image), title: _string(extra.title) }] : []),
-            ...(_string(extra.video) ? [{ type: 'video', url: _string(extra.video), title: _string(extra.title) }] : []),
-            ...(Array.isArray(extra.image_swipes) ? extra.image_swipes.map(url => ({ type: 'image', url: _string(url), title: _string(extra.title) })) : []),
+            ...(stringValue(extra.image) ? [{ type: 'image', url: stringValue(extra.image), title: stringValue(extra.title) }] : []),
+            ...(stringValue(extra.video) ? [{ type: 'video', url: stringValue(extra.video), title: stringValue(extra.title) }] : []),
+            ...(Array.isArray(extra.image_swipes) ? extra.image_swipes.map((url: unknown) => ({ type: 'image', url: stringValue(url), title: stringValue(extra.title) })) : []),
         ];
+    const legacyFile = parseOptionalRecord(extra.file);
     const files = Array.isArray(extra.files)
-        ? extra.files
-        : (extra.file ? [extra.file] : []);
-    const display = _string(extra.media_display) || (media.length > 1 ? 'list' : '');
+        ? parseRecordArray(extra.files)
+        : (legacyFile ? [legacyFile] : []);
+    const display = stringValue(extra.media_display) || (media.length > 1 ? 'list' : '');
 
     return {
         display,
         inline: extra.inline_image !== false,
         mediaIndex: typeof extra.media_index === 'number' ? extra.media_index : 0,
         media: media
-            .filter(isRecord)
             .map((item, index) => toMediaDto(item, index))
             .filter(item => item.url),
         files: files
-            .filter(isRecord)
             .map((item, index) => toFileDto(item, index)),
     };
 }

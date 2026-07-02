@@ -7,6 +7,7 @@
  */
 
 import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
+import { numberOrNull, stringValue } from '../adapter/schema.js';
 import { createStore } from './create-store.js';
 import { clearTempChat, getTempChat } from './temp-chat-store.js';
 
@@ -118,22 +119,6 @@ let _unsubscribers: Array<() => void> = [];
 let _streamFrame = 0;
 
 /**
- * @param {unknown} value
- * @returns {string}
- */
-function _string(value: unknown): string {
-    return typeof value === 'string' ? value : '';
-}
-
-/**
- * @param {unknown} value
- * @returns {number|null}
- */
-function _numberOrNull(value: unknown): number | null {
-    return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-/**
  * @param {object} raw
  * @param {number} id
  * @param {number} lastMessageId
@@ -153,7 +138,7 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
     const isSmallSys = extra.isSmallSys === true;
     const isToolCall = Array.isArray(extra.tool_invocations);
     const attachments = chatuiAdapter.mediaActions.getMessageAttachments(message);
-    const reasoningText = _string(extra.reasoning_display_text) || _string(extra.reasoning);
+    const reasoningText = stringValue(extra.reasoning_display_text) || stringValue(extra.reasoning);
 
     return {
         id,
@@ -162,13 +147,13 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
         isUser,
         isSystem,
         isChar,
-        name: _string(message.name),
-        text: _string(message.mes),
-        displayText: _string(extra.display_text) || _string(message.mes),
+        name: stringValue(message.name),
+        text: stringValue(message.mes),
+        displayText: stringValue(extra.display_text) || stringValue(message.mes),
         html: chatuiAdapter.formatMessageHtml(message, id, false),
         sendDate: message.send_date ?? null,
         forceAvatar: Boolean(message.force_avatar),
-        forceAvatarSrc: _string(message.force_avatar),
+        forceAvatarSrc: stringValue(message.force_avatar),
         swipe: {
             id: swipeId,
             count: swipeCount,
@@ -177,12 +162,12 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
         },
         attachments,
         extra: {
-            type: _string(extra.type),
+            type: stringValue(extra.type),
             isSmallSys,
             isToolCall,
-            bookmarkLink: _string(extra.bookmark_link),
-            tokenCount: _numberOrNull(extra.token_count),
-            reasoning: _string(extra.reasoning),
+            bookmarkLink: stringValue(extra.bookmark_link),
+            tokenCount: numberOrNull(extra.token_count),
+            reasoning: stringValue(extra.reasoning),
             reasoningHtml: reasoningText ? chatuiAdapter.formatMessageHtml(message, id, true) : '',
             reasoningDuration: extra.reasoning_duration ?? null,
         },

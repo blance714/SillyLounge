@@ -17,25 +17,26 @@ import {
 } from '@st/script';
 import { timestampToMoment } from '@st/utils';
 import { getContext } from './internals.js';
-
-type UnknownRecord = Record<string, unknown>;
+import {
+    type StCharacter,
+    type StChatRow,
+    type UnknownRecord,
+    parseCharacters,
+    parseChatRows,
+    parseOptionalRecord,
+    parseRecord,
+    parseRecordArray,
+    stringValue,
+} from './schema.js';
 
 type StContext = {
     characterId?: unknown;
     groupId?: unknown;
-    characters?: unknown[];
+    characters?: unknown;
     reloadCurrentChat?: () => Promise<void> | void;
 };
 
-type StCharacter = UnknownRecord & {
-    avatar?: unknown;
-    name?: unknown;
-    chat?: unknown;
-    chat_size?: unknown;
-    date_last_chat?: unknown;
-    fav?: unknown;
-};
-
+type LiveCharacterRecord = { chat?: unknown };
 type ReadChatFileOptions = { signal?: AbortSignal };
 type CharacterChatSnapshot = { metadata: UnknownRecord | null; messages: UnknownRecord[] };
 
@@ -94,37 +95,31 @@ type CharacterChatsOptions = { limit?: number | null; signal?: AbortSignal };
 
 // ── Sidebar / conversation list (Region 5) ────────────────────────────────────
 
-function isRecord(value: unknown): value is UnknownRecord {
-    return value !== null && typeof value === 'object';
-}
-
-function asRecord(value: unknown): UnknownRecord {
-    return isRecord(value) ? value : {};
-}
-
-function _string(value: unknown): string {
-    return typeof value === 'string' ? value : '';
-}
-
 function _getContext(): StContext {
     return getContext() as StContext;
 }
 
 function _getCharacters(ctx: StContext = _getContext()): StCharacter[] {
-    return Array.isArray(ctx.characters)
-        ? ctx.characters.map(character => asRecord(character) as StCharacter)
-        : [];
+    return parseCharacters(ctx.characters);
+}
+
+function _getLiveCharacter(ctx: StContext, index: number): LiveCharacterRecord | null {
+    const rawCharacters = ctx.characters;
+    const character = Array.isArray(rawCharacters) ? rawCharacters[index] : null;
+    return character && typeof character === 'object' && !Array.isArray(character)
+        ? character as LiveCharacterRecord
+        : null;
 }
 
 // ST chat-list endpoints return `.jsonl` names; open/rename/delete expect bare names.
 function _stripChatExt(fileName: unknown): string {
-    return typeof fileName === 'string' ? fileName.replace(/\.jsonl$/i, '') : '';
+    return stringValue(fileName).replace(/\.jsonl$/i, '');
 }
 
 // ChatUI treats zero-message and greeting-only chats as fresh new chats.
 function _hasNoUserTurn(messages: unknown): boolean {
-    return !Array.isArray(messages)
-        || !messages.some(message => isRecord(message) && message.is_user === true);
+    const rows = parseRecordArray(messages);
+    return rows.length === 0 || !rows.some(message => message.is_user === true);
 }
 
 /**
@@ -160,8 +155,8 @@ async function _readCharacterChatFile(
 ): Promise<CharacterChatSnapshot | null> {
     const characters = _getCharacters();
     const character = characters[characterId];
-    const chName = _string(character?.name);
-    const avatar = _string(character?.avatar);
+    const chName = character?.name ?? '';
+    const avatar = character?.avatar ?? '';
     if (!chName || !avatar || !fileName) return null;
 
     const response = await fetch('/api/chats/get', {
@@ -180,10 +175,10 @@ async function _readCharacterChatFile(
     const data = await response.json() as unknown;
     if (!Array.isArray(data) || data.length === 0) return null;
 
-    const [header, ...messages] = data;
-    const metadataValue = isRecord(header) ? header.chat_metadata : null;
-    const metadata = isRecord(metadataValue) ? metadataValue : null;
-    return { metadata, messages: messages.map(asRecord) };
+    const [headerValue, ...messageValues] = data;
+    const header = parseRecord(headerValue);
+    const metadata = parseOptionalRecord(header.chat_metadata);
+    return { metadata, messages: messageValues.map(parseRecord) };
 }
 
 /**
@@ -213,38 +208,29 @@ function _chatTimestamp(lastMes: unknown): { ts: number; label: string } {
  * Shared mapping from a raw ST chat summary entry to a ChatListItemDto.
  * Handles both recent rows (`chat_items`/`mes`) and search rows
  * (`message_count`/`preview_message`).
- * @param {UnknownRecord} entry
+ * @param {StChatRow} entry
  * @param {string} currentChatName  Bare session name from _stripChatExt(getCurrentChatDetails()?.sessionName)
  * @param {boolean} ownerMatchesCurrent Whether this chat belongs to the current character
  * @returns {ChatListItemDto}
  */
-function _mapChatEntry(entry: UnknownRecord, currentChatName: string, ownerMatchesCurrent = true): ChatListItemDto {
-    const fileName = _stripChatExt(entry.file_name ?? entry.file_id);
+function _mapChatEntry(entry: StChatRow, currentChatName: string, ownerMatchesCurrent = true): ChatListItemDto {
+    const fileName = _stripChatExt(entry.file_name || entry.file_id);
     const { ts, label } = _chatTimestamp(entry.last_mes);
     // ST fills `mes` with a bracketed placeholder for empty chats/messages;
     // blank it so the row preview stays clean.
-    const rawPreview = typeof entry.preview_message === 'string'
-        ? entry.preview_message
-        : (typeof entry.mes === 'string' ? entry.mes : '');
+    const rawPreview = entry.preview_message || entry.mes;
     const preview = /^\[The (chat|message) is empty\]$/.test(rawPreview) ? '' : rawPreview;
-    const messageCount = typeof entry.message_count === 'number'
-        ? entry.message_count
-        : (typeof entry.chat_items === 'number' ? entry.chat_items : 0);
+    const messageCount = entry.message_count ?? entry.chat_items ?? 0;
     return {
         fileName,
         displayName: fileName,
         messageCount,
         preview,
-        fileSize: typeof entry.file_size === 'string' ? entry.file_size : '',
+        fileSize: entry.file_size,
         lastMesTs: ts,
         lastMesLabel: label,
         isCurrent: ownerMatchesCurrent && fileName !== '' && fileName === currentChatName,
     };
-}
-
-function _finiteNumber(value: unknown): number {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : 0;
 }
 
 /**
@@ -257,7 +243,7 @@ function _getCurrentChatMatch(ctx: StContext = _getContext()): { currentChatName
         ? _getCurrentCharacterId(ctx)
         : null;
     const characters = _getCharacters(ctx);
-    const currentAvatar = currentCharId !== null ? _string(characters[currentCharId]?.avatar) : '';
+    const currentAvatar = currentCharId !== null ? characters[currentCharId]?.avatar ?? '' : '';
     return { currentChatName, currentAvatar };
 }
 
@@ -277,8 +263,8 @@ export async function listCharacterChats(): Promise<ChatListItemDto[]> {
     const raw = await getPastCharacterChats(Number(characterId)) as unknown;
     const currentName = _stripChatExt(getCurrentChatDetails()?.sessionName);
 
-    const items = (Array.isArray(raw) ? raw : []).map(chat => {
-        return _mapChatEntry(asRecord(chat), currentName, true);
+    const items = parseChatRows(raw).map(chat => {
+        return _mapChatEntry(chat, currentName, true);
     });
 
     items.sort((a, b) => b.lastMesTs - a.lastMesTs);
@@ -300,8 +286,8 @@ async function _listChatsForCharacter(charIndex: number, { limit = null }: { lim
         ? Number(ctx.characterId)
         : -1;
     const ownerMatchesCurrent = Number(charIndex) === currentCharId;
-    const items = (Array.isArray(raw) ? raw : []).map(chat => {
-        return _mapChatEntry(asRecord(chat), currentName, ownerMatchesCurrent);
+    const items = parseChatRows(raw).map(chat => {
+        return _mapChatEntry(chat, currentName, ownerMatchesCurrent);
     });
     items.sort((a, b) => b.lastMesTs - a.lastMesTs);
     return typeof limit === 'number' ? items.slice(0, limit) : items;
@@ -319,10 +305,10 @@ export function listCharacterConversationHeaders(): CharConversationGroupDto[] {
 
     return rawChars
         .map((entry, index): CharConversationGroupDto => {
-            const avatar = _string(entry.avatar);
-            const name = _string(entry.name);
-            const chatSize = _finiteNumber(entry.chat_size);
-            const dateLastChatTs = _finiteNumber(entry.date_last_chat);
+            const avatar = entry.avatar;
+            const name = entry.name;
+            const chatSize = entry.chat_size;
+            const dateLastChatTs = entry.date_last_chat;
             return {
                 charId: index,
                 avatar,
@@ -360,13 +346,12 @@ export async function listRecentCharacterChatRows(
     if (!response.ok) throw new Error('recent-chats-failed');
 
     const data = await response.json() as unknown;
-    const rows = Array.isArray(data) ? data : [];
+    const rows = parseChatRows(data);
     const { currentChatName, currentAvatar } = _getCurrentChatMatch();
     return rows
-        .map(asRecord)
-        .filter(row => _string(row.avatar) && !row.group)
+        .filter(row => row.avatar && !row.group)
         .map(row => {
-            const avatar = _string(row.avatar);
+            const avatar = row.avatar;
             return {
                 avatar,
                 chat: _mapChatEntry(row, currentChatName, avatar === currentAvatar),
@@ -397,10 +382,10 @@ export async function listChatsForCharacterAvatar(
     if (!response.ok) throw new Error('character-chat-search-failed');
 
     const data = await response.json() as unknown;
-    const rows = Array.isArray(data) ? data : [];
+    const rows = parseChatRows(data);
     const { currentChatName, currentAvatar } = _getCurrentChatMatch();
     const chats = rows
-        .map(row => _mapChatEntry(asRecord(row), currentChatName, avatar === currentAvatar))
+        .map(row => _mapChatEntry(row, currentChatName, avatar === currentAvatar))
         .filter(chat => chat.fileName)
         .sort((a, b) => b.lastMesTs - a.lastMesTs);
     return {
@@ -420,7 +405,6 @@ export async function openChatForCharacter(avatar: string, fileName: string): Pr
     const characters = _getCharacters(ctx);
     const index = characters.findIndex(character => character.avatar === avatar);
     if (index < 0) return 'notfound';
-    const character = characters[index];
 
     const bareName = _stripChatExt(fileName);
     if (!bareName) return 'notfound';
@@ -433,29 +417,30 @@ export async function openChatForCharacter(avatar: string, fileName: string): Pr
         return 'ok';
     } else {
         if (isChatSaving) return 'busy';
-        const previousChat = _string(character?.chat);
+        const liveCharacter = _getLiveCharacter(ctx, index);
+        const previousChat = liveCharacter?.chat;
         try {
             // Pre-set the desired chat file so selectCharacterById's getChat()
             // call loads it directly. On success, persist with the same exported
             // save path openCharacterChat uses; if the switch/load fails, rollback
             // this in-memory hint so another character is not left polluted.
-            character.chat = bareName;
+            if (liveCharacter) liveCharacter.chat = bareName;
             await selectCharacterById(index);
 
             const latest = _getContext();
             const selectedTarget = !latest.groupId && String(latest.characterId) === String(index);
             const openedTargetChat = _stripChatExt(getCurrentChatDetails()?.sessionName) === bareName;
             if (!selectedTarget || !openedTargetChat) {
-                const latestCharacters = _getCharacters(latest);
-                if (latestCharacters[index]) latestCharacters[index].chat = previousChat;
+                const latestLiveCharacter = _getLiveCharacter(latest, index);
+                if (latestLiveCharacter) latestLiveCharacter.chat = previousChat;
                 return 'busy';
             }
 
             await createOrEditCharacter(new CustomEvent('newChat'));
             return 'ok';
         } catch (error) {
-            const latestCharacters = _getCharacters();
-            if (latestCharacters[index]) latestCharacters[index].chat = previousChat;
+            const latestLiveCharacter = _getLiveCharacter(_getContext(), index);
+            if (latestLiveCharacter) latestLiveCharacter.chat = previousChat;
             throw error;
         }
     }
@@ -475,16 +460,16 @@ export function listCharacters(): CharacterSummaryDto[] {
     const hasCurrent = currentId !== undefined && currentId !== null && currentId !== '';
 
     return characters.map((entry, index) => {
-        const avatar = _string(entry.avatar);
+        const avatar = entry.avatar;
         return {
             charId: index,
             avatar,
-            name: _string(entry.name),
+            name: entry.name,
             thumbnailUrl: avatar && avatar !== 'none' ? getThumbnailUrl('avatar', avatar) : '',
-            fav: entry.fav === true || entry.fav === 'true',
+            fav: entry.fav,
             isCurrent: hasCurrent && !ctx.groupId && String(index) === String(currentId),
-            dateLastChatTs: _finiteNumber(entry.date_last_chat),
-            chatSize: _finiteNumber(entry.chat_size),
+            dateLastChatTs: entry.date_last_chat,
+            chatSize: entry.chat_size,
         };
     });
 }
@@ -518,11 +503,11 @@ export async function switchCharacter(avatar: string): Promise<CharacterSwitchSt
  * @returns {{ sessionName: string, characterName: string, avatarImgURL: string, isGroup: boolean }}
  */
 export function getCurrentChatHeader(): CurrentChatHeaderDto {
-    const details = asRecord(getCurrentChatDetails());
+    const details = parseRecord(getCurrentChatDetails());
     return {
         sessionName: _stripChatExt(details.sessionName),
-        characterName: _string(details.characterName),
-        avatarImgURL: _string(details.avatarImgURL),
+        characterName: stringValue(details.characterName),
+        avatarImgURL: stringValue(details.avatarImgURL),
         isGroup: !!_getContext().groupId,
     };
 }
@@ -540,7 +525,7 @@ export function getCurrentChatIdentity(): CurrentChatIdentityDto | null {
     if (characterId === null) return null;
 
     const characters = _getCharacters(ctx);
-    const avatar = _string(characters[characterId]?.avatar);
+    const avatar = characters[characterId]?.avatar ?? '';
     const fileName = _stripChatExt(getCurrentChatDetails()?.sessionName);
 
     return avatar && fileName ? { avatar, fileName } : null;
