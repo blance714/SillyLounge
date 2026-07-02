@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/compat';
-import type { RefObject } from 'preact';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getChatuiState, subscribeChatuiStore } from '../store/chat-store.js';
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
@@ -113,7 +112,7 @@ export function useSidebarBasics(): {
     const currentChat = chatState.chat.currentChat;
 
     const header = headerQuery.data ?? { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false };
-    const characters = useMemo<CharacterSummary[]>(() => ((charactersQuery.data ?? []) as CharacterSummary[]).map((character: CharacterSummary) => ({
+    const characters = useMemo<CharacterSummary[]>(() => (charactersQuery.data ?? []).map(character => ({
         ...character,
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
@@ -168,7 +167,7 @@ export function useSidebarData(): ChatuiSidebarState {
     const requestedBackfillRef = useRef<Set<string>>(new Set());
 
     const header = headerQuery.data ?? { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false };
-    const characters = useMemo<CharacterSummary[]>(() => ((charactersQuery.data ?? []) as CharacterSummary[]).map((character: CharacterSummary) => ({
+    const characters = useMemo<CharacterSummary[]>(() => (charactersQuery.data ?? []).map(character => ({
         ...character,
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
@@ -211,7 +210,7 @@ export function useSidebarData(): ChatuiSidebarState {
         const map = new Map<string, ChatListItem[]>();
         for (const row of recentsQuery.data ?? []) {
             const chats = map.get(row.avatar) ?? [];
-            chats.push(row.chat as ChatListItem);
+            chats.push(row.chat);
             map.set(row.avatar, chats);
         }
         for (const [avatar, chats] of map) {
@@ -322,7 +321,7 @@ export function useSidebarData(): ChatuiSidebarState {
             ? recentChats
             : (full?.chats ?? recentChats);
         const totalCount = full?.totalCount ?? Math.max(finiteNumber(group.chatSize), sourceChats.length);
-        const visibleSourceChats = dedupeSortChats(sourceChats as ChatListItem[])
+        const visibleSourceChats = dedupeSortChats(sourceChats)
             .filter(chat => !shouldHideChat(group.avatar, chat));
         const displayChats = visibleSourceChats
             .slice(0, full ? visibleCount : INITIAL_VISIBLE_COUNT)
@@ -430,12 +429,11 @@ export function useIsTempChatActive(): boolean {
 }
 
 export function useRootDomEnhancements(
-    rootRef: RefObject<HTMLElement>,
+    root: HTMLElement | null,
     messages: ChatuiMessage[],
     isGenerating: boolean,
 ): void {
     useEffect(() => {
-        const root = rootRef.current;
         if (!root) return;
 
         root.querySelectorAll('.cui-root-message-body pre, .cui-root-reasoning-body pre').forEach(pre => {
@@ -477,7 +475,7 @@ export function useRootDomEnhancements(
                 block.appendChild(copy);
             }
         });
-    }, [rootRef, messages, isGenerating]);
+    }, [root, messages, isGenerating]);
 }
 
 /** Distance (px) from the bottom within which we treat the view as "pinned". */
@@ -490,7 +488,7 @@ const AT_BOTTOM_THRESHOLD = 80;
  * the caller can show a "back to bottom" affordance.
  */
 export function useAutoScroll(
-    rootRef: RefObject<HTMLElement>,
+    root: HTMLElement | null,
     messages: ChatuiMessage[],
     isGenerating: boolean,
     chatKey: string,
@@ -504,7 +502,6 @@ export function useAutoScroll(
     const chatKeyRef = useRef<string | null>(null);
 
     useEffect(() => {
-        const root = rootRef.current;
         if (!root) return;
 
         const onScroll = () => {
@@ -517,10 +514,9 @@ export function useAutoScroll(
         root.addEventListener('scroll', onScroll, { passive: true });
         onScroll();
         return () => root.removeEventListener('scroll', onScroll);
-    }, [rootRef]);
+    }, [root]);
 
     useEffect(() => {
-        const root = rootRef.current;
         if (!root) return;
 
         // A chat switch (or first mount) always lands at the latest message,
@@ -534,15 +530,14 @@ export function useAutoScroll(
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
         setAtBottom(true);
-    }, [rootRef, messages, isGenerating, chatKey]);
+    }, [root, messages, isGenerating, chatKey]);
 
     const scrollToBottom = useCallback(() => {
-        const root = rootRef.current;
         if (!root) return;
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
         setAtBottom(true);
-    }, [rootRef]);
+    }, [root]);
 
     return { atBottom, scrollToBottom };
 }

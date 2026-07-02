@@ -26,7 +26,6 @@ export {
     swipeChatuiMessage,
     triggerChatuiMessageAction,
     triggerChatuiQuickReply,
-    triggerChatuiShellAction,
     triggerChatuiWandItem,
     unmountChatuiStDrawer,
     chatuiEventKeys,
@@ -39,7 +38,6 @@ export {
 export {
     deleteChatuiChat,
     getChatuiCurrentChatHeader,
-    getChatuiSidebarState,
     listChatuiCharacters,
     listChatuiChatsForCharacterAvatar,
     listChatuiRecentCharacterChatRows,
@@ -47,7 +45,6 @@ export {
     openChatuiChat,
     openChatuiChatForCharacter,
     renameChatuiChat,
-    subscribeChatuiSidebar,
     switchChatuiCharacter,
     switchChatuiCharacterAndNewChat,
 } from '../store/sidebar-actions.js';

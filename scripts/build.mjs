@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
+import { posixPath, walk } from './lib.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -10,6 +11,9 @@ const DIST_DIR = path.join(PROJECT_ROOT, 'dist');
 const RUNTIME_OUT_DIR = path.join(PROJECT_ROOT, 'dist', 'runtime');
 const ROOT_APP_ENTRY = path.join(SRC_DIR, 'ui/app.tsx');
 const ROOT_APP_FILE_NAME = 'root-app.mjs';
+const ROOT_APP_SOURCE_SPECIFIER = '../../dist/root-app.mjs';
+const ROOT_APP_EXTERNAL_ID = 'chatui:root-app';
+const ROOT_APP_RUNTIME_PATH = `dist/${ROOT_APP_FILE_NAME}`;
 const BUILD_TARGET = 'es2020';
 const VITE_LOG_LEVEL = 'info';
 const RUNTIME_ENTRY_DIRS = Object.freeze(['adapter', 'store', 'shield']);
@@ -53,12 +57,14 @@ function createBaseViteOptions() {
     };
 }
 
-function posixPath(value) {
-    return value.split(path.sep).join('/');
-}
-
 function upPath(count) {
     return '../'.repeat(count);
+}
+
+function runtimeRelativeSpecifier(chunkFileName, targetFileName) {
+    const dirname = path.posix.dirname(posixPath(chunkFileName));
+    const rel = path.posix.relative(dirname === '.' ? '' : dirname, targetFileName);
+    return rel.startsWith('.') ? rel : `./${rel}`;
 }
 
 function stExternalPath(id, chunkFileName) {
@@ -112,23 +118,43 @@ async function listRuntimeEntries() {
         entries.set(file.replace(/\.ts$/, ''), path.join(SRC_DIR, file));
     }
 
-    async function walk(dir) {
-        for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-            const full = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                await walk(full);
-            } else if (entry.isFile() && full.endsWith('.ts') && !full.endsWith('.d.ts')) {
-                const rel = posixPath(path.relative(SRC_DIR, full)).replace(/\.ts$/, '');
-                entries.set(rel, full);
-            }
-        }
-    }
-
     for (const dir of RUNTIME_ENTRY_DIRS) {
-        await walk(path.join(SRC_DIR, dir));
+        await walk(path.join(SRC_DIR, dir), full => {
+            if (!full.endsWith('.ts') || full.endsWith('.d.ts')) return;
+            const rel = posixPath(path.relative(SRC_DIR, full)).replace(/\.ts$/, '');
+            entries.set(rel, full);
+        });
     }
 
     return Object.fromEntries(entries);
+}
+
+function rewriteRootAppExternalSpecifiers(code, fileName) {
+    const replacement = runtimeRelativeSpecifier(fileName, ROOT_APP_RUNTIME_PATH);
+    return code.replace(
+        new RegExp(`(['"])${escapeRegex(ROOT_APP_EXTERNAL_ID)}\\1`, 'g'),
+        `"${replacement}"`,
+    );
+}
+
+function createRootAppExternalPlugin() {
+    return {
+        name: 'chatui-root-app-external',
+        resolveId(id) {
+            if (id !== ROOT_APP_SOURCE_SPECIFIER) return null;
+            return { id: ROOT_APP_EXTERNAL_ID, external: true };
+        },
+        renderChunk(code, chunk) {
+            const next = rewriteRootAppExternalSpecifiers(code, chunk.fileName);
+            return next === code ? null : { code: next, map: null };
+        },
+        generateBundle(_options, bundle) {
+            for (const item of Object.values(bundle)) {
+                if (item.type !== 'chunk') continue;
+                item.code = rewriteRootAppExternalSpecifiers(item.code, item.fileName);
+            }
+        },
+    };
 }
 
 function isStExternal(id) {
@@ -136,7 +162,7 @@ function isStExternal(id) {
 }
 
 function isRuntimeExternal(id) {
-    return isStExternal(id) || id === '../dist/root-app.mjs';
+    return isStExternal(id) || id === ROOT_APP_EXTERNAL_ID;
 }
 
 function isUiRuntimeExternal(id) {
@@ -147,6 +173,7 @@ function isUiRuntimeExternal(id) {
 function createRuntimeBuildOptions(runtimeEntries) {
     return {
         ...createBaseViteOptions(),
+        plugins: [createRootAppExternalPlugin()],
         build: {
             target: BUILD_TARGET,
             outDir: RUNTIME_OUT_DIR,

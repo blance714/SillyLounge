@@ -8,7 +8,7 @@
  * expander that opens a sub-menu of linked sets). Only primary click is proxied.
  */
 
-import { _dispatchClick } from './internals.js';
+import { _dispatchClick, buildLiveElementRegistry } from './internals.js';
 
 type QuickReplyDto = {
     id: string;
@@ -18,7 +18,20 @@ type QuickReplyDto = {
 };
 
 /** @type {Map<string, HTMLElement>} */
-const _qrItemMap = new Map();
+const _qrItemMap = new Map<string, HTMLElement>();
+
+function quickReplyCandidates(bar: Element): Element[] {
+    // QR buttons live inside .qr--buttons holders or directly in #qr--bar.
+    const buttonHolders = bar.querySelectorAll('.qr--buttons');
+    if (buttonHolders.length > 0) {
+        return Array.from(buttonHolders).flatMap(holder => (
+            Array.from(holder.children).filter(child => child.classList.contains('qr--button'))
+        ));
+    }
+
+    // Fallback: buttons appended directly (non-combined layout).
+    return Array.from(bar.children).filter(child => child.classList.contains('qr--button'));
+}
 
 /**
  * Enumerate visible quick-reply buttons from ST's #qr--bar. Rebuilds the
@@ -28,59 +41,29 @@ const _qrItemMap = new Map();
  * @returns {{ id: string, label: string, title: string, iconHtml: string }[]}
  */
 export function listQuickReplies() {
-    _qrItemMap.clear();
     // Docked bar lives in #send_form; when the user pops it out ST moves it to
     // #qr--popout on document.body. Read whichever is present.
     const bar = document.getElementById('qr--bar') || document.getElementById('qr--popout');
-    if (!bar) return [];
+    return buildLiveElementRegistry<QuickReplyDto>(bar, _qrItemMap, {
+        idPrefix: 'qr',
+        elements: quickReplyCandidates,
+        toDto: (el, id) => {
+            // Each QR button has .qr--button-label and optionally .qr--button-icon.
+            const labelEl = el.querySelector('.qr--button-label');
+            const label = (labelEl?.textContent || el.textContent || '').trim();
 
-    const out: QuickReplyDto[] = [];
-    let seq = 0;
+            const btnTitle = el.getAttribute('title') || label;
 
-    /**
-     * @param {Element} el
-     */
-    const consider = (el: any) => {
-        if (!(el instanceof HTMLElement)) return;
-        // Skip hidden via class or computed style.
-        if (el.classList.contains('qr--hidden')) return;
-        if (el.classList.contains('displayNone')) return;
-        if (window.getComputedStyle(el).display === 'none') return;
+            // Icon: prefer .qr--button-icon; fall back to any Font Awesome element.
+            const iconEl = el.querySelector('.qr--button-icon, [class*="fa-"]');
+            // Only include the icon outerHTML if the icon is not itself hidden.
+            const iconHtml = (iconEl instanceof HTMLElement && !iconEl.classList.contains('qr--hidden'))
+                ? iconEl.outerHTML
+                : '';
 
-        // Each QR button has .qr--button-label and optionally .qr--button-icon.
-        const labelEl = el.querySelector('.qr--button-label');
-        const label = (labelEl?.textContent || el.textContent || '').trim();
-
-        const btnTitle = el.getAttribute('title') || label;
-
-        // Icon: prefer .qr--button-icon; fall back to any Font Awesome element.
-        const iconEl = el.querySelector('.qr--button-icon, [class*="fa-"]');
-        // Only include the icon outerHTML if the icon is not itself hidden.
-        const iconHtml = (iconEl instanceof HTMLElement && !iconEl.classList.contains('qr--hidden'))
-            ? iconEl.outerHTML
-            : '';
-
-        const id = `qr-${seq++}`;
-        _qrItemMap.set(id, el);
-        out.push({ id, label, title: btnTitle, iconHtml });
-    };
-
-    // QR buttons live inside .qr--buttons holders or directly in #qr--bar.
-    const buttonHolders = bar.querySelectorAll('.qr--buttons');
-    if (buttonHolders.length > 0) {
-        buttonHolders.forEach(holder => {
-            Array.from(holder.children).forEach(child => {
-                if (child.classList.contains('qr--button')) consider(child);
-            });
-        });
-    } else {
-        // Fallback: buttons appended directly (non-combined layout).
-        Array.from(bar.children).forEach(child => {
-            if (child.classList.contains('qr--button')) consider(child);
-        });
-    }
-
-    return out;
+            return { id, label, title: btnTitle, iconHtml };
+        },
+    });
 }
 
 /**

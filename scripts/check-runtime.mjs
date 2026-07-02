@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { posixPath, walk } from './lib.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -58,10 +59,6 @@ const TEXT_CHECKS = [
 
 const IMPORT_SPECIFIER_PATTERN = /\bfrom\s*(['"])([^'"]+)\1|\bimport\s*(?:\(\s*)?(['"])([^'"]+)\3/g;
 
-function posixPath(value) {
-    return value.split(path.sep).join('/');
-}
-
 function displayPath(filePath) {
     return posixPath(path.relative(PROJECT_ROOT, filePath));
 }
@@ -89,18 +86,9 @@ async function pathExists(filePath) {
 async function collectFiles(rootDir) {
     const files = [];
 
-    async function walk(currentDir) {
-        for (const entry of await fs.readdir(currentDir, { withFileTypes: true })) {
-            const fullPath = path.join(currentDir, entry.name);
-            if (entry.isDirectory()) {
-                await walk(fullPath);
-            } else if (entry.isFile() && shouldScanFile(fullPath)) {
-                files.push(fullPath);
-            }
-        }
-    }
-
-    await walk(rootDir);
+    await walk(rootDir, fullPath => {
+        if (shouldScanFile(fullPath)) files.push(fullPath);
+    });
     return files.sort((a, b) => displayPath(a).localeCompare(displayPath(b)));
 }
 

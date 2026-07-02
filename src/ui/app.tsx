@@ -5,7 +5,7 @@
  * UI reads Store DTOs and action facades only; ST runtime details stay in adapter.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'preact/compat';
+import React, { useCallback, useEffect, useMemo, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { createRoot } from 'preact/compat/client';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -43,8 +43,8 @@ function ChatuiApp(): ComponentChild {
     const sidebarBasics = useSidebarBasics();
     const chatHeader = sidebarBasics.header;
     const isTempChatActive = useIsTempChatActive();
-    const rootRef = useRef<HTMLElement>(null);
-    const listRef = useRef<HTMLDivElement>(null);
+    const [rootNode, setRootNode] = useState<HTMLElement | null>(null);
+    const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
     const [editingMessage, setEditingMessage] = useState<EditingMessageTarget | null>(null);
     const headerMode: MessageHeaderMode = state.chat.isGroup ? config.headerGroup : config.headerSolo;
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
@@ -52,6 +52,12 @@ function ChatuiApp(): ComponentChild {
     const messages = useMemo(() => state.chat.messages.filter(message => (
         !message.extra.isSmallSys && !message.extra.isToolCall
     )), [state]);
+    const rootRef = useCallback((node: HTMLElement | null) => {
+        setRootNode(node);
+    }, []);
+    const listRef = useCallback((node: HTMLDivElement | null) => {
+        setListNode(node);
+    }, []);
 
     useEffect(() => {
         if (editingMessage === null) return;
@@ -63,8 +69,8 @@ function ChatuiApp(): ComponentChild {
         setIsSidebarMobileOpen(false);
     }, [settingsOpen, state.chat.chatKey]);
 
-    useRootDomEnhancements(rootRef, messages, state.chat.isGenerating);
-    const { atBottom, scrollToBottom } = useAutoScroll(listRef, messages, state.chat.isGenerating, state.chat.chatKey);
+    useRootDomEnhancements(rootNode, messages, state.chat.isGenerating);
+    const { atBottom, scrollToBottom } = useAutoScroll(listNode, messages, state.chat.isGenerating, state.chat.chatKey);
 
     const summonSidebar = () => setIsSidebarMobileOpen(true);
     const dismissSidebarNavigation = () => setIsSidebarMobileOpen(false);

@@ -10,7 +10,6 @@ export { stEventKeys as chatuiEventKeys } from '../adapter/st-adapter.js';
 import { pushToast, dismissToast } from './toast-store.js';
 
 export type ChatuiMessageAction = 'copy' | 'regen' | 'edit' | 'delete' | 'branch' | 'checkpoint' | 'hide';
-export type ChatuiShellAction = 'characters' | 'characterCreate' | 'groupChats' | 'aiConfig' | 'formatting' | 'worldInfo' | 'background' | 'userSettings' | 'extensions' | 'personas';
 export type ChatuiSelectorKind = 'preset' | 'model' | 'persona';
 export type ChatuiSwipeDirection = 'left' | 'right';
 export type ChatuiToastKind = 'info' | 'success' | 'error';
@@ -52,14 +51,6 @@ export async function sendChatuiComposerMessage(text: string) {
 export function stopChatuiGeneration() {
     const stopped = chatuiAdapter.composerActions.stopGeneration();
     if (!stopped) notifyChatui('info', '没有正在生成的内容');
-}
-
-/**
- * @param {'characters'|'characterCreate'|'groupChats'|'aiConfig'|'formatting'|'worldInfo'|'background'|'userSettings'|'extensions'|'personas'} action
- * @returns {void}
- */
-export function triggerChatuiShellAction(action: ChatuiShellAction) {
-    chatuiAdapter.shellActions.triggerShellAction(action);
 }
 
 /**

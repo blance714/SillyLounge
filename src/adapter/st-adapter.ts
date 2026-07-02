@@ -27,9 +27,6 @@ import {
     stopGeneration,
 } from './composer.js';
 import {
-    triggerShellAction,
-} from './shell.js';
-import {
     getMessageAttachments,
     openMessageFile,
     openMessageMedia,
@@ -124,9 +121,6 @@ export const chatuiAdapter = Object.freeze({
         setNativeComposerText,
         sendComposerMessage,
         stopGeneration,
-    }),
-    shellActions: Object.freeze({
-        triggerShellAction,
     }),
     mediaActions: Object.freeze({
         getMessageAttachments,
