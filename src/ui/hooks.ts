@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'preact/compat';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/compat';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getChatuiState, subscribeChatuiStore } from '../store/chat-store.js';
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
@@ -484,7 +484,10 @@ export function useCardEmbedRendering(
     messages: ChatuiMessage[],
     isGenerating: boolean,
 ): void {
-    useEffect(() => {
+    // useLayoutEffect (not useEffect) so the raw ```html code block is hidden
+    // and replaced with the iframe before the browser paints — otherwise the
+    // (often very long) raw source flashes visibly for one frame first.
+    useLayoutEffect(() => {
         if (!root) return;
 
         renderCardEmbeds(root, messages, isGenerating);

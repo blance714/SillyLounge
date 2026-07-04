@@ -1239,6 +1239,7 @@ body.chatui-active .cui-root-reasoning-body code {
 
 body.chatui-active .cui-embed-frame {
     width: 100%;
+    height: 0;
     border: 0;
     display: block;
 }
