@@ -2,6 +2,7 @@ import type { ChatuiMessage } from './types.js';
 
 const CARD_EMBED_PRE_SELECTOR = '.cui-root-message-body pre, .cui-root-reasoning-body pre';
 const CARD_EMBED_FRAME_CLASS = 'cui-embed-frame';
+const CARD_EMBED_HEIGHT_MESSAGE_KEY = '__cuiCardEmbedHeight';
 
 const CARD_EMBED_BOOTSTRAP_SOURCE = `(function () {
   var host = window.parent;
@@ -32,10 +33,58 @@ const CARD_EMBED_BOOTSTRAP_SOURCE = `(function () {
       try { window.eventClearAll(); } catch (e) {}
     }
   });
+  // Report our own height to the parent instead of having it read
+  // documentElement.scrollHeight from outside: that's the root element,
+  // whose scrollHeight is defined as max(current iframe height, content
+  // height) — so once the parent had set a height once, that becomes a
+  // floor future reads can never shrink below. Measuring body (not root)
+  // from in here has no such floor, needs no reset-and-remeasure dance, and
+  // ResizeObserver's own callback is inherently non-forcing.
+  window.addEventListener('DOMContentLoaded', function () {
+    var reportHeight = function () {
+      var message = {};
+      message[${JSON.stringify(CARD_EMBED_HEIGHT_MESSAGE_KEY)}] = document.body.scrollHeight;
+      // srcdoc documents report location.origin as the literal string "null"
+      // (an opaque origin), which postMessage rejects as an invalid target
+      // origin — '*' is required here. The parent already gates on
+      // event.source identity (see ensureHeightMessageListener), which pins
+      // to this exact window, so this isn't loosening anything.
+      host.postMessage(message, '*');
+    };
+    new ResizeObserver(reportHeight).observe(document.body);
+    reportHeight();
+  });
 })();`;
-const CARD_EMBED_RESET_STYLE = 'html, body { margin: 0; }';
+// display: flow-root gives body its own block formatting context, which
+// stops a child's top/bottom margin from collapsing through body and
+// escaping into html — without it, body.scrollHeight silently excludes that
+// escaped margin (measured live: a 20px top + 20px bottom margin escaping
+// this way undercounted a real card's height by 40px). `overflow: hidden`
+// looks like the obvious fix but doesn't work here: browsers propagate
+// `overflow` set on <body> up to the viewport, so body's own box never
+// actually gets a BFC from it (verified live — overflow:hidden on body left
+// the margin still escaping). `display` isn't subject to that propagation.
+const CARD_EMBED_RESET_STYLE = 'html, body { margin: 0; } body { display: flow-root; }';
 
-const frameObservers = new WeakMap<HTMLIFrameElement, ResizeObserver>();
+const frameWindows = new WeakMap<Window, HTMLIFrameElement>();
+let heightMessageListenerInstalled = false;
+
+function ensureHeightMessageListener(): void {
+    if (heightMessageListenerInstalled) return;
+    heightMessageListenerInstalled = true;
+
+    window.addEventListener('message', event => {
+        if (!event.source) return;
+        const frame = frameWindows.get(event.source as Window);
+        if (!frame) return;
+
+        const data = event.data as Record<string, unknown> | null;
+        const height = data?.[CARD_EMBED_HEIGHT_MESSAGE_KEY];
+        if (typeof height !== 'number' || !Number.isFinite(height)) return;
+
+        frame.style.height = `${Math.ceil(Math.max(0, height))}px`;
+    });
+}
 
 export function renderCardEmbeds(
     root: HTMLElement,
@@ -76,13 +125,18 @@ function mountCardEmbed(
     const cardSource = code.textContent ?? '';
     if (!isCardEmbedSource(cardSource)) return;
 
+    ensureHeightMessageListener();
+
     const frame = document.createElement('iframe');
     frame.className = CARD_EMBED_FRAME_CLASS;
-    frame.addEventListener('load', () => observeFrameHeight(frame));
     frame.srcdoc = buildCardEmbedSrcdoc(cardSource);
 
     pre.style.display = 'none';
     pre.after(frame);
+
+    if (frame.contentWindow) {
+        frameWindows.set(frame.contentWindow, frame);
+    }
 }
 
 function hasMountedEmbed(pre: HTMLElement): boolean {
@@ -105,31 +159,4 @@ function isOwnedByActiveStreamingMessage(
     const messageId = article?.getAttribute('data-cui-message-id');
     const message = messageId === null || messageId === undefined ? undefined : messagesById.get(messageId);
     return message?.ui.isLast === true && isGenerating;
-}
-
-function observeFrameHeight(frame: HTMLIFrameElement): void {
-    const body = frame.contentDocument?.body;
-    if (!body) return;
-
-    frameObservers.get(frame)?.disconnect();
-
-    // The frame starts at CSS's near-zero default height (see .cui-embed-frame),
-    // so any real content overflows it and documentElement.scrollHeight always
-    // reports the card's true height — no estimate-then-correct step needed
-    // (that would otherwise require reading layout synchronously right after
-    // writing it, forcing a reflow). Deferring the read to the next animation
-    // frame lets the browser compute layout on its own schedule instead of
-    // being forced to do it early — this read then costs nothing extra.
-    const setHeight = (): void => {
-        requestAnimationFrame(() => {
-            const trueHeight = frame.contentDocument?.documentElement.scrollHeight;
-            if (trueHeight === undefined) return;
-            frame.style.height = `${Math.ceil(Math.max(0, trueHeight))}px`;
-        });
-    };
-    const observer = new ResizeObserver(() => setHeight());
-
-    observer.observe(body);
-    frameObservers.set(frame, observer);
-    setHeight();
 }
