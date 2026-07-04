@@ -118,6 +118,61 @@ let _unsubscribers: Array<() => void> = [];
 /** @type {number} Pending requestAnimationFrame id for coalesced streaming refreshes. */
 let _streamFrame = 0;
 
+type FormatHtmlCacheEntry = {
+    text: string;
+    name: string;
+    isSystem: boolean;
+    isUser: boolean;
+    usesSystemUi: boolean;
+    html: string;
+};
+
+/**
+ * Keyed by `${id}:${isReasoning}`. ST's own formatter re-resolves
+ * non-deterministic macros (e.g. `{{random::a,b}}`) on every call, so calling
+ * it again for a message whose relevant fields haven't changed produces a
+ * different-looking result for no reason — this cache makes reformatting
+ * conditional on those fields actually changing, matching how ST's own
+ * chat window only reprints a message when it has something new to show.
+ */
+const _formatHtmlCache = new Map<string, FormatHtmlCacheEntry>();
+
+/**
+ * @param {Record<string, any>} message
+ * @param {number} id
+ * @param {boolean} isReasoning
+ * @returns {string}
+ */
+function _formatMessageHtmlCached(message: Record<string, any>, id: number, isReasoning: boolean): string {
+    const extra = (message.extra ?? {}) as Record<string, any>;
+    // Mirrors formatMessageHtml's own text selection (internals.ts) exactly,
+    // so the cache key tracks precisely what determines its output.
+    const text = isReasoning
+        ? (extra.reasoning_display_text || extra.reasoning || '')
+        : (extra.display_text || message.mes || '');
+    const name = typeof message.name === 'string' ? message.name : '';
+    const isSystem = message.is_system === true;
+    const isUser = message.is_user === true;
+    const usesSystemUi = extra.uses_system_ui === true;
+
+    const cacheKey = `${id}:${isReasoning}`;
+    const cached = _formatHtmlCache.get(cacheKey);
+    if (
+        cached
+        && cached.text === text
+        && cached.name === name
+        && cached.isSystem === isSystem
+        && cached.isUser === isUser
+        && cached.usesSystemUi === usesSystemUi
+    ) {
+        return cached.html;
+    }
+
+    const html = chatuiAdapter.formatMessageHtml(message, id, isReasoning);
+    _formatHtmlCache.set(cacheKey, { text, name, isSystem, isUser, usesSystemUi, html });
+    return html;
+}
+
 /**
  * @param {object} raw
  * @param {number} id
@@ -150,7 +205,7 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
         name: stringValue(message.name),
         text: stringValue(message.mes),
         displayText: stringValue(extra.display_text) || stringValue(message.mes),
-        html: chatuiAdapter.formatMessageHtml(message, id, false),
+        html: _formatMessageHtmlCached(message, id, false),
         sendDate: message.send_date ?? null,
         forceAvatar: Boolean(message.force_avatar),
         forceAvatarSrc: stringValue(message.force_avatar),
@@ -168,7 +223,7 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
             bookmarkLink: stringValue(extra.bookmark_link),
             tokenCount: numberOrNull(extra.token_count),
             reasoning: stringValue(extra.reasoning),
-            reasoningHtml: reasoningText ? chatuiAdapter.formatMessageHtml(message, id, true) : '',
+            reasoningHtml: reasoningText ? _formatMessageHtmlCached(message, id, true) : '',
             reasoningDuration: extra.reasoning_duration ?? null,
         },
         ui: {
