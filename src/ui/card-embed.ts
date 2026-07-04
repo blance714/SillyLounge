@@ -113,21 +113,23 @@ function observeFrameHeight(frame: HTMLIFrameElement): void {
 
     frameObservers.get(frame)?.disconnect();
 
-    const setHeight = (height: number): void => {
-        const clamped = Math.ceil(Math.max(0, height));
-        frame.style.height = `${clamped}px`;
-        const trueHeight = frame.contentDocument?.documentElement.scrollHeight;
-        if (trueHeight !== undefined && trueHeight > clamped) {
-            frame.style.height = `${trueHeight}px`;
-        }
+    // The frame starts at CSS's near-zero default height (see .cui-embed-frame),
+    // so any real content overflows it and documentElement.scrollHeight always
+    // reports the card's true height — no estimate-then-correct step needed
+    // (that would otherwise require reading layout synchronously right after
+    // writing it, forcing a reflow). Deferring the read to the next animation
+    // frame lets the browser compute layout on its own schedule instead of
+    // being forced to do it early — this read then costs nothing extra.
+    const setHeight = (): void => {
+        requestAnimationFrame(() => {
+            const trueHeight = frame.contentDocument?.documentElement.scrollHeight;
+            if (trueHeight === undefined) return;
+            frame.style.height = `${Math.ceil(Math.max(0, trueHeight))}px`;
+        });
     };
-    const observer = new ResizeObserver(entries => {
-        const entry = entries[0];
-        if (!entry) return;
-        setHeight(entry.contentRect.height);
-    });
+    const observer = new ResizeObserver(() => setHeight());
 
     observer.observe(body);
     frameObservers.set(frame, observer);
-    setHeight(body.getBoundingClientRect().height);
+    setHeight();
 }
