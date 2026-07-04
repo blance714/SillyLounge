@@ -13,6 +13,7 @@ import {
     notifyChatui,
     subscribeTempChatStore,
 } from './actions.js';
+import { renderCardEmbeds } from './card-embed.js';
 import {
     SIDEBAR_BACKFILL_CONCURRENCY,
     SIDEBAR_INITIAL_VISIBLE,
@@ -475,6 +476,18 @@ export function useRootDomEnhancements(
                 block.appendChild(copy);
             }
         });
+    }, [root, messages, isGenerating]);
+}
+
+export function useCardEmbedRendering(
+    root: HTMLElement | null,
+    messages: ChatuiMessage[],
+    isGenerating: boolean,
+): void {
+    useEffect(() => {
+        if (!root) return;
+
+        renderCardEmbeds(root, messages, isGenerating);
     }, [root, messages, isGenerating]);
 }
 
