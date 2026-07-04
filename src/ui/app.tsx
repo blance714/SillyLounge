@@ -20,7 +20,7 @@ import { SettingsNav } from './components/settings/SettingsNav.js';
 import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useChatuiSnapshot, useConfig, useIsTempChatActive, useRootDomEnhancements, useSidebarBasics, useSettings } from './hooks.js';
+import { useAutoScroll, useCardEmbedRendering, useChatuiSnapshot, useConfig, useIsTempChatActive, useRootDomEnhancements, useSidebarBasics, useSettings } from './hooks.js';
 import { clearChatuiToasts, closeChatuiSettings, regenerateChatuiLast } from './actions.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
@@ -70,6 +70,7 @@ function ChatuiApp(): ComponentChild {
     }, [settingsOpen, state.chat.chatKey]);
 
     useRootDomEnhancements(rootNode, messages, state.chat.isGenerating);
+    useCardEmbedRendering(rootNode, messages, state.chat.isGenerating);
     const { atBottom, scrollToBottom } = useAutoScroll(listNode, messages, state.chat.isGenerating, state.chat.chatKey);
 
     const summonSidebar = () => setIsSidebarMobileOpen(true);
