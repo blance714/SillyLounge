@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
     notifyChatui,
+    regenerateChatuiLast,
     sendChatuiComposerMessage,
     stopChatuiGeneration,
 } from '../actions.js';
@@ -21,8 +22,10 @@ export function GeneratingIndicator(): ComponentChild {
 
 export function Composer({
     isGenerating,
+    onEditLast,
 }: {
     isGenerating: boolean;
+    onEditLast?: () => void;
 }): ComponentChild {
     const [draft, setDraft] = useState('');
     const [isSending, setIsSending] = useState(false);
@@ -70,7 +73,25 @@ export function Composer({
                     placeholder="Message"
                     onInput={(event) => setDraft(event.currentTarget.value)}
                     onKeyDown={(event) => {
+                        // Mirrors ST's native RossAscends-mods.js hotkeys, which key off
+                        // the native #send_textarea having focus while empty — that
+                        // native check goes silently inert once #send_form is
+                        // display:none, so ChatUI owns the equivalent behavior here
+                        // against its own composer textarea/draft state instead.
+                        if (event.key === 'ArrowUp' && draft === '') {
+                            event.preventDefault();
+                            onEditLast?.();
+                            return;
+                        }
+
                         if (event.key !== 'Enter' || event.shiftKey) return;
+
+                        if ((event.ctrlKey || event.metaKey) && draft.trim() === '' && !isGenerating) {
+                            event.preventDefault();
+                            regenerateChatuiLast();
+                            return;
+                        }
+
                         event.preventDefault();
                         void submit();
                     }}

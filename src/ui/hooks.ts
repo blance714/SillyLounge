@@ -11,6 +11,7 @@ import {
     isTempChatDraft,
     listChatuiCharacters,
     notifyChatui,
+    stopChatuiGeneration,
     subscribeTempChatStore,
 } from './actions.js';
 import { renderCardEmbeds } from './card-embed.js';
@@ -556,4 +557,29 @@ export function useAutoScroll(
     }, [root]);
 
     return { atBottom, scrollToBottom };
+}
+
+/**
+ * Global Escape-to-stop-generation, owned by ChatUI itself rather than relying
+ * on ST's native document keydown handler (script.js), which only fires when
+ * $('#mes_stop').is(':visible') — true under the shield's current CSS-clip
+ * hiding, but permanently false once #send_form is display:none. Mirrors ST's
+ * own IME-composing guard. Skips entirely while a message is being edited:
+ * MessageEditor's own Escape handler (cancel edit) calls stopPropagation(),
+ * so this listener simply never sees the keydown in that case — matching ST's
+ * native priority of "close edit box" over "stop generation".
+ */
+export function useEscapeToStopGeneration(isGenerating: boolean): void {
+    useEffect(() => {
+        if (!isGenerating) return;
+
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape' || event.isComposing) return;
+            event.preventDefault();
+            stopChatuiGeneration();
+        };
+
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [isGenerating]);
 }

@@ -60,32 +60,19 @@ body.chatui-active.chatui-root-visible #chatui-root {
     }
 }
 
+/* display:none (not the old 1x1px clip-path park) — ST's own jQuery +
+   jquery.transit message-render/animation pipeline was measured forcing
+   hundreds of ms of layout/style-recalc over this DOM on every chat switch,
+   entirely for a surface nobody can see. !important so it wins over ST's own
+   occasional inline .css('display', ...) writes on these two elements (e.g.
+   the native delete-mode toggle on #send_form) — see ROADMAP for the audited
+   simulated-click write paths this depends on staying safe. */
 body.chatui-active.chatui-chat-surface-shielded #chat {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    min-width: 1px;
-    min-height: 1px;
-    max-width: 1px;
-    max-height: 1px;
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-    clip-path: inset(50%);
+    display: none !important;
 }
 
 body.chatui-active.chatui-composer-surface-shielded #send_form {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    min-width: 1px;
-    min-height: 1px;
-    max-width: 1px;
-    max-height: 1px;
-    overflow: hidden;
-    opacity: 0;
-    pointer-events: none;
-    clip-path: inset(50%);
+    display: none !important;
 }
 
 body.chatui-active #top-bar,
