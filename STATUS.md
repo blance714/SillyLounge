@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-03
+Last updated: 2026-07-05
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
@@ -26,7 +26,7 @@ src/index.ts -> index.js
   |
   +-- src/shield/st-dom-shield.ts -> shield/st-dom-shield.js
   |     owns body.chatui-active, #chatui-root, and the shield level
-  |     (parks native #chat / #send_form off-screen; promotes #chatui-root)
+  |     (hides native #chat / #send_form via display:none; promotes #chatui-root)
   |
   +-- src/adapter/ -> adapter/  (the ONLY layer that touches ST internals)
   |     st-adapter.js is the frozen facade; behavior split across
@@ -109,9 +109,16 @@ SillyTavern still owns: chat persistence, generation/regeneration, settings,
 extension events, file previews, and all native drawer panel contents. ChatUI may
 temporarily host a live ST drawer inside its settings shell, but only through
 `src/adapter/settings.ts` + `StDrawerHost`; UI code never reaches into the
-drawer DOM directly. The native `#chat` and `#send_form` stay alive in the DOM (parked
-off-screen by the shield) because ST render/update/send/edit semantics still flow
-through them; the adapter bridges ChatUI intents into those native pipelines.
+drawer DOM directly. The native `#chat` and `#send_form` stay alive in the DOM
+(hidden via `display:none`, as of 2026-07-05 — previously clipped to 1x1px,
+which let ST's own jQuery/jquery.transit render pipeline keep doing real,
+measurable layout work over a surface nobody could see) because ST
+render/update/send/edit semantics still flow through them; the adapter bridges
+ChatUI intents into those native pipelines. A few ST-native keyboard shortcuts
+that depended on the native surfaces' own visibility (Escape-to-stop,
+Ctrl+Enter-regenerate, ArrowUp-edit-last) silently stopped working under real
+`display:none` and are now reimplemented against ChatUI's own state
+(`src/ui/hooks.ts` `useEscapeToStopGeneration`, `src/ui/components/Composer.tsx`).
 
 ### Rules
 
@@ -159,9 +166,26 @@ sends or edits the greeting.
   an actual build reproduced it). All 14 fixed, independently re-verified by a
   second adversarial pass, and confirmed live. See `ROADMAP.md`'s 已完成
   section for the full list.
+- **2026-07-05**: html/js card embeds (```html fenced blocks render as live
+  same-origin iframes, auto-sized via an internal ResizeObserver + postMessage
+  instead of an external `scrollHeight` read), a message-level HTML memo cache
+  in `chat-store.ts` (fixes a `{{random}}`-macro-driven flicker on chat
+  switch), and the shield's `#chat`/`#send_form` hiding moved from a 1x1px CSS
+  clip to real `display:none` after a 5-agent static audit of every
+  simulated-click write path found 11/13 already safe and closed the 2 real
+  gaps (3 ST-native keyboard shortcuts that depended on native-surface
+  visibility, and a latent `#send_form` inline-style collision in unreachable
+  dead code). Chat-switch layout/style-recalc cost dropped from
+  318ms+441ms to 50ms; forced reflow from 795ms to 74ms.
 - **§7 config deepening** — selector-slot placement, ＋menu drag-reorder editor.
-- **Remaining sim-click write paths** (`#options` / drawers) → ST exports.
+- **Remaining sim-click write paths** (`#options` / drawers) → ST exports —
+  downgraded from "blocking" to ordinary architecture debt now that the audit
+  above confirmed they don't depend on native-surface visibility either way.
 - Group-chat conversation list, search 🔍, Mode B global list.
+- Still not built: a toast warning when a card script calls a
+  TavernHelper-dependent function but TavernHelper isn't installed, and an
+  opt-in "sandbox card iframes" advanced setting (cards are unsandboxed by
+  default today).
 
 ---
 
@@ -197,5 +221,11 @@ Automated checks for the current migration + fix pass:
   adversarial check + regression sweep) — 14/14 findings confirmed fixed, zero
   new regressions surfaced.
 
-Still owed: continue / impersonate / regenerate (`#options` sim-click), stop, and
-the broader mobile/sidebar regression pass.
+**2026-07-05**: continue / impersonate / regenerate / stop verified safe under
+real `display:none` via a 5-agent static audit of ST's native handlers plus a
+live test (Ctrl+Enter-triggered regenerate, interrupted mid-stream with
+Escape — both worked, no console errors beyond the pre-existing
+"TavernHelper is not defined" from JS-Slash-Runner not being installed in the
+test environment). No longer owed.
+
+Still owed: the broader mobile/sidebar regression pass.
