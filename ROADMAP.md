@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Roadmap
 
-Last updated: 2026-07-03
+Last updated: 2026-07-05
 
 三份文档的分工:`DESIGN.md` = 产品北极星(目标形态)、`STATUS.md` = 当前实现快照、
 **本文 = 完整度地图 + 剩余工作的优先级排期**。架构记录见 `ARCHITECTURE.md`。
@@ -66,9 +66,9 @@ Last updated: 2026-07-03
 
 | 区域 | 状态 | 已落地 | 还缺 |
 |---|---|---|---|
-| **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂 | 剩余模拟点击写路径迁移、浏览器回归脚本化 |
+| **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂;**2026-07-05**:shield 从裁剪 1x1px 升级为真 `display:none`(切对话强制回流 795ms→74ms),ChatUI 自补 Escape-停止/Ctrl+Enter-重生成/↑-编辑最后一条 3 个原生快捷键 | 剩余模拟点击写路径迁移(降级为架构债,不阻塞)、浏览器回归脚本化 |
 | **①② 顶栏** | 🟢 ~72% | **M-B**:☰ 召唤侧栏、动态标题(绑 chatHeader)、选择框槽 A(人设)、顶栏右 ⋯(重命名/删除,群聊态自动禁用;操作目标已捕获防串 chat) | ★ 收藏、管理聊天文件/转群聊(均缺 adapter 导出)、手机【返回】 |
-| **③ 内容区** | 🟢 ~92% | 角色整宽/用户气泡、操作行、思考块换皮、内联编辑、媒体、swipe `‹n/m›`、代码复制、回到底部钮;**M-D 收尾**:身份标头 3 档可配(群/单各一套)、代码块语言名头、生成回复钮、用户消息平铺全显菜单 | 代码块语言名头仅对声明围栏(自动检测不显,符合预期) |
+| **③ 内容区** | 🟢 ~92% | 角色整宽/用户气泡、操作行、思考块换皮、内联编辑、媒体、swipe `‹n/m›`、代码复制、回到底部钮;**M-D 收尾**:身份标头 3 档可配(群/单各一套)、代码块语言名头、生成回复钮、用户消息平铺全显菜单;**2026-07-05**:```html 卡片挂载为同源 unsandboxed iframe(bootstrap 转发 TavernHelper/SillyTavern/Mvu),高度由 iframe 内部 ResizeObserver + postMessage 上报 | 代码块语言名头仅对声明围栏(自动检测不显,符合预期);卡片沙箱开关、TavernHelper 缺失提醒 toast 待做 |
 | **④ 输入框** | 🟢 ~90% | ＋菜单(置顶磁贴 + 工具列表 + wand 动态)、textarea、选择框 B、发送/停止、附件 chips;**M-C**:QR 悬浮条(镜像 #qr--bar,含 popout)、单/多行切换;**M-F**:＋菜单**置顶磁贴编辑器**(配置面内,封顶 4) | ＋菜单**拖拽排序**编辑器、批量删除磁贴(待 ChatUI 自有多选 UI) |
 | **⑤ 侧栏导航中心** | 🟢 ~88% | **M-G**:Codex-app TWO-PANE `Sidebar | chat`;左栏为 ＋新对话 tab → 角色分组会话列表(单角色归属、每角色最多 5 条、末条预览、按角色最近会话排序)→ 设置;settings 是 two-pane mode swap(左 nav/返回 + ST drawers + ChatUI 区,右 live ST drawer/ChatUI 设置);新对话改 `tempChat` 草稿生命周期,替代旧 metadata/消息数启发式 | 群聊对话列表、手机适配、搜索 🔍、Mode B 更完整的全局视图 |
 | **配置系统**(§7 十项) | 🟢 ~68% | **薄地基**(M-E)+ 标头群/单两套(M-D)+ 单/多行(M-C);**M-F** 迁入四项 select + 首个 §7 编辑器(＋菜单置顶磁贴);**M-G** 退役第三列 ConfigPanel,改为 settings mode swap 并用 embed engine move-not-clone 托管 ST live drawer + precise restore | §7 剩余项、选择框槽位可配、＋菜单拖拽排序、其余编辑器 |
@@ -108,6 +108,12 @@ Last updated: 2026-07-03
   `adapter/`/`store/`/`ui/` 从 esbuild 时代的 `.js`/`.tsx` 整体搬到 `src/` 下并转 `.ts`,`tsconfig` 恢复 `strict`;构建从 esbuild 切到 Vite(`dist/runtime` 走 preserveModules,`dist/root-app.mjs` 单独打包);新增 `scripts/check-runtime.mjs` 拦截生成产物里的 `@st/*`/`process.env`/坏 import;`chats`/`media`/`messages` 的 adapter 边界收窄掉显式 `any`。
 - **xhigh 对抗审查 + 修复**(commits `9edc130`/`be7c17f`,2026-07-03):
   对整条迁移分支(`main...HEAD`)+ 未提交 WIP 跑了一轮 10 角度对抗审查(31 agent、约 320 万 token),发现 14 个真问题,其中 1 个致命——`ui/` → `src/ui/` 目录迁移后 `root.ts` 的产物引用路径少算一层,构建出来的插件**完全无法挂载**,静态检查(`check-runtime.mjs`)测不出来,只有实际跑一遍构建才能复现。其余:`openChatForCharacter` 因 Zod 克隆语义静默进错对话、幽灵附件 chip、settings 面板开合后滚动状态失焦(ref 依赖用了永不变的 ref 对象本身)、`as any` 绕过配置写入校验、UI 层手抄 DTO 类型脱节、`shell.ts` 死代码清理不干净、`sidebar-store.ts` 永远返回空初始态的死代码陷阱、若干处重复逻辑(菜单/QR 注册表、构建脚本 helper、字符串 coercion helper)。全部修复后又跑了一轮独立的 15-agent 逐条对抗复核 + 回归扫描确认无遗留,实机 live-test 通过(角色切换比之前更快)。
+- **卡片 iframe 渲染 + 消息级 HTML 缓存**(commits `d8f5d97`/`79bbff9`/`eb45558`/`075ca77`,2026-07-05):
+  - 聊天消息里的完整 ```html 代码块挂载为同源 unsandboxed iframe(bootstrap 脚本转发 `TavernHelper`/`SillyTavern`/`Mvu`/`EjsTemplate`/`YAML`/`showdown`/`toastr`/`z` 到 iframe 内);iframe 内部脚本自己用 `ResizeObserver` 观察 `body` 并 `postMessage` 上报高度,外部只管应用数字——避免了外部读 `documentElement.scrollHeight` 的两个坑:根元素 scrollHeight 是 `max(当前高度, 内容高度)`,卡片收起后会卡在曾经的最大高度;以及为绕开这坑而"归零再测"造成的可见塌缩闪烁。`display: flow-root` 给 body 一个 BFC,修了子元素 margin 穿透 body 导致内容矮报 40px 的问题(`overflow: hidden` 不行——浏览器会把 body 的 overflow 往 viewport 上传播)。
+  - 消息级 HTML 缓存(`chat-store.ts`):按 `text`/`name`/`is_system`/`is_user`/`extra.uses_system_ui` 等字段比较(不是引用比较——ST 会原地 mutate 消息对象,已在 `script.js:3624`/`:6952` 验证)memoize `formatMessageHtml()`,修复切对话时 ST `{{random::a,b}}` 宏在每次冗余 store 刷新时重新解析、导致卡片反复消失又出现的闪烁 bug。
+  - `useLayoutEffect`(不是 `useEffect`)挂载卡片,原始 ```html``` 源码不会在换成 iframe 前先painting 出来一帧。
+- **shield 切 `display:none` + 自补键盘快捷键**(commit `219bc1d`,2026-07-05):
+  实测切对话时 ST 自己的 jQuery + jquery.transit 消息渲染/动画流水线跑在几万节点的原生 `#chat` 上(shield 此前只是裁剪成 1x1px,DOM 仍在渲染树里),布局+样式重算要 318ms+441ms,强制回流 795ms——这个 DOM 现在根本没人看得见。切 `display:none` 前跑了一轮 5-agent 静态审计,逐条查 ST `script.js`/`RossAscends-mods.js` 里每个模拟点击目标的原生 handler 有没有可见性判断:13 个调用点里 11 个本来就安全,尤其是 `#options`(续写/代笔/重生成/删除模式菜单)整个在 `#sheld` 之外、从来不在被裁剪区域里。真正需要补的是 ST 原生 Escape-停止生成 / Ctrl+Enter-确认编辑或重生成 / ↑-编辑最后一条这三个快捷键——原生实现依赖 `#chat`/`#send_form` 自身可见,`display:none` 后会静默失效——已在 ChatUI 侧用自己的组件状态重新实现(`hooks.ts` 的全局 Escape 监听、`Composer.tsx` 的 Ctrl+Enter/↑ 本地处理;`MessageEditor.tsx` 的取消编辑/确认编辑 Escape/Ctrl+Enter 处理补了 `stopPropagation`,避免跟新的全局 Escape 监听打架)。另发现 `openDeleteMessageMode()`(零调用死代码)会写 `#send_form` 的 inline display 并在退出时写回,跟 bare `display:none` 规则冲突,给 shield 规则加了 `!important` 防御。实测切对话开销:布局+样式重算降到 50ms/4328 元素,强制回流降到 74ms(且已不再是 ST 原生代码,是 ChatUI 自己的渲染)。
 
 ---
 
@@ -116,7 +122,7 @@ Last updated: 2026-07-03
 > 排序依据:分支已 live 但写路径刚加固,先求"可信赖"再堆功能;配置系统(M-E)是横切地基,**早落薄地基**以免后续 M-C/M-D 塞进更多硬编码默认、造成复利返工。
 
 ### 0 · live-test 收尾(进行中)
-本次已测:删除、swipe、滚动、布局、配置面持久化、ST drawer hosting POC;M-G review fixes 的 browser pass 已覆盖 topbar destructive target 二次校验、temp-draft 创建串行化、群聊态 ＋新对话 inert。**仍欠**:续写/代笔/重生成(走 `#options` 模拟点击,最可能哑火)、停止、手机侧栏/settings 回归。
+本次已测:删除、swipe、滚动、布局、配置面持久化、ST drawer hosting POC;M-G review fixes 的 browser pass 已覆盖 topbar destructive target 二次校验、temp-draft 创建串行化、群聊态 ＋新对话 inert。**2026-07-05**:续写/代笔/重生成/停止经静态审计(见下)+ 实机验证(Ctrl+Enter 触发 regenerate、Escape 中途打断)确认安全,不再是"最可能哑火"项。**仍欠**:手机侧栏/settings 回归。
 
 ### ~~M-E · 配置系统**薄地基**~~ ✅ 已落地(commit `abf212f`)
 地基已立:`config-store`(createStore 工厂)+ `adapter/config.js`(ST extension_settings 往返)+ 设置面 select 双向同步。首个真功能 **侧栏三形态记忆** 曾用于 M-A 常驻侧栏,已随 M-G two-pane sidebar 退役;config-store 地基保留。**单/多行开关** 留给 M-C(与输入框同刀做),§7 其余九项随各自归属 milestone 落。
@@ -144,7 +150,7 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
 
 - ~~swipe/delete 从模拟点击切到 ST 导出函数~~ —— **已完成**。
 - ~~adapter 上帝模块(1321 行)拆分 + store 的 pub-sub 工厂化~~ —— **已完成**(commit `8b8e203`:adapter 拆为 8 子模块 + `createStore` 工厂,行为不变)。
-- 剩余 `#options`/抽屉等 **模拟点击写路径**(22 处)迁到 ST 导出 —— 待 live-test 确认导出可用后再迁(见 §0)。
+- 剩余 `#options`/抽屉等 **模拟点击写路径**(22 处)迁到 ST 导出 —— **2026-07-05**:5-agent 静态审计逐条查过 ST `script.js`/`RossAscends-mods.js` 里每个目标的原生 handler,11/13 本来就安全,`#options`(续写/代笔/重生成/删除模式)整个在 `#sheld` 之外、从来不在被 shield 裁剪的区域里,不再是阻塞项。剩 `openDeleteMessageMode()`(零调用死代码)一处——它会写 `#send_form` 的 inline display,需要先处理跟 shield 规则的冲突才能接 UI(shield 规则已加 `!important` 防御)。迁移本身降级为纯架构债 / 代码整洁目标,不再紧急。
 - `content-visibility` 双重渲染优化 —— 等火焰图看实际性能。
 - 人设 chip 懒加载 —— 现每次 selector-sync 都拉 `getUserAvatars`,小优化。
 

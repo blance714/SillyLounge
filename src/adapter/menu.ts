@@ -43,6 +43,16 @@ export function impersonateMessage() {
 }
 
 /**
+ * Currently unreachable from any UI control — do not wire this up before
+ * fixing the issue below. ST's native openMessageDelete() (script.js) writes
+ * #send_form's own inline `style.display` on entry and restores a
+ * page-load-captured default on exit (#dialogue_del_mes_cancel/_ok handlers).
+ * The shield's #send_form rule is a bare `display: none !important`
+ * (style.css), which wins over that restore write, but if it's ever weakened
+ * to drop `!important` (or #send_form's display is ever set inline some other
+ * way) that restore would silently reveal the native composer bar again.
+ * Verified via a 2026-07-05 static audit — see ROADMAP.md's 阻塞项/技术债.
+ *
  * @returns {void}
  */
 export function openDeleteMessageMode() {
