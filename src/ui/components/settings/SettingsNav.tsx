@@ -1,8 +1,9 @@
-import React from 'preact/compat';
+import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { useSettings } from '../../hooks.js';
-import { closeChatuiSettings, setActiveChatuiSettings, listChatuiStSettingsEntries } from '../../actions.js';
+import { closeChatuiSettings, disableChatui, setActiveChatuiSettings, listChatuiStSettingsEntries } from '../../actions.js';
 import type { SettingsEntry } from '../../types.js';
+import { ConfirmDialog } from '../ConfirmDialog.js';
 
 const CHATUI_SETTINGS_ENTRIES: SettingsEntry[] = [
     { id: 'chatui:appearance', section: 'chatui', label: '界面',    iconClass: 'fa-solid fa-sliders-h' },
@@ -17,6 +18,7 @@ const CHATUI_SETTINGS_ENTRIES: SettingsEntry[] = [
 export function SettingsNav(): ComponentChild {
     const { activeSettingsId } = useSettings();
     const stEntries = listChatuiStSettingsEntries();
+    const [confirmingDisable, setConfirmingDisable] = useState(false);
 
     return (
         <nav className="cui-settings-nav" aria-label="设置导航">
@@ -61,6 +63,32 @@ export function SettingsNav(): ComponentChild {
                     </button>
                 ))}
             </div>
+
+            {/* Bottom-pinned: turn ChatUI off and fall back to the native ST UI.
+                Re-enabling afterwards requires the native "ChatUI" extension
+                settings drawer (there is no ChatUI surface left to do it from),
+                so this asks for confirmation first rather than acting instantly. */}
+            <div className="cui-settings-nav-footer">
+                <button
+                    type="button"
+                    className="cui-settings-nav-disable"
+                    onClick={() => setConfirmingDisable(true)}
+                >
+                    <i className="fa-solid fa-power-off" />
+                    <span>关闭 ChatUI</span>
+                </button>
+            </div>
+
+            {confirmingDisable && (
+                <ConfirmDialog
+                    title="关闭 ChatUI?"
+                    message="将恢复 SillyTavern 原生界面。重新开启需要到原生的「ChatUI」扩展设置里勾选。"
+                    confirmLabel="关闭"
+                    danger
+                    onConfirm={disableChatui}
+                    onCancel={() => setConfirmingDisable(false)}
+                />
+            )}
         </nav>
     );
 }
