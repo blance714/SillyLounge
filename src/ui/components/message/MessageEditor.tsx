@@ -52,10 +52,15 @@ export function MessageEditor({
                 onKeyDown={(event) => {
                     if (event.key === 'Escape') {
                         event.preventDefault();
+                        // Stop this from also reaching the app-level Escape-to-stop
+                        // handler (hooks.ts useEscapeToStopGeneration) — cancelling an
+                        // edit should never also abort an unrelated in-flight generation.
+                        event.stopPropagation();
                         onCancel();
                     }
                     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
                         event.preventDefault();
+                        event.stopPropagation();
                         void save();
                     }
                 }}

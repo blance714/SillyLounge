@@ -20,7 +20,7 @@ import { SettingsNav } from './components/settings/SettingsNav.js';
 import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useCardEmbedRendering, useChatuiSnapshot, useConfig, useIsTempChatActive, useRootDomEnhancements, useSidebarBasics, useSettings } from './hooks.js';
+import { useAutoScroll, useCardEmbedRendering, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useRootDomEnhancements, useSidebarBasics, useSettings } from './hooks.js';
 import { clearChatuiToasts, closeChatuiSettings, regenerateChatuiLast } from './actions.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
@@ -72,9 +72,15 @@ function ChatuiApp(): ComponentChild {
     useRootDomEnhancements(rootNode, messages, state.chat.isGenerating);
     useCardEmbedRendering(rootNode, messages, state.chat.isGenerating);
     const { atBottom, scrollToBottom } = useAutoScroll(listNode, messages, state.chat.isGenerating, state.chat.chatKey);
+    useEscapeToStopGeneration(state.chat.isGenerating);
 
     const summonSidebar = () => setIsSidebarMobileOpen(true);
     const dismissSidebarNavigation = () => setIsSidebarMobileOpen(false);
+    const handleEditLast = useCallback(() => {
+        const lastMessage = messages[messages.length - 1];
+        if (!lastMessage || state.chat.isGenerating) return;
+        setEditingMessage({ chatKey: state.chat.chatKey, id: lastMessage.id });
+    }, [messages, state.chat.isGenerating, state.chat.chatKey]);
 
     return (
         <>
@@ -159,7 +165,7 @@ function ChatuiApp(): ComponentChild {
                               isGenerating={state.chat.isGenerating}
                           />
                       )}
-                      <Composer isGenerating={state.chat.isGenerating} />
+                      <Composer isGenerating={state.chat.isGenerating} onEditLast={handleEditLast} />
                   </section>
             }
             <Toaster />
