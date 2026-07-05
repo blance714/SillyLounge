@@ -13,6 +13,7 @@
 
 import { extension_settings } from '@st/extensions';
 import { saveSettingsDebounced, eventSource, event_types } from '@st/script';
+import { CHATUI_DISABLE_EVENT } from './store/chat-actions.js';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { initConfigStore } from './store/config-store.js';
 import { initTempChatStore } from './store/temp-chat-store.js';
@@ -166,6 +167,28 @@ function injectSettingsUI() {
     });
 }
 
+/**
+ * Handles CHATUI_DISABLE_EVENT (dispatched by the in-app "关闭 ChatUI" settings
+ * button — see store/chat-actions.js disableChatui()). Mirrors exactly what
+ * the native #chatui_enabled checkbox's own change handler does, including
+ * syncing that checkbox's visual state, so the native settings drawer stays
+ * consistent with reality if the user ever opens it.
+ *
+ * @returns {void}
+ */
+function disableFromUi() {
+    const settings = getSettings();
+    if (!settings.enabled) return;
+
+    settings.enabled = false;
+    saveSettingsDebounced();
+
+    const enabledCb = document.getElementById('chatui_enabled') as HTMLInputElement | null;
+    if (enabledCb) enabledCb.checked = false;
+
+    teardown();
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 /**
@@ -181,6 +204,7 @@ function init() {
     initConfigStore();
     initTempChatStore();
     injectSettingsUI();
+    window.addEventListener(CHATUI_DISABLE_EVENT, disableFromUi);
     if (settings.enabled) setup();
 }
 

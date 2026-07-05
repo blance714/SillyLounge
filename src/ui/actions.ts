@@ -1,5 +1,6 @@
 export {
     continueChatuiGeneration,
+    disableChatui,
     dismissChatuiToast,
     getChatuiPendingAttachments,
     getChatuiSelectedSelector,

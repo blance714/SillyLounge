@@ -53,6 +53,21 @@ export function stopChatuiGeneration() {
     if (!stopped) notifyChatui('info', '没有正在生成的内容');
 }
 
+/** Window event index.ts listens for to disable ChatUI from inside its own UI. */
+export const CHATUI_DISABLE_EVENT = 'chatui:disable';
+
+/**
+ * Ask index.ts's bootstrap to disable ChatUI (persist the master toggle off,
+ * then unmount the shield/store/Preact root). Decoupled via a plain window
+ * event rather than an import: index.ts sits above the UI/store/adapter
+ * layers and orchestrates all of them, so importing it back from here would
+ * invert that layering.
+ * @returns {void}
+ */
+export function disableChatui() {
+    window.dispatchEvent(new CustomEvent(CHATUI_DISABLE_EVENT));
+}
+
 /**
  * @param {number|string} messageId
  * @param {number} mediaIndex
