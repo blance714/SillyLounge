@@ -1,10 +1,17 @@
-import React, { useEffect, useRef } from 'preact/compat';
+import React, { createPortal, useEffect, useRef } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 
 /**
- * ChatUI-owned confirm dialog (no native ST popup). stopPropagation everywhere
- * so it can be rendered inside a clickable row without triggering it; Escape
- * cancels and the cancel button auto-focuses (safe default for destructive use).
+ * ChatUI-owned confirm dialog (no native ST popup). Portals to document.body:
+ * callers render this inline inside arbitrary rows (e.g. NestedChatRow), and
+ * some of those ancestors carry their own `transform` (the sidebar's slide
+ * animation) — a `transform` anywhere up the tree makes that ancestor the
+ * containing block for this dialog's `position:fixed` overlay instead of the
+ * viewport, so the "modal" ends up sized/positioned against a small,
+ * possibly off-screen box. Portaling sidesteps that regardless of where a
+ * caller mounts it. stopPropagation everywhere so it can still be rendered
+ * inside a clickable row without triggering it; Escape cancels and the
+ * cancel button auto-focuses (safe default for destructive use).
  */
 export function ConfirmDialog({
     title,
@@ -37,7 +44,7 @@ export function ConfirmDialog({
         return () => window.removeEventListener('keydown', onKey);
     }, [onCancel]);
 
-    return (
+    return createPortal(
         <div
             className="cui-root-dialog-overlay"
             onClick={(event) => { event.stopPropagation(); onCancel(); }}
@@ -69,6 +76,7 @@ export function ConfirmDialog({
                     </button>
                 </div>
             </div>
-        </div>
+        </div>,
+        document.body,
     );
 }
