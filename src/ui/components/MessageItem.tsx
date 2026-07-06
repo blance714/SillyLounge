@@ -42,6 +42,7 @@ export function MessageItem({
                 <div className="cui-root-message-meta">
                     {showAvatar && <MessageAvatar message={message} />}
                     <span className="cui-root-message-name">{message.name || message.role}</span>
+                    <span className="cui-root-message-connector" />
                     {timestamp && <span className="cui-root-message-time">{timestamp}</span>}
                     {message.swipe.hasMultiple && (
                         <span className="cui-root-message-swipe">{message.swipe.label}</span>

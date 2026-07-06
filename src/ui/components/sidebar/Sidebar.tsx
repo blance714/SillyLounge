@@ -8,7 +8,6 @@ import { SettingsEntry } from './SettingsEntry.js';
 const SIDEBAR_NAV_SELECTOR = [
     '.cui-root-char-group-header',
     '.cui-root-nested-chat-row',
-    '.cui-root-chat-row',
 ].join(',');
 const SIDEBAR_NAV_IGNORE_SELECTOR = [
     '.cui-root-chat-row-act',
@@ -52,7 +51,7 @@ export function Sidebar({
         if (event.key !== 'Enter' && event.key !== ' ') return;
         const target = event.target instanceof Element ? event.target : null;
         if (!target || target.closest(SIDEBAR_NAV_IGNORE_SELECTOR)) return;
-        if (target.closest('.cui-root-nested-chat-row, .cui-root-chat-row')) scheduleNavigateClose();
+        if (target.closest('.cui-root-nested-chat-row')) scheduleNavigateClose();
     };
 
     return (
