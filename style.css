@@ -281,9 +281,17 @@ body.chatui-active .cui-root-topbar-menu-dropdown {
 
 /* ── Region 5 · sidebar (mobile slide-in overlay / desktop persistent column) ── */
 
+/* height explicit everywhere below, not inferred from inset alone: ST's own
+   `html { transform: translateZ(0); ... }` (unconditional, in ST's own
+   style.css) makes <html> — not the viewport — the containing block for
+   position:fixed here, and <html>'s auto height collapses to 0 since
+   <body> is itself position:fixed and so contributes no in-flow height.
+   `top/bottom:0` alone silently resolves to a 0-height box in that case. */
 body.chatui-active .cui-root-sidebar-backdrop {
     position: fixed;
     inset: 0;
+    height: 100vh;
+    height: 100dvh;
     z-index: calc(var(--cui-sheet-z) + 10);
     border: none;
     background-color: var(--cui-overlay-bg);
@@ -293,6 +301,8 @@ body.chatui-active .cui-root-sidebar-backdrop {
 body.chatui-active .cui-root-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
+    height: 100vh;
+    height: 100dvh;
     z-index: calc(var(--cui-sheet-z) + 11);
     display: flex;
     flex-direction: column;
@@ -563,9 +573,14 @@ body.chatui-active .cui-root-chat-row-act-danger:hover {
 
 /* ── ChatUI-owned confirm dialog ─────────────────────────────────────────────── */
 
+/* height explicit: same <html>-becomes-containing-block quirk as the
+   sidebar backdrop (see comment there) — inset:0 alone silently collapses
+   to 0 height once ST puts <body> at position:fixed on mobile widths. */
 body.chatui-active .cui-root-dialog-overlay {
     position: fixed;
     inset: 0;
+    height: 100vh;
+    height: 100dvh;
     z-index: calc(var(--cui-sheet-z) + 30);
     display: flex;
     align-items: center;
@@ -1555,9 +1570,13 @@ body.chatui-active .cui-root-plus-btn:focus-visible {
     outline: 1px solid var(--interactable-outline-color-faint);
 }
 
+/* height explicit: same <html>-becomes-containing-block quirk as the
+   sidebar backdrop (see comment there). */
 body.chatui-active .cui-root-plus-backdrop {
     position: fixed;
     inset: 0;
+    height: 100vh;
+    height: 100dvh;
     z-index: calc(var(--cui-sheet-z) - 1);
     border: none;
     background-color: var(--cui-overlay-bg);
@@ -1821,9 +1840,13 @@ body.chatui-active .cui-root-selchip-caret {
     opacity: 0.6;
 }
 
+/* height explicit: same <html>-becomes-containing-block quirk as the
+   sidebar backdrop (see comment there). */
 body.chatui-active .cui-root-selchip-backdrop {
     position: fixed;
     inset: 0;
+    height: 100vh;
+    height: 100dvh;
     z-index: calc(var(--cui-popup-z) - 1);
     border: none;
     background: transparent;
