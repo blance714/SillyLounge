@@ -62,6 +62,7 @@ export function NewChatCharacterPicker({
                               </span>
                         }
                         <span className="cui-picker-item-name">{char.name}</span>
+                        <span className="cui-picker-item-mark" aria-hidden="true" />
                     </button>
                 ))}
             </div>
