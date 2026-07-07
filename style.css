@@ -1522,17 +1522,21 @@ body.chatui-active .cui-root-composer-btn {
     width: 2.45rem;
     height: 2.45rem;
     flex: 0 0 auto;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-lg);
-    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     font-size: calc(var(--mainFontSize) * 0.95);
 }
 
-body.chatui-active .cui-root-composer-btn:hover,
+body.chatui-active .cui-root-composer-btn:hover {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+}
+
 body.chatui-active .cui-root-composer-btn:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-strong), transparent);
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    outline: 1px solid var(--interactable-outline-color-faint);
 }
 
 body.chatui-active .cui-root-composer-btn:disabled {
@@ -1560,15 +1564,18 @@ body.chatui-active .cui-root-plus-btn {
     justify-content: center;
     width: 2.45rem;
     height: 2.45rem;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-lg);
+    border: 1px solid transparent;
+    border-radius: 999px;
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     font-size: calc(var(--mainFontSize) * 0.95);
 }
 
-body.chatui-active .cui-root-plus-btn:hover,
+body.chatui-active .cui-root-plus-btn:hover {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+}
+
 body.chatui-active .cui-root-plus-btn:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
     outline: 1px solid var(--interactable-outline-color-faint);
