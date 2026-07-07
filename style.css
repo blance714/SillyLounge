@@ -2046,7 +2046,7 @@ body.chatui-active .cui-picker-item {
     flex: 0 0 auto;
     width: 4rem;
     padding: 0.4rem 0.3rem;
-    border: 1px solid transparent;
+    border: none;
     border-radius: 0.65rem;
     background: none;
     color: var(--cui-color-text);
@@ -2060,18 +2060,12 @@ body.chatui-active .cui-picker-item {
 body.chatui-active .cui-picker-item:hover:not(:disabled),
 body.chatui-active .cui-picker-item:focus-visible:not(:disabled) {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-    border-color: var(--cui-color-border);
     outline: none;
 }
 
 body.chatui-active .cui-picker-item:disabled {
     cursor: default;
     opacity: 0.45;
-}
-
-body.chatui-active .cui-picker-item.is-current {
-    border-color: color-mix(in srgb, var(--cui-color-accent) 55%, transparent);
-    background-color: color-mix(in srgb, var(--cui-color-accent) 8%, transparent);
 }
 
 body.chatui-active .cui-picker-item-avatar {
@@ -2095,6 +2089,7 @@ body.chatui-active .cui-picker-item-avatar-fallback {
 }
 
 body.chatui-active .cui-picker-item-name {
+    font-family: var(--cui-font-display);
     font-size: var(--cui-font-2xs);
     line-height: 1.2;
     max-width: 100%;
@@ -2102,6 +2097,20 @@ body.chatui-active .cui-picker-item-name {
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 0.85;
+}
+
+body.chatui-active .cui-picker-item-mark {
+    width: 1.4rem;
+    height: 2px;
+    border-radius: 999px;
+    background: var(--cui-color-border);
+    opacity: 0.6;
+}
+
+body.chatui-active .cui-picker-item.is-current .cui-picker-item-mark {
+    background: var(--cui-color-accent);
+    opacity: 1;
+    width: 2rem;
 }
 
 /* ---------------------------------------------------------------------------
