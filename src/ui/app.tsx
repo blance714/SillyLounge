@@ -98,7 +98,7 @@ function ChatuiApp(): ComponentChild {
                 : <section ref={rootRef} className="cui-root-app" aria-label="ChatUI message root">
                       <header className="cui-root-topbar">
                           <button
-                              className="cui-root-shell-toggle"
+                              className="cui-root-shell-toggle cui-root-shell-hamburger"
                               type="button"
                               aria-label="Open navigation"
                               title="Open navigation"

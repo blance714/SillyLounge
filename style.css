@@ -350,8 +350,11 @@ body.chatui-active .cui-root-sidebar-title {
 
     body.chatui-active .cui-root-sidebar .cui-root-shell-close { display: none; }
 
-    /* Hide the topbar hamburger on desktop — sidebar is always visible. */
-    body.chatui-active .cui-root-shell-toggle {
+    /* Hide the topbar hamburger on desktop — sidebar is always visible. Scoped
+       to this specific class, not the shared .cui-root-shell-toggle, since the
+       topbar's "..." menu trigger also carries that shared class and must stay
+       visible on desktop. */
+    body.chatui-active .cui-root-shell-hamburger {
         display: none;
     }
 }
