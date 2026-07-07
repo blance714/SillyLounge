@@ -209,7 +209,7 @@ body.chatui-active .cui-root-shell-close {
     justify-content: center;
     width: 2.15rem;
     height: 2.15rem;
-    border: 1px solid var(--cui-color-border);
+    border: 1px solid transparent;
     border-radius: 0.5rem;
     background: none;
     color: var(--cui-color-text);
@@ -231,6 +231,9 @@ body.chatui-active .cui-root-topbar-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--cui-font-display);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     font-size: calc(var(--mainFontSize) * 0.92);
     font-weight: 700;
     opacity: 0.78;
@@ -1816,9 +1819,9 @@ body.chatui-active .cui-root-selchip-btn {
     gap: 0.35rem;
     max-width: 14rem;
     min-height: 1.85rem;
-    padding: 0 0.55rem;
-    border: 1px solid var(--cui-color-border);
-    border-radius: 999px;
+    padding: 0.15rem 0.55rem 0.2rem;
+    border: none;
+    box-shadow: inset 0 -1px 0 0 var(--cui-color-border);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
@@ -1832,6 +1835,11 @@ body.chatui-active .cui-root-selchip-btn:focus-visible {
     opacity: 1;
     background-color: color-mix(in srgb, var(--cui-color-text) 8%, transparent);
     outline: none;
+}
+
+body.chatui-active .cui-root-selchip-btn[aria-expanded="true"] {
+    box-shadow: inset 0 -2px 0 0 var(--cui-color-accent);
+    opacity: 1;
 }
 
 body.chatui-active .cui-root-selchip-label {
