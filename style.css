@@ -707,6 +707,7 @@ body.chatui-active .cui-root-char-group-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--cui-font-display);
 }
 
 body.chatui-active .cui-root-char-group-chats {
@@ -820,6 +821,7 @@ body.chatui-active .cui-root-nested-chat-row-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-family: var(--cui-font-display);
 }
 
 body.chatui-active .cui-root-nested-chat-row-preview {
