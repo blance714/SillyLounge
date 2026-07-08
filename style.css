@@ -102,11 +102,17 @@
     --cui-plus-tile-radius: 0.6rem;
     --cui-plus-tile-bg: color-mix(in srgb, var(--cui-color-text) 6%, transparent);
 
-    /* Sidebar nested-row indent: was 3 independent hardcoded 2.75rem literals
-       kept in sync only by a comment (1.7rem avatar + 0.5rem gap + 0.55rem
-       padding). One shared token now; a full calc() derivation off an
-       avatar-size token is deferred to a later structural pass. */
-    --cui-sidebar-indent: 2.75rem;
+    /* Sidebar nested-row indent: derived from the same three tokens that
+       actually govern the char-group-header row it needs to line up under
+       (avatar width + row gap + the row's own horizontal padding), instead
+       of a hardcoded value kept in sync by a comment. Changing any of the
+       three below now keeps the nested rows aligned automatically. */
+    --cui-sidebar-row-padding-x: 1rem;
+    --cui-sidebar-avatar-size: 1.7rem;
+    --cui-sidebar-row-gap: 0.5rem;
+    --cui-sidebar-indent: calc(
+        var(--cui-sidebar-row-padding-x) + var(--cui-sidebar-avatar-size) + var(--cui-sidebar-row-gap)
+    );
 }
 
 /* ---------------------------------------------------------------------------
@@ -691,7 +697,7 @@ body.chatui-active .cui-root-char-group {
 body.chatui-active .cui-root-char-group-header {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--cui-sidebar-row-gap);
     width: 100%;
     min-height: 2.5rem;
     border: none;
@@ -702,7 +708,7 @@ body.chatui-active .cui-root-char-group-header {
     font-family: var(--cui-font-family);
     font-size: calc(var(--mainFontSize) * 0.94);
     font-weight: 600;
-    padding: 0.3rem 1rem;
+    padding: 0.3rem var(--cui-sidebar-row-padding-x);
     text-align: left;
 }
 
@@ -713,15 +719,15 @@ body.chatui-active .cui-root-char-group-header:focus-visible {
 }
 
 body.chatui-active .cui-root-char-group-avatar {
-    width: 1.7rem;
-    height: 1.7rem;
+    width: var(--cui-sidebar-avatar-size);
+    height: var(--cui-sidebar-avatar-size);
     border-radius: 50%;
     object-fit: cover;
     flex: 0 0 auto;
 }
 
 body.chatui-active .cui-root-char-group-avatar-fallback {
-    width: 1.7rem;
+    width: var(--cui-sidebar-avatar-size);
     text-align: center;
     opacity: 0.6;
     flex: 0 0 auto;
@@ -745,7 +751,7 @@ body.chatui-active .cui-root-char-group-chats {
 }
 
 body.chatui-active .cui-root-char-group-note {
-    padding: 0.25rem 1rem 0.3rem calc(var(--cui-sidebar-indent) + 0.45rem);
+    padding: 0.25rem var(--cui-sidebar-row-padding-x) 0.3rem var(--cui-sidebar-indent);
     color: color-mix(in srgb, var(--cui-color-text) 62%, transparent);
     font-size: calc(var(--mainFontSize) * 0.78);
 }
@@ -783,7 +789,7 @@ body.chatui-active .cui-root-char-group-retry:disabled {
 body.chatui-active .cui-root-char-group-more {
     align-self: flex-start;
     min-height: 1.65rem;
-    margin: 0 0 0.2rem calc(var(--cui-sidebar-indent) + 0.45rem);
+    margin: 0 0 0.2rem var(--cui-sidebar-indent);
     border: none;
     border-radius: 0.35rem;
     background: none;
@@ -811,12 +817,12 @@ body.chatui-active .cui-root-nested-chat-row {
     position: relative;
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--cui-sidebar-row-gap);
     width: 100%;
     min-height: 2.1rem;
     border-left: 2px solid transparent;
     border-radius: 0;
-    padding: 0.25rem 1rem 0.25rem calc(var(--cui-sidebar-indent) - 2px + 0.45rem);
+    padding: 0.25rem var(--cui-sidebar-row-padding-x) 0.25rem calc(var(--cui-sidebar-indent) - 2px);
     cursor: pointer;
     font-size: calc(var(--mainFontSize) * 0.88);
 }
