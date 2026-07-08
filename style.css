@@ -140,7 +140,7 @@ body.chatui-active.chatui-root-visible #chatui-root {
     }
 
     body.chatui-active #sheld {
-        width: min(96vw, 88rem);
+        width: 100vw;
     }
 }
 
@@ -163,6 +163,16 @@ body.chatui-active #top-bar,
 body.chatui-active #top-settings-holder,
 body.chatui-active #rightNavHolder {
     display: none !important;
+}
+
+/* ST reserves --topBarBlockSize (~35px, sized off its own topbar's line
+   height) above #sheld via top/height calc()s in its own stylesheet — since
+   we hide that topbar entirely (above), the reserved gap is now just empty
+   space showing ST's own page background around ChatUI's edges. Zeroing the
+   variable on #sheld fixes both the top offset and the height calc() at
+   once, since ST's own rule references the same custom property for both. */
+body.chatui-active #sheld {
+    --topBarBlockSize: 0px;
 }
 
 /* ---------------------------------------------------------------------------
