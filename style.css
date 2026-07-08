@@ -412,31 +412,48 @@ body.chatui-active .cui-root-sidebar-footer {
     border-top: 1px solid var(--cui-color-border);
 }
 
-body.chatui-active .cui-root-settings-entry {
+body.chatui-active .cui-root-settings-entry,
+body.chatui-active .cui-settings-nav-back,
+body.chatui-active .cui-settings-nav-item,
+body.chatui-active .cui-settings-nav-disable {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
     width: 100%;
-    min-height: 2.35rem;
     border: none;
-    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
+    text-align: left;
+    box-sizing: border-box;
+}
+
+body.chatui-active .cui-root-settings-entry {
+    gap: 0.7rem;
+    min-height: 2.35rem;
+    border-radius: var(--cui-radius-sm);
     font-size: calc(var(--mainFontSize) * 0.94);
     padding: 0 0.65rem;
-    text-align: left;
+}
+
+body.chatui-active .cui-root-settings-entry i,
+body.chatui-active .cui-settings-nav-item i,
+body.chatui-active .cui-settings-nav-disable i {
+    width: 1.25rem;
+    text-align: center;
+    flex: 0 0 auto;
 }
 
 body.chatui-active .cui-root-settings-entry i {
-    width: 1.25rem;
-    text-align: center;
     opacity: 0.78;
 }
 
 body.chatui-active .cui-root-settings-entry:hover,
-body.chatui-active .cui-root-settings-entry:focus-visible {
+body.chatui-active .cui-root-settings-entry:focus-visible,
+body.chatui-active .cui-settings-nav-back:hover,
+body.chatui-active .cui-settings-nav-back:focus-visible,
+body.chatui-active .cui-settings-nav-item:hover,
+body.chatui-active .cui-settings-nav-item:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
     outline: none;
 }
@@ -1040,9 +1057,9 @@ body.chatui-active .cui-root-reasoning-body pre {
     position: relative;
     overflow: auto;
     padding: 0.75rem 2.4rem 0.75rem 0.85rem;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border: 1px solid var(--cui-color-border);
     border-radius: 0.5rem;
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 7%, transparent);
+    background-color: color-mix(in srgb, var(--cui-color-text) 7%, transparent);
     white-space: pre;
 }
 
@@ -1071,11 +1088,11 @@ body.chatui-active .cui-root-edit-textarea {
     min-height: 8rem;
     box-sizing: border-box;
     resize: vertical;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border: 1px solid var(--cui-color-border);
     border-radius: 0.5rem;
-    background-color: color-mix(in srgb, var(--SmartThemeBlurTintColor) 80%, transparent);
-    color: var(--SmartThemeBodyColor);
-    font-family: var(--mainFontFamily);
+    background-color: color-mix(in srgb, var(--cui-color-surface) 80%, transparent);
+    color: var(--cui-color-text);
+    font-family: var(--cui-font-body);
     font-size: var(--mainFontSize);
     line-height: 1.45;
     padding: 0.65rem 0.75rem;
@@ -1097,19 +1114,19 @@ body.chatui-active .cui-root-edit-btn {
     align-items: center;
     gap: 0.4rem;
     min-height: 1.85rem;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border: 1px solid var(--cui-color-border);
     border-radius: 0.4rem;
     background: none;
-    color: var(--SmartThemeBodyColor);
+    color: var(--cui-color-text);
     cursor: pointer;
-    font-family: var(--mainFontFamily);
+    font-family: var(--cui-font-family);
     font-size: calc(var(--mainFontSize) * 0.88);
     padding: 0 0.6rem;
 }
 
 body.chatui-active .cui-root-edit-btn:hover,
 body.chatui-active .cui-root-edit-btn:focus-visible {
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 10%, transparent);
+    background-color: color-mix(in srgb, var(--cui-color-text) 10%, transparent);
 }
 
 body.chatui-active .cui-root-edit-btn:disabled {
@@ -1118,7 +1135,7 @@ body.chatui-active .cui-root-edit-btn:disabled {
 }
 
 body.chatui-active .cui-root-edit-save {
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 12%, transparent);
+    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
 }
 
 body.chatui-active .cui-root-code-copy {
@@ -1130,10 +1147,10 @@ body.chatui-active .cui-root-code-copy {
     justify-content: center;
     width: 1.65rem;
     height: 1.65rem;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border: 1px solid var(--cui-color-border);
     border-radius: 0.35rem;
-    background-color: var(--SmartThemeBlurTintColor);
-    color: var(--SmartThemeBodyColor);
+    background-color: var(--cui-color-surface);
+    color: var(--cui-color-text);
     cursor: pointer;
     opacity: 0.78;
 }
@@ -1210,9 +1227,9 @@ body.chatui-active .cui-root-media-item {
     max-width: min(100%, 22rem);
     margin: 0;
     overflow: hidden;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border: 1px solid var(--cui-color-border);
     border-radius: 0.5rem;
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
+    background-color: color-mix(in srgb, var(--cui-color-text) 5%, transparent);
 }
 
 body.chatui-active .cui-root-media-open {
@@ -1262,12 +1279,12 @@ body.chatui-active .cui-root-file-item {
     align-items: center;
     gap: 0.5rem;
     min-height: 2.35rem;
-    border: 1px solid var(--SmartThemeBorderColor);
+    border: 1px solid var(--cui-color-border);
     border-radius: 0.5rem;
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 5%, transparent);
-    color: var(--SmartThemeBodyColor);
+    background-color: color-mix(in srgb, var(--cui-color-text) 5%, transparent);
+    color: var(--cui-color-text);
     cursor: pointer;
-    font-family: var(--mainFontFamily);
+    font-family: var(--cui-font-family);
     font-size: calc(var(--mainFontSize) * 0.9);
     padding: 0 0.65rem;
     text-align: left;
@@ -1275,7 +1292,7 @@ body.chatui-active .cui-root-file-item {
 
 body.chatui-active .cui-root-file-item:hover,
 body.chatui-active .cui-root-file-item:focus-visible {
-    background-color: color-mix(in srgb, var(--SmartThemeBodyColor) 11%, transparent);
+    background-color: color-mix(in srgb, var(--cui-color-text) 11%, transparent);
     outline: 1px solid var(--interactable-outline-color-faint);
 }
 
@@ -2245,28 +2262,12 @@ body.chatui-active .cui-settings-nav {
 
 /* ←返回 button — full-width, distinct from nav items */
 body.chatui-active .cui-settings-nav-back {
-    display: flex;
-    align-items: center;
     gap: 0.65rem;
-    width: 100%;
     min-height: 2.5rem;
     padding: 0.5rem 0.75rem;
-    border: none;
     border-bottom: 1px solid var(--cui-color-border);
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
     font-size: calc(var(--mainFontSize) * 0.94);
     font-weight: 600;
-    text-align: left;
-    box-sizing: border-box;
-}
-
-body.chatui-active .cui-settings-nav-back:hover,
-body.chatui-active .cui-settings-nav-back:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-    outline: none;
 }
 
 /* Section groupings (ST / ChatUI labels) */
@@ -2278,34 +2279,15 @@ body.chatui-active .cui-settings-nav-section {
 
 /* Nav item buttons */
 body.chatui-active .cui-settings-nav-item {
-    display: flex;
-    align-items: center;
     gap: 0.65rem;
-    width: 100%;
     min-height: 2.3rem;
     padding: 0 0.6rem;
-    border: none;
     border-radius: var(--cui-radius-sm);
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
     font-size: var(--cui-font-tight);
-    text-align: left;
-    box-sizing: border-box;
 }
 
 body.chatui-active .cui-settings-nav-item i {
-    width: 1.25rem;
-    text-align: center;
     opacity: 0.7;
-    flex: 0 0 auto;
-}
-
-body.chatui-active .cui-settings-nav-item:hover,
-body.chatui-active .cui-settings-nav-item:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-    outline: none;
 }
 
 body.chatui-active .cui-settings-nav-item.is-active {
@@ -2328,28 +2310,12 @@ body.chatui-active .cui-settings-nav-footer {
 }
 
 body.chatui-active .cui-settings-nav-disable {
-    display: flex;
-    align-items: center;
     gap: 0.65rem;
-    width: 100%;
     min-height: 2.3rem;
     padding: 0 0.6rem;
-    border: none;
     border-radius: var(--cui-radius-sm);
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
     font-size: var(--cui-font-tight);
-    text-align: left;
-    box-sizing: border-box;
     opacity: 0.75;
-}
-
-body.chatui-active .cui-settings-nav-disable i {
-    width: 1.25rem;
-    text-align: center;
-    flex: 0 0 auto;
 }
 
 body.chatui-active .cui-settings-nav-disable:hover,
