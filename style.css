@@ -505,7 +505,7 @@ body.chatui-active .cui-root-convlist {
     flex-direction: column;
     gap: 0.2rem;
     min-height: 0;
-    padding: 0.45rem;
+    padding: 0.45rem 0;
     border-top: 1px solid var(--cui-color-border);
 }
 
@@ -524,17 +524,18 @@ body.chatui-active .cui-root-newchat {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    width: 100%;
+    width: calc(100% + 0.9rem);
     min-height: 2.2rem;
-    margin-bottom: 0.25rem;
-    border: 1px dashed var(--cui-color-border);
-    border-radius: 0.5rem;
+    margin: 0 -0.45rem 0.25rem;
+    border: none;
+    border-left: 2px solid transparent;
+    border-radius: 0;
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
     font-size: calc(var(--mainFontSize) * 0.92);
-    padding: 0 0.65rem;
+    padding: 0 1.1rem 0 calc(0.65rem + 0.45rem - 2px);
 }
 
 body.chatui-active .cui-root-newchat:hover:not(:disabled),
@@ -544,8 +545,8 @@ body.chatui-active .cui-root-newchat:focus-visible {
 }
 
 body.chatui-active .cui-root-newchat.is-active {
-    border-color: transparent;
-    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
+    border-left-color: var(--cui-color-accent);
+    background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
 }
 
 body.chatui-active .cui-root-newchat:disabled {
@@ -676,14 +677,14 @@ body.chatui-active .cui-root-char-group-header {
     width: 100%;
     min-height: 2.5rem;
     border: none;
-    border-radius: var(--cui-radius-sm);
+    border-radius: 0;
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
     font-size: calc(var(--mainFontSize) * 0.94);
     font-weight: 600;
-    padding: 0.3rem 0.55rem;
+    padding: 0.3rem 1rem;
     text-align: left;
 }
 
@@ -726,7 +727,7 @@ body.chatui-active .cui-root-char-group-chats {
 }
 
 body.chatui-active .cui-root-char-group-note {
-    padding: 0.25rem 0.55rem 0.3rem var(--cui-sidebar-indent);
+    padding: 0.25rem 1rem 0.3rem calc(var(--cui-sidebar-indent) + 0.45rem);
     color: color-mix(in srgb, var(--cui-color-text) 62%, transparent);
     font-size: calc(var(--mainFontSize) * 0.78);
 }
@@ -764,7 +765,7 @@ body.chatui-active .cui-root-char-group-retry:disabled {
 body.chatui-active .cui-root-char-group-more {
     align-self: flex-start;
     min-height: 1.65rem;
-    margin: 0 0 0.2rem var(--cui-sidebar-indent);
+    margin: 0 0 0.2rem calc(var(--cui-sidebar-indent) + 0.45rem);
     border: none;
     border-radius: 0.35rem;
     background: none;
@@ -793,10 +794,11 @@ body.chatui-active .cui-root-nested-chat-row {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    width: 100%;
     min-height: 2.1rem;
     border-left: 2px solid transparent;
-    border-radius: 0.4rem;
-    padding: 0.25rem 0.55rem 0.25rem calc(var(--cui-sidebar-indent) - 2px);
+    border-radius: 0;
+    padding: 0.25rem 1rem 0.25rem calc(var(--cui-sidebar-indent) - 2px + 0.45rem);
     cursor: pointer;
     font-size: calc(var(--mainFontSize) * 0.88);
 }
