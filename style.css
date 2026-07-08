@@ -794,8 +794,9 @@ body.chatui-active .cui-root-nested-chat-row {
     align-items: center;
     gap: 0.5rem;
     min-height: 2.1rem;
+    border-left: 2px solid transparent;
     border-radius: 0.4rem;
-    padding: 0.25rem 0.55rem 0.25rem var(--cui-sidebar-indent);
+    padding: 0.25rem 0.55rem 0.25rem calc(var(--cui-sidebar-indent) - 2px);
     cursor: pointer;
     font-size: calc(var(--mainFontSize) * 0.88);
 }
@@ -807,7 +808,8 @@ body.chatui-active .cui-root-nested-chat-row:focus-visible {
 }
 
 body.chatui-active .cui-root-nested-chat-row.is-current {
-    background-color: color-mix(in srgb, var(--cui-color-text) 11%, transparent);
+    border-left-color: var(--cui-color-accent);
+    background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
 }
 
 body.chatui-active .cui-root-nested-chat-row-icon {
