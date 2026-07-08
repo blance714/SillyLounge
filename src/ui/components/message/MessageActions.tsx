@@ -1,4 +1,4 @@
-import React from 'preact/compat';
+import React, { createPortal, useEffect, useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
     swipeChatuiMessage,
@@ -10,29 +10,78 @@ import { MenuItem } from './MenuItem.js';
 
 type MenuAction = { label: string; iconClass: string; onClick: () => void };
 
+/**
+ * Portals its dropdown to document.body: this button lives inside the
+ * scrollable message list, and a non-portaled position:absolute menu there
+ * both gets clipped for messages near the bottom of the list (nothing to
+ * scroll it into view) and adds to the list's own scrollHeight while open.
+ * Position is a one-shot snapshot of the trigger's rect taken on open; the
+ * menu closes on scroll/resize instead of tracking the trigger live, same
+ * trade-off ConfirmDialog/SelectorChip make for their own portaled/fixed UI.
+ */
 function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
+    const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+    const triggerRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!anchor) return;
+        const close = () => setAnchor(null);
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        return () => {
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+        };
+    }, [anchor]);
+
     if (items.length === 0) return null;
 
+    const toggle = () => {
+        if (anchor) { setAnchor(null); return; }
+        const rect = triggerRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        setAnchor({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+    };
+
     return (
-        <details className="cui-root-action-menu">
-            <summary
+        <div className="cui-root-action-menu">
+            <button
+                ref={triggerRef}
                 className="cui-root-action-btn cui-root-menu-trigger"
+                type="button"
+                aria-haspopup="menu"
+                aria-expanded={anchor != null}
                 aria-label="More actions"
                 title="More actions"
+                onClick={(event) => { event.stopPropagation(); toggle(); }}
             >
                 <i className="fa-solid fa-ellipsis" />
-            </summary>
-            <div className="cui-root-menu">
-                {items.map(item => (
-                    <MenuItem
-                        key={item.label}
-                        label={item.label}
-                        iconClass={item.iconClass}
-                        onClick={item.onClick}
+            </button>
+            {anchor && createPortal(
+                <>
+                    <button
+                        className="cui-root-menu-backdrop"
+                        type="button"
+                        aria-label="Close"
+                        onClick={() => setAnchor(null)}
                     />
-                ))}
-            </div>
-        </details>
+                    <div
+                        className="cui-root-menu"
+                        style={{ position: 'fixed', top: `${anchor.top}px`, right: `${anchor.right}px` }}
+                    >
+                        {items.map(item => (
+                            <MenuItem
+                                key={item.label}
+                                label={item.label}
+                                iconClass={item.iconClass}
+                                onClick={() => { setAnchor(null); item.onClick(); }}
+                            />
+                        ))}
+                    </div>
+                </>,
+                document.body,
+            )}
+        </div>
     );
 }
 
