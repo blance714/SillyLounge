@@ -340,6 +340,14 @@ body.chatui-active .cui-root-sidebar-title {
         inset: auto;
         z-index: auto;
         flex: 0 0 auto;
+        /* Reset the mobile drawer's height:100dvh (needed there because the
+           sidebar is position:fixed against the viewport) back to stretching
+           with its actual flex-row container (#chatui-root), which can be
+           shorter than the viewport when ST's own chrome sits above it —
+           otherwise the sidebar silently overflows past its own container
+           and the footer (SettingsEntry) gets clipped by #chatui-root's
+           overflow:hidden. */
+        height: auto;
         transform: none;
         box-shadow: none;
         overflow: hidden;
