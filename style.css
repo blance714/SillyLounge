@@ -1340,6 +1340,20 @@ body.chatui-active .cui-root-action-menu > summary::-webkit-details-marker {
     display: none;
 }
 
+/* Portaled to document.body alongside the message actions' floating menu
+   (see MessageActions.tsx) — same invisible full-viewport click-outside
+   pattern as .cui-root-selchip-backdrop. */
+body.chatui-active .cui-root-menu-backdrop {
+    position: fixed;
+    inset: 0;
+    height: 100vh;
+    height: 100dvh;
+    z-index: calc(var(--cui-popup-z) - 1);
+    border: none;
+    background: transparent;
+    cursor: default;
+}
+
 body.chatui-active .cui-root-menu {
     position: absolute;
     z-index: var(--cui-popup-z);
