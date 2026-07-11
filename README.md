@@ -114,8 +114,10 @@ it would break that compatibility contract.
 
 ## Docs
 
+- `DESIGN.md`: product north star and testable Manuscript Flow visual contract.
 - `ARCHITECTURE.md`: long-form architecture, migration strategy, and dependency inventory.
 - `STATUS.md`: current progress snapshot, important boundaries, and next milestones.
+- `ROADMAP.md`: completeness map and prioritized remaining work.
 
 ## Runtime Files
 

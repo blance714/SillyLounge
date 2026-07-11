@@ -12,10 +12,8 @@
 > event/DOM semantics it captured. Current architecture: `ARCHITECTURE.md`,
 > `STATUS.md`.
 
-> Authoritative source of truth for all agents writing Phase 2 files in this directory.
-> DESIGN.md §5 is the product spec; this CONTRACT translates it into unambiguous decisions.
-> CONTRACT.md (Phase 1) remains in force — all its rules carry over. This file adds Phase 2 specifics only.
-> Nothing here may be overridden per-file. Conflicts → update this CONTRACT first.
+> Historical constraints only. They do not govern current files or override
+> `DESIGN.md`, `ARCHITECTURE.md`, or the Preact implementation under `src/`.
 
 ---
 

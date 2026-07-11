@@ -1,13 +1,21 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
 `ROADMAP.md` is the live completeness map + priority backlog.
 
-Current checkout: `main` at `a729627`, with the 2026-07-10 hardening described
-below still **uncommitted** in the working tree.
+The 2026-07-10 architecture hardening described below is committed as a series
+of reviewable semantic batches on `main`.
+
+## Current Visual Identity
+
+ChatUI follows the Manuscript Flow contract in `DESIGN.md`: a title-page topbar,
+three tiers of hairline rules, open reading-flow messages, a rust-red user
+margin, a seal-shaped generation state, a quiet index sidebar, and a ledger
+composer. The palette and serif typography support that structure; they are not
+a skin over a generic bubble-chat layout.
 
 ---
 
