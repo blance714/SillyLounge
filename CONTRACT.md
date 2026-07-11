@@ -10,9 +10,8 @@
 > SillyTavern DOM gotchas it captured. For the current architecture see
 > `ARCHITECTURE.md` and `STATUS.md`.
 
-> Authoritative source of truth for all agents writing files in this directory.
-> DESIGN.md is the product spec; this CONTRACT translates it into unambiguous implementation decisions.
-> Nothing here may be overridden per-file. Conflicts → update CONTRACT first.
+> Historical constraints only. They do not govern current files or override
+> `DESIGN.md`, `ARCHITECTURE.md`, or the Preact implementation under `src/`.
 
 ---
 

@@ -1,14 +1,17 @@
 # SillyTavern-ChatUI · Technical Architecture
 
-> **Status (2026-07-10): the migration described below is complete.** ChatUI is
+> **Status (2026-07-11): the migration described below is complete.** ChatUI is
 > an extension-hosted Preact app behind a narrow SillyTavern adapter. The
 > transitional Phase 1/2 layer that reshaped ST DOM in place has been removed
 > (see `STATUS.md` → "Current Architecture"). Authored runtime and UI source now lives
 > under `src/` and is compiled by Vite. The Stage 0–5 narrative in §5 is kept as
 > the design record of how we got here; the "Current coverage" notes reflect the
 > end state. Native `#chat` / `#send_form` remain alive but use `display:none`
-> under the shield, as runtime/fallback surfaces only. The current checkout is
-> `main` at `a729627` with the 2026-07-10 hardening still uncommitted.
+> under the shield, as runtime/fallback surfaces only.
+>
+> `DESIGN.md` is the authority for visible product and Manuscript Flow decisions.
+> This document owns technical boundaries; it must not introduce a competing
+> visual direction.
 
 ---
 
