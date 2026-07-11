@@ -1,13 +1,14 @@
 # SillyTavern-ChatUI · Technical Architecture
 
-> **Status (2026-07-01): the migration described below is complete.** ChatUI is
+> **Status (2026-07-10): the migration described below is complete.** ChatUI is
 > an extension-hosted Preact app behind a narrow SillyTavern adapter. The
 > transitional Phase 1/2 layer that reshaped ST DOM in place has been removed
-> (see `STATUS.md` → "Legacy cleanup"). Authored runtime and UI source now lives
+> (see `STATUS.md` → "Current Architecture"). Authored runtime and UI source now lives
 > under `src/` and is compiled by Vite. The Stage 0–5 narrative in §5 is kept as
 > the design record of how we got here; the "Current coverage" notes reflect the
-> end state. Native `#chat` / `#send_form` remain alive but parked off-screen by
-> the shield, as runtime/fallback surfaces only.
+> end state. Native `#chat` / `#send_form` remain alive but use `display:none`
+> under the shield, as runtime/fallback surfaces only. The current checkout is
+> `main` at `a729627` with the 2026-07-10 hardening still uncommitted.
 
 ---
 
@@ -67,16 +68,24 @@ src/shield/        authored DOM shield
 src/ui/app.tsx     source entry of the ChatUI app
 src/ui/components/ authored Preact UI components
 dist/runtime/      compiled runtime modules copied to the extension root
+  chunks/vendor/   stable bundled runtime dependencies (currently Zod)
 dist/root-app.mjs  compiled UI bundle loaded by the runtime modules
 ```
 
 For local development, run the build from the extension directory:
 
 ```sh
-pnpm run build
+pnpm run verify
+pnpm run runtime
 pnpm run dev
-pnpm run typecheck
 ```
+
+`verify` runs typecheck, Node tests, a clean build, and an assembled runtime
+contract without touching the live tree. `runtime` assembles a complete staging
+candidate, validates manifest entries, every generated relative import, the
+explicit ST external allowlist, and forbidden dependency/local paths, then
+atomically switches the live symlink to that validated release. `dev` uses the
+same candidate validation and publication path.
 
 The preferred repository layout is a single ChatUI repository with two branch
 roles:
@@ -86,7 +95,7 @@ roles:
   files.
 
 For local development, `pnpm run dev` keeps `.runtime/SillyTavern-ChatUI`
-synced. The SillyTavern checkout should symlink its
+validated and current. The SillyTavern checkout should symlink its
 `public/scripts/extensions/third-party/SillyTavern-ChatUI` directory to that
 runtime directory.
 
@@ -104,18 +113,22 @@ Responsibilities:
 - Create the ChatUI root node, for example `#chatui-root`.
 - Hide, dim, relocate, or disable SillyTavern DOM regions that ChatUI replaces.
 - Preserve SillyTavern DOM that the runtime still expects to exist.
-- Restore the page cleanly on extension teardown.
+- Restore the page cleanly on extension teardown or failed setup.
 
 Rules:
 
 - Do not delete SillyTavern DOM nodes unless teardown can fully restore them.
-- Do not start with broad `display: none` over major containers such as `#chat`, `#sheld`, or `#send_form`.
-- Prefer staged shielding:
+- Prefer staged shielding before strengthening a new rule:
   - visual hiding
   - pointer/focus disabling
   - layout isolation
-  - only then `display: none` for proven-unused nodes
+  - only then `display: none` for proven-safe hidden surfaces
 - Keep every shield rule scoped under `body.chatui-active`.
+
+The dependency audit for `#chat` / `#send_form` is complete, so the current
+level-4 shield deliberately uses `display:none` for both. Bootstrap commits that
+visible switch last (`store → root → shield`); rollback/teardown restores the
+shield first and continues through every cleanup even if one throws.
 
 The shield is not a data source. It should not parse message content, infer chat state, or trigger business actions. Those jobs belong to the adapter and store.
 
@@ -159,6 +172,40 @@ Rules:
 - If a SillyTavern operation still requires DOM fallback, keep that fallback inside the adapter and document it.
 - Adapter return values should be plain data, not live SillyTavern DOM nodes.
 
+Raw live messages are projected once at this boundary into immutable,
+fully-normalized `MessageSnapshotDto` values. Store/UI code no longer interprets
+ST catch-all records. Active-chat ownership is also normalized at the boundary:
+`chat-key.ts` encodes typed character/group/unscoped scope plus a session-filename
+locator, so delimiter-like names cannot collide. The filename is intentional:
+ST copies `chat_metadata.integrity` into branches/checkpoints and may generate an
+unsaved replacement for legacy chats, so that field is not a conversation id.
+ChatUI-owned ephemeral state migrates on confirmed chat rename and
+`CHARACTER_RENAMED` events.
+
+Abandoning a temp chat never deletes its file. ST's chat-content read is lossy,
+while its delete endpoint is unconditional and offers no atomic compare-and-set
+against a concurrent save/edit; therefore navigation only releases the exact
+captured temp pointer and leaves the file as an ordinary conversation. Explicit
+user deletion is a separate adapter protocol: carry stable avatar + file name
+across every await, use the raw filename endpoint as existence truth, cancel both
+save timers, and recheck generation/save state. Character-card pointer writes are
+read back through `/api/characters/get`; neither transport failure nor a 2xx from
+`merge-attributes` is treated as durable proof. An ambiguous assignment converges
+by repeating the same idempotent target while the host lane remains owned. If the
+target is current, persist its replacement before DELETE, retry raw post-verification
+until the outcome is known, seal the queue, then hard-reload from durable state.
+`CHAT_DELETED` is emitted only after reload. Versioned `{id,avatar,fileName}`
+tombstones are kept as a set, absence-checked, and retained for idempotent cleanup
+replay because ST's emitter does not expose per-listener acknowledgement. The adapter deliberately never calls
+ST's global-`this_chid` `openCharacterChat()` after deleting a current file.
+
+Rename uses the same stable-avatar readback plus raw before/after file sets to
+resolve response loss and the server-confirmed sanitized filename. A current rename
+does not release the host lane until the live filename exists; it either aligns the
+durable pointer, or terminally reloads a different existing durable winner. Native
+active rename is correlated across ST's `CHAT_CHANGED → CHAT_LOADED → CHAT_RENAMED`
+ordering so ChatUI draft/temp state follows the actual loaded filename.
+
 Current exception: the settings shell can host selected SillyTavern drawer
 contents because those panels are still ST-owned configuration UIs. This is
 implemented only in `src/adapter/settings.ts`: the adapter snapshots the exact
@@ -186,46 +233,11 @@ Example state shape:
 ```js
 {
     chat: {
-        messages: [
-            {
-                id: 0,
-                key: '0',
-                role: 'character',
-                isUser: false,
-                isSystem: false,
-                isChar: true,
-                name: 'Assistant',
-                text: 'Raw visible message text',
-                displayText: 'Display override or text',
-                sendDate: 1782040000000,
-                forceAvatar: false,
-                forceAvatarSrc: '',
-                swipe: {
-                    id: 0,
-                    count: 1,
-                    hasMultiple: false,
-                    label: '',
-                },
-                extra: {
-                    type: '',
-                    isSmallSys: false,
-                    isToolCall: false,
-                    bookmarkLink: '',
-                    tokenCount: null,
-                    reasoning: '',
-                    reasoningDuration: null,
-                },
-                ui: {
-                    isLast: true,
-                    canShowCharActions: true,
-                    canShowUserMenu: false,
-                    canShowSwipe: false,
-                    needsGenerate: false,
-                },
-            },
-        ],
-        byId: {},
+        messageIds: [0],
+        messageCount: 1,
         lastMessageId: 0,
+        chatKey: '["character","avatar.png","session:Chat - 2026-07-10"]',
+        currentChat: { avatar: 'avatar.png', fileName: 'Chat - 2026-07-10' },
         isGroup: false,
         isGenerating: false,
         lastMessageNeedsGenerate: false,
@@ -242,6 +254,69 @@ Rules:
 - Store state should be serializable where practical.
 - Store updates should go through named actions instead of ad-hoc mutation from UI components.
 - Store actions may call the adapter, but the adapter must not import the store.
+
+SillyTavern exposes one mutable active-chat context, so context-sensitive
+mutations share `host-operation-queue.ts`. Every known ChatUI chat-bound entry path
+(navigation, chat-file operations, send, message edit/delete/swipe/media, wand/QR,
+and generation triggers) enters that lifecycle-aware lane and revalidates its
+expected `chatKey` before touching ST. Navigation is last-intent-wins before entry
+into ST; an operation with an observable completion stays in the lane until that
+completion settles. Message edit awaits ST's delegated jQuery handler (including
+its durable save), while generation actions wait without a timeout for start and
+stop/end. A terminal reload seal rejects all queued and newly arriving work. Full
+teardown increments the lifecycle epoch, so queued work from the previous UI
+instance cannot mutate a newly mounted one.
+
+Wand and Quick Reply adapters can observe only their live primary click, not an
+arbitrary third-party handler's asynchronous completion. Their click entry is
+serialized, but plugin-owned work after the click is not claimed as lane-owned.
+
+Async draft state uses explicit ownership rather than timing assumptions:
+
+- temp pointer and optimistic new-chat draft snapshots carry independent
+  versions; abandon/cancel/commit operations compare-and-set before changing
+  state, and abandonment releases ownership without deleting the old file;
+- composer drafts live in `composer-draft-store.ts`, keyed by `chatKey`, so a
+  settings unmount or chat switch cannot lose or leak text;
+- a send token captures `chatKey + text + draftRevision + lifecycleEpoch`,
+  revalidates the live key after waiting in the host queue, and clears only the
+  exact submitted draft. A same-text ABA edit or teardown/re-enable invalidates
+  the token.
+
+Send acceptance and model generation completion are separate contracts. A normal
+user message is accepted only when `USER_MESSAGE_RENDERED` names the captured
+append index, the same chat locator is still active, and that row is actually a
+user row; bare `MESSAGE_SENT` is ignored because extensions can emit it for other
+work. There is no acceptance timer. Bias-only input validates its committed
+system row when generation settles. Empty continuation input waits for full host
+completion. Slash input requires ST's synchronous command-ownership boundary—the
+native textarea is cleared while its slash busy flag is set—so a competing command
+pipeline's normal-returning no-op cannot clear the draft. Acceptance commits the
+exact draft; the host lane and global send gate remain owned until the independent
+`operation.completion` settles.
+
+This is deliberately conservative, but it is not a request-scoped receipt: ST's
+current global events cannot distinguish a genuinely concurrent foreign user
+append at the same index. A complete upstream contract would return
+`{ accepted, completion }` from one textarea-send invocation with a private
+request token; until then a correlation mismatch retains the draft instead of
+guessing success.
+
+Two other strict guarantees require upstream contracts. `merge-attributes` has
+no compare-and-set token, so after a transport-ambiguous pointer assignment the
+client cannot both wait for a late commit and preserve an unrelated other-tab
+winner; ChatUI chooses convergence to the explicit destructive intent while
+holding its local lane. A server conditional-write/operation id is the complete
+fix. Also, native non-active rename events report the requested filename rather
+than the server-sanitized filename; ChatUI therefore refuses to guess that draft
+migration. Active native rename is safe because the loaded key supplies the
+actual destination, and ChatUI-owned non-active rename uses its checked response.
+
+Message DTOs live in a per-id map outside the parent chat snapshot; the parent
+stores only ordered visible ids and aggregate fields. `useChatuiMessage(id)`
+subscribes to one slot, and streaming token bursts are coalesced to one last-row
+refresh per animation frame. In-place stream/edit/swipe updates are therefore
+O(1): no full message-array clone, map spread, or parent chat rerender.
 
 ### 3.4 ChatUI UI
 
@@ -270,6 +345,28 @@ Rules:
 - UI does not import from `script.js`, `extensions.js`, `st-context.js`, or other SillyTavern modules.
 - UI may render into relocated SillyTavern-owned controls only during migration, and those cases must be treated as temporary.
 
+All external stores are consumed through `useSyncExternalStore`, giving Preact a
+stable subscription/snapshot contract. Sidebar server state remains in TanStack
+Query; `SIDEBAR_INVALIDATIONS_BY_EVENT` is the declarative ST-event → cache-scope
+matrix and includes message update, delete, and swipe invalidations. Expensive
+all-character refetches are marked stale first and active queries are drained
+through the tested dependency-free `bounded-work-coordinator.ts`. A duplicate for
+queued work is already covered by that future fetch; an invalidation arriving
+after the fetch starts marks it dirty, and completion requeues exactly one bounded
+follow-up. For an inactive
+first prefetch, the worker awaits the old `query.promise` and calls `query.fetch()`
+directly, so React Query's disabled-query filter cannot swallow the post-event
+request.
+
+### 3.5 HTML Card Trust Boundary
+
+Complete HTML fenced blocks intentionally run in unsandboxed iframes. This is
+required for compatibility with TavernHelper, MVU, and surrounding SillyTavern
+page APIs; executing a card is therefore equivalent to executing trusted chat
+code with page privileges. Users must trust the card, character data, and chat
+history. A sandbox or execution-confirmation gate would change that compatibility
+contract and is explicitly not part of the 2026-07-10 hardening.
+
 ---
 
 ## 4. Data Flow
@@ -290,6 +387,7 @@ Preferred user action flow:
 User clicks ChatUI control
   -> UI handler
   -> Store action
+  -> Shared host-operation queue (for active-chat mutations)
   -> ST Adapter call
   -> SillyTavern runtime
   -> SillyTavern event
@@ -328,7 +426,9 @@ Targets:
 Current coverage:
 
 - Message layout/actions/extras, floating chrome, and plus-menu actions use `src/adapter/st-adapter.ts` for ST state, events, generation status, and DOM fallbacks.
-- Remaining direct ST runtime imports are limited to the extension bootstrap/settings path and Phase 1 selector synchronization, pending later migration.
+- Direct ST runtime imports are contained by `src/adapter/` plus the extension
+  bootstrap's settings registration; the UI/store layers do not import host
+  modules. Remaining DOM dispatches are adapter-contained compatibility debt.
 
 ### Stage 2: Introduce Store
 
@@ -369,7 +469,8 @@ Current coverage:
 - `src/shield/st-dom-shield.ts` creates and removes `#chatui-root` with the global `chatui-active` gate.
 - `src/ui/root.ts` mounts the built ChatUI-owned app shell into `#chatui-root`.
 - The root shell renders a Store-driven message list from `ChatuiMessageDto` objects and subscribes to store updates.
-- The root shell is visually parked by default; Stage 4 will deliberately promote it before hiding the original `#chat` surface.
+- The root shell is the active visible surface; the native chat/composer remain
+  hidden but alive as runtime bridges.
 
 ### Stage 4: Shield Original ST UI
 
@@ -387,19 +488,18 @@ Each item needs a dependency check before stronger hiding.
 
 Current coverage:
 
-- `src/shield/st-dom-shield.ts` applies `data-chatui-shield-level="4"` by default while ChatUI is active (parking both the native `#chat` and `#send_form` surfaces).
+- `src/shield/st-dom-shield.ts` applies `data-chatui-shield-level="4"` by default while ChatUI is active (hiding both native surfaces with `display:none`).
 - Level 1 shields only lightweight native chrome that already has ChatUI replacements or Phase 2 restyling:
   - stock left-form menu/wand buttons replaced by ChatUI's plus menu,
   - native message name/timestamp chrome replaced by ChatUI identity headers,
   - native message buttons replaced by ChatUI action rows/menus,
   - native avatar gutters and user-message swipe chrome hidden by the current message layout.
 - Level 2 promotes the ChatUI-owned `#chatui-root` as a constrained visible message band.
-- Level 3 promotes `#chatui-root` to the primary message surface and moves the original `#chat` surface into a visual background state.
-- The original `#chat` remains alive in the DOM for SillyTavern render/update logic and adapter fallbacks.
-- Level 4 shields the original `#send_form` while keeping the textarea and send
-  pipeline alive for adapter fallbacks.
-- Drawer contents and navigation chrome remain available until their contents
-  are owned by ChatUI.
+- Level 3 promoted `#chatui-root` to the primary message surface.
+- Level 4 now hides both original `#chat` and `#send_form` with `display:none`
+  while keeping their DOM and native pipelines alive for adapter fallbacks.
+- ChatUI owns navigation chrome; hosted ST drawer contents remain live until
+  their individual settings UIs are replaced.
 
 ### Stage 4.5: Root Message UI
 
@@ -421,7 +521,7 @@ Current coverage:
 
 Still deferred:
 
-- Fully ChatUI-owned drawer/sidebar contents.
+- Replacing the currently hosted ST drawer contents with ChatUI-owned settings.
 - Full parity for media editing controls such as caption, delete, and media
   gallery swipes.
 
@@ -463,11 +563,8 @@ Current coverage:
 - `src/shield/st-dom-shield.ts` shields the original `#send_form` at level 4
   without removing it from the DOM.
 
-Still deferred:
-
-- ChatUI-owned attachment chips and queued file display.
-- QR shortcut integration inside the root composer.
-- Direct send API that does not need the native textarea bridge.
+Attachment chips and QR shortcuts are now ChatUI-owned. A direct send API that
+does not need the native textarea bridge remains deferred.
 
 ### Stage 4.8: Root Drawer Foundation
 
@@ -483,11 +580,9 @@ Current coverage:
   such as characters, groups, AI config, world info, personas, extensions, and
   user settings.
 
-Still deferred:
-
-- ChatUI-owned character list, chat list, settings panels, and search.
-- Stable route state for drawers.
-- Focus trapping and deep keyboard navigation inside future drawer contents.
+Character/chat navigation and the ChatUI settings shell are now owned. Search,
+group-chat/global list completeness, stable drawer route state, focus trapping,
+and deeper keyboard navigation remain deferred.
 
 ### Stage 4.9: Root Rich Media
 
@@ -510,7 +605,7 @@ Still deferred:
 
 - Media delete/caption controls.
 - Gallery swipe controls for root media.
-- Rich attachment composer chips.
+- Rich attachment composer editing beyond the current pending-file chips.
 
 ### Stage 5: Optional Extraction
 
@@ -528,10 +623,10 @@ This package would still require a running SillyTavern page. It would be a brows
 
 ## 6. Dependency Inventory
 
-> Note (2026-06-23): the native `#chat` and `#send_form` surfaces are now fully
-> parked off-screen by the shield (default level 4), so the per-element "Level 1"
+> Note (updated 2026-07-10): the native `#chat` and `#send_form` surfaces are
+> hidden with `display:none` by the shield (default level 4), so per-element "Level 1"
 > hiding in the *Hide strategy* column is historical — those native controls are
-> already invisible inside the parked surfaces. The table is kept as the
+> already invisible inside the hidden surfaces. The table is kept as the
 > dependency record; the ChatUI replacements now live in the Preact root and the
 > adapter fallbacks.
 
@@ -539,8 +634,8 @@ Before hiding or replacing a SillyTavern DOM area, record:
 
 | ST area | ChatUI replacement | Runtime dependency | Hide strategy | Done |
 |---|---|---|---|---|
-| `#send_form` | ChatUI composer | send pipeline, hidden textarea bridge, stop control, QR integration | Level 4 shield; keep native form alive for runtime | Partial |
-| `#chat` | ChatUI message list | scrolling, rendered message nodes, edit state, copy buttons, swipe controls, media preview/file fallback | Level 3 visual background; keep ST chat alive for runtime | Yes |
+| `#send_form` | ChatUI composer | send pipeline and hidden textarea bridge | Level 4 `display:none`; keep native form alive for runtime | Partial |
+| `#chat` | ChatUI message list | rendered message nodes and remaining media/file fallbacks | Level 4 `display:none`; keep ST chat alive for runtime | Yes |
 | `.mes_buttons` | ChatUI action row/menu | copy/edit/delete/extra action fallbacks centralized in `adapter/st-adapter.js` | hidden by Level 1 shield | Yes |
 | `#options` | ChatUI plus menu actions | regenerate/delete/continue/impersonate fallbacks centralized in `adapter/st-adapter.js` | source kept alive; launcher hidden by Level 1 shield | Partial |
 | `#attachFile` | ChatUI plus menu attachment tools | file picker fallback centralized in `adapter/st-adapter.js` | keep native control alive | Partial |
@@ -573,8 +668,17 @@ SillyTavern-ChatUI/
       media.ts
       menu.ts
       selectors.ts
-      shell.ts
-      chats.ts
+      schema.ts
+      chat-key.ts
+      chats.ts             # stable public facade
+      chats/
+        state.ts           # DTO contracts + live ST chat context helpers
+        queries.ts         # character/chat list projections
+        navigation.ts      # character and chat switching
+        selection-protocol.ts
+        rename-transaction.ts
+        delete-transaction.ts
+        deletion-finalization.ts
       qr.ts
       config.ts
       settings.ts
@@ -582,9 +686,10 @@ SillyTavern-ChatUI/
       create-store.ts
       chat-store.ts
       chat-actions.ts
-      sidebar-store.ts
       sidebar-actions.ts
+      host-operation-queue.ts
       temp-chat-store.ts
+      composer-draft-store.ts
       config-store.ts
       ui-store.ts
       toast-store.ts
@@ -604,6 +709,7 @@ SillyTavern-ChatUI/
     runtime/
       index.js
       adapter/
+      chunks/vendor/zod.js
       store/
       shield/
       ui/
@@ -613,6 +719,10 @@ SillyTavern-ChatUI/
     build.mjs
     dev.mjs
     runtime.mjs
+    check-runtime.mjs
+    vendor/zod-mini.mjs
+  test/
+    check-runtime.test.mjs
 ```
 
 Authored code belongs under `src/`; generated browser output belongs under
