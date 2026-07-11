@@ -29,25 +29,38 @@ function useRailPlacement(root: HTMLDivElement | null): RailPlacement | null {
         }
         const stage = root.parentElement;
         if (!stage) return;
-        const preciseHover = window.matchMedia(
-            '(min-width: 769px) and (hover: hover) and (pointer: fine)',
-        );
+        const desktop = window.matchMedia('(min-width: 769px)');
+        const preciseHover = window.matchMedia('(any-hover: hover) and (any-pointer: fine)');
+        let observedMouse = false;
 
         const update = () => {
             const app = stage.closest<HTMLElement>('.cui-root-app');
             const stageLeft = stage.getBoundingClientRect().left;
+            const rootLeft = root.getBoundingClientRect().left;
             const appLeft = app?.getBoundingClientRect().left ?? stageLeft;
-            const availableGutter = stageLeft + root.offsetLeft - appLeft;
-            const next = preciseHover.matches && availableGutter >= RAIL_WIDTH_PX
-                ? { left: root.offsetLeft - RAIL_WIDTH_PX }
+            const readingGutterLeft = rootLeft - stageLeft - RAIL_WIDTH_PX;
+            const appBoundaryLeft = appLeft - stageLeft;
+            const hasDesktopPointer = preciseHover.matches
+                || observedMouse
+                || navigator.maxTouchPoints === 0;
+            const next = desktop.matches && hasDesktopPointer
+                ? { left: Math.max(appBoundaryLeft, readingGutterLeft) }
                 : null;
             setPlacement(previous => (
                 previous?.left === next?.left ? previous : next
             ));
         };
+        const observeMouse = (event: PointerEvent) => {
+            if (event.pointerType !== 'mouse') return;
+            observedMouse = true;
+            update();
+            window.removeEventListener('pointermove', observeMouse, true);
+        };
 
         update();
+        desktop.addEventListener('change', update);
         preciseHover.addEventListener('change', update);
+        window.addEventListener('pointermove', observeMouse, { capture: true, passive: true });
         window.addEventListener('resize', update, { passive: true });
         const observer = typeof ResizeObserver === 'function'
             ? new ResizeObserver(update)
@@ -56,7 +69,9 @@ function useRailPlacement(root: HTMLDivElement | null): RailPlacement | null {
         observer?.observe(root);
         return () => {
             observer?.disconnect();
+            desktop.removeEventListener('change', update);
             preciseHover.removeEventListener('change', update);
+            window.removeEventListener('pointermove', observeMouse, true);
             window.removeEventListener('resize', update);
         };
     }, [root]);
