@@ -185,18 +185,36 @@ unsaved replacement for legacy chats, so that field is not a conversation id.
 ChatUI-owned ephemeral state migrates on confirmed chat rename and
 `CHARACTER_RENAMED` events.
 
-Abandoning a temp chat never deletes its file. ST's chat-content read is lossy,
-while its delete endpoint is unconditional and offers no atomic compare-and-set
-against a concurrent save/edit; therefore navigation only releases the exact
-captured temp pointer and leaves the file as an ordinary conversation. Explicit
-user deletion is a separate adapter protocol: carry stable avatar + file name
-across every await, use the raw filename endpoint as existence truth, cancel both
-save timers, and recheck generation/save state. Character-card pointer writes are
-read back through `/api/characters/get`; neither transport failure nor a 2xx from
-`merge-attributes` is treated as durable proof. An ambiguous assignment converges
-by repeating the same idempotent target while the host lane remains owned. If the
-target is current, persist its replacement before DELETE, retry raw post-verification
-until the outcome is known, seal the queue, then hard-reload from durable state.
+ST materializes a real JSONL as soon as `doNewChat()` runs, but its delete
+endpoint has no server-side revision CAS. A client-side read/hash followed by
+DELETE therefore cannot prove that another tab did not save user content between
+the two requests. ChatUI does not auto-delete abandoned drafts. Instead, every
+unadopted `{avatar,fileName}` is a persisted quarantine lease and remains filtered
+from ordinary conversation history. Successful navigation captures the active
+lease only after it owns the host lane—after any still-materializing new-chat task
+has committed—then deactivates but retains that lease. Composer text, pending send,
+and staged attachments are checked before ST's `CHAT_CHANGED` listeners can reset
+them; local work adopts the chat rather than quarantining it.
+
+Quarantine uses one localStorage key per conversation instead of one global slot,
+so different tabs can add drafts without last-writer-wins loss; `storage` events
+merge additions/removals into each live page. The sidebar exposes dormant leases
+in a separate “未完成草稿” shelf with an explicit restore path. Send, edit, swipe,
+delete, attachment/reasoning mutation, and generation-start events remove the
+current lease and publish the conversation normally; prompt dry-runs and quiet
+background probes explicitly do not. Restore first checks the raw filename list,
+so a stale lease cannot make ST recreate a missing file from the greeting. An
+uncertain rename quarantines both old and server-confirmed new identities until
+raw state resolves the conflict. Physical deletion remains an
+explicit user action using the hardened adapter protocol: carry stable avatar +
+file name across every await, use the raw filename endpoint as existence truth,
+cancel both save timers, and recheck generation/save state. Character-card pointer
+writes are read back through
+`/api/characters/get`; neither transport failure nor a 2xx from `merge-attributes`
+is treated as durable proof. An ambiguous assignment converges by repeating the
+same idempotent target while the host lane remains owned. If the target is current,
+persist its replacement before DELETE, retry raw post-verification until the
+outcome is known, seal the queue, then hard-reload from durable state.
 `CHAT_DELETED` is emitted only after reload. Versioned `{id,avatar,fileName}`
 tombstones are kept as a set, absence-checked, and retained for idempotent cleanup
 replay because ST's emitter does not expose per-listener acknowledgement. The adapter deliberately never calls
@@ -278,7 +296,9 @@ Async draft state uses explicit ownership rather than timing assumptions:
 
 - temp pointer and optimistic new-chat draft snapshots carry independent
   versions; abandon/cancel/commit operations compare-and-set before changing
-  state, and abandonment releases ownership without deleting the old file;
+  state. Concrete pointers form a persisted quarantine set; leaving deactivates
+  one lease without publishing it, while adoption or confirmed explicit deletion
+  removes only the matching identity;
 - composer drafts live in `composer-draft-store.ts`, keyed by `chatKey`, so a
   settings unmount or chat switch cannot lose or leak text;
 - a send token captures `chatKey + text + draftRevision + lifecycleEpoch`,

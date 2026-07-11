@@ -81,7 +81,7 @@ src/
     chat-store.ts / chat-actions.ts
     sidebar-actions.ts    Query-facing reads + serialized navigation/chat mutations
     host-operation-queue.ts shared host mutation lane + last-intent-wins navigation
-    temp-chat-store.ts    versioned temp pointer + optimistic-draft CAS state
+    temp-chat-store.ts    persisted quarantine set + active/draft CAS state
     composer-draft-store.ts per-chatKey drafts + send-token CAS gate
     config-store.ts       persisted per-feature config (via adapter/config.ts)
     ui-store.ts           ephemeral session UI state (settings mode / drawer selection)
@@ -161,22 +161,31 @@ been replaced by the Codex-app-style two-pane model: `Sidebar | chat`, with
 settings as a mode swap that shows ChatUI-owned nav on the left and either
 ChatUI-native settings or a live ST drawer host on the right.
 
-New-chat drafts now use an explicit `tempChat` pointer in localStorage instead of
-`chat_metadata.chatui_isNewChat` / message-count heuristics. The pointed draft is
-hidden from the sidebar, highlights the ＋新对话 tab while active, is replaced only
+New-chat drafts now use per-conversation quarantine leases in localStorage instead
+of `chat_metadata.chatui_isNewChat` / message-count heuristics. A leased draft is
+hidden from ordinary history, highlights the ＋新对话 tab while active, is replaced only
 through guarded `doNewChat`, and becomes a normal kept conversation when the user
-sends or edits the greeting. Leaving a pointed draft does **not** auto-delete its
-file: navigation only compare-and-set releases the captured pointer, and the old
-file remains an ordinary conversation. This is deliberate because ST's chat
-content read is lossy and its unconditional delete endpoint offers no atomic CAS
-against a concurrent save or edit.
+sends, edits, swipes, generates, or otherwise mutates it. After successful
+navigation, ChatUI keeps an untouched file in a persisted quarantine set instead
+of releasing it into ordinary history. Navigation captures the active lease only
+after older queued creation has completed, so the quick “new → old chat” path
+cannot miss the concrete filename. Dormant drafts are recoverable from the
+separate 未完成草稿 shelf and do not block another new chat. ST still lacks an
+atomic server-side conditional DELETE, so physical deletion remains an explicit
+user action rather than unsafe background GC. Restore first checks the raw file
+list; prompt dry-runs and quiet background generation do not adopt a draft; an
+uncertain rename keeps both possible filenames quarantined until raw state
+settles.
 
-The current uncommitted 2026-07-10 hardening closes the main correctness gaps
+The current uncommitted 2026-07-10/11 hardening closes the main correctness gaps
 found in the architecture review:
 
-- abandoned temp cleanup is pointer-only: stale navigation may release only the
-  exact captured pointer version; it never infers from lossy content that a chat
-  file is safe to delete;
+- abandoned temp state is a per-conversation quarantine set, not one replaceable
+  pointer. Queued navigation captures after prior creation commits, local
+  draft/send/attachment work adopts before ST resets UI state, and stale departure
+  can deactivate only its exact active generation. Per-pointer localStorage keys
+  plus `storage` synchronization prevent different tabs from overwriting unrelated
+  quarantines;
 - explicit user deletion is keyed by stable avatar + file name and checks the raw
   directory listing both before and after DELETE (not lossy chat search). Both
   chat-save and metadata-save timers are cancelled and generation/save state is
@@ -223,14 +232,14 @@ found in the architecture review:
   covers update/delete/swipe. The extracted bounded coordinator marks an active
   query dirty and requeues exactly one follow-up; inactive first-prefetch work
   awaits the old promise then calls `query.fetch()` directly;
-- runtime publication is staging-first and atomic. The current 25-test Node
+- runtime publication is staging-first and atomic. The current 36-test Node
   suite covers typed filename locators and rename migration, message snapshots,
   temp/composer CAS, host queue/reload semantics, bounded dirty/requeue behavior,
   manifest/import/path contracts, vendor drift, and release switching.
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
-- **2026-07-10 uncommitted hardening** — source/type/build/runtime contracts are
+- **2026-07-10/11 uncommitted hardening** — source/type/build/runtime contracts are
   green. Remaining local debt is broader browser/mobile and business-state-machine
   automation. Upstream debts are a request-scoped send/generation receipt, a
   conditional character-pointer write, async completion receipts for plugin
@@ -294,7 +303,7 @@ replacing the fake/wasteful Zod object-shape checks).
 
 Automated checks for the current uncommitted hardening:
 
-- `CI=true pnpm run verify` (typecheck + 25 Node tests + build + assembled-tree contract)
+- `CI=true pnpm run verify` (typecheck + 36 Node tests + build + assembled-tree contract)
 - `CI=true pnpm run runtime` (build + validate candidate + atomic live publish)
 - `CI=true pnpm run check:runtime` (validate the current live runtime tree)
 - `git diff --check`

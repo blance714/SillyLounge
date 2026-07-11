@@ -3,6 +3,7 @@ import type { ComponentChild } from 'preact';
 import { useSidebarBasics } from '../../hooks.js';
 import { CharacterConversationList } from './CharacterConversationList.js';
 import { NewChatButton } from './NewChatButton.js';
+import { QuarantinedDrafts } from './QuarantinedDrafts.js';
 import { SettingsEntry } from './SettingsEntry.js';
 
 const SIDEBAR_NAV_SELECTOR = [
@@ -90,6 +91,7 @@ export function Sidebar({
                         active={isTempChatActive}
                         onNavigate={onNavigate}
                     />
+                    <QuarantinedDrafts characters={characters} onNavigate={onNavigate} />
                 </div>
                 <CharacterConversationList />
                 <SettingsEntry onNavigate={onNavigate} />
