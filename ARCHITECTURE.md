@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Technical Architecture
 
-> **Status (2026-07-11): the migration described below is complete.** ChatUI is
+> **Status (2026-07-12): the migration described below is complete.** ChatUI is
 > an extension-hosted Preact app behind a narrow SillyTavern adapter. The
 > transitional Phase 1/2 layer that reshaped ST DOM in place has been removed
 > (see `STATUS.md` → "Current Architecture"). Authored runtime and UI source now lives
