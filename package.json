@@ -2,12 +2,18 @@
     "name": "sillytavern-chatui",
     "private": true,
     "type": "module",
+    "engines": {
+        "node": "^20.19.0 || >=22.12.0"
+    },
     "scripts": {
         "build": "node ./scripts/build.mjs",
+        "check:build": "node ./scripts/runtime.mjs --check-only",
         "check:runtime": "node ./scripts/check-runtime.mjs",
         "dev": "node ./scripts/dev.mjs",
-        "runtime": "pnpm run build && node ./scripts/runtime.mjs && node ./scripts/check-runtime.mjs",
+        "runtime": "pnpm run build && node ./scripts/runtime.mjs",
+        "test": "pnpm run build && node --test",
         "typecheck": "tsc --noEmit",
+        "verify": "pnpm run typecheck && pnpm run test && pnpm run check:build",
         "watch": "node ./scripts/dev.mjs"
     },
     "dependencies": {

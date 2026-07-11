@@ -14,6 +14,9 @@ const ROOT_APP_FILE_NAME = 'root-app.mjs';
 const ROOT_APP_SOURCE_SPECIFIER = '../../dist/root-app.mjs';
 const ROOT_APP_EXTERNAL_ID = 'chatui:root-app';
 const ROOT_APP_RUNTIME_PATH = `dist/${ROOT_APP_FILE_NAME}`;
+const RUNTIME_VENDOR_SOURCE_ID = 'zod/mini';
+const RUNTIME_VENDOR_FILE_NAME = 'chunks/vendor/zod.js';
+const RUNTIME_VENDOR_ENTRY = path.join(SCRIPT_DIR, 'vendor', 'zod-mini.mjs');
 const BUILD_TARGET = 'es2020';
 const VITE_LOG_LEVEL = 'info';
 const RUNTIME_ENTRY_DIRS = Object.freeze(['adapter', 'store', 'shield']);
@@ -27,6 +30,7 @@ const ST_EXTERNAL_TARGETS = Object.freeze({
     '@st/bookmarks': { up: 3, file: 'bookmarks.js' },
     '@st/chats': { up: 3, file: 'chats.js' },
     '@st/personas': { up: 3, file: 'personas.js' },
+    '@st/slash-commands': { up: 3, file: 'slash-commands.js' },
     '@st/scripts/RossAscends-mods': { up: 4, file: 'scripts/RossAscends-mods.js' },
 });
 
@@ -47,6 +51,11 @@ const JSX_ESBUILD_OPTIONS = Object.freeze({
     jsxFragment: 'React.Fragment',
 });
 
+const RUNTIME_INTERNAL_EXTERNAL_TARGETS = Object.freeze({
+    [ROOT_APP_EXTERNAL_ID]: ROOT_APP_RUNTIME_PATH,
+    [RUNTIME_VENDOR_SOURCE_ID]: RUNTIME_VENDOR_FILE_NAME,
+});
+
 function createBaseViteOptions() {
     return {
         root: PROJECT_ROOT,
@@ -65,6 +74,30 @@ function runtimeRelativeSpecifier(chunkFileName, targetFileName) {
     const dirname = path.posix.dirname(posixPath(chunkFileName));
     const rel = path.posix.relative(dirname === '.' ? '' : dirname, targetFileName);
     return rel.startsWith('.') ? rel : `./${rel}`;
+}
+
+function stableSourceMapPath(sourcePath) {
+    const normalized = posixPath(sourcePath);
+    const withLeadingSlash = normalized.startsWith('/') ? normalized : `/${normalized}`;
+    const nodeModulesMarker = '/node_modules/';
+    const nodeModulesIndex = withLeadingSlash.lastIndexOf(nodeModulesMarker);
+    if (nodeModulesIndex >= 0) {
+        return `vendor/${withLeadingSlash.slice(nodeModulesIndex + nodeModulesMarker.length)}`;
+    }
+
+    const sourceMarker = '/src/';
+    const sourceIndex = withLeadingSlash.lastIndexOf(sourceMarker);
+    if (sourceIndex >= 0) {
+        return `src/${withLeadingSlash.slice(sourceIndex + sourceMarker.length)}`;
+    }
+
+    if (path.isAbsolute(sourcePath)) {
+        return `sources/${path.basename(sourcePath)}`;
+    }
+
+    return normalized
+        .replace(/^(?:\.\.\/)+/, 'sources/')
+        .replace(/^\.\//, '');
 }
 
 function stExternalPath(id, chunkFileName) {
@@ -129,29 +162,33 @@ async function listRuntimeEntries() {
     return Object.fromEntries(entries);
 }
 
-function rewriteRootAppExternalSpecifiers(code, fileName) {
-    const replacement = runtimeRelativeSpecifier(fileName, ROOT_APP_RUNTIME_PATH);
-    return code.replace(
-        new RegExp(`(['"])${escapeRegex(ROOT_APP_EXTERNAL_ID)}\\1`, 'g'),
-        `"${replacement}"`,
-    );
+function rewriteRuntimeInternalExternalSpecifiers(code, fileName) {
+    let next = code;
+    for (const [id, target] of Object.entries(RUNTIME_INTERNAL_EXTERNAL_TARGETS)) {
+        const replacement = runtimeRelativeSpecifier(fileName, target);
+        next = next.replace(
+            new RegExp(`(['"])${escapeRegex(id)}\\1`, 'g'),
+            `"${replacement}"`,
+        );
+    }
+    return next;
 }
 
-function createRootAppExternalPlugin() {
+function createRuntimeInternalExternalPlugin() {
     return {
-        name: 'chatui-root-app-external',
+        name: 'chatui-runtime-internal-externals',
         resolveId(id) {
             if (id !== ROOT_APP_SOURCE_SPECIFIER) return null;
             return { id: ROOT_APP_EXTERNAL_ID, external: true };
         },
         renderChunk(code, chunk) {
-            const next = rewriteRootAppExternalSpecifiers(code, chunk.fileName);
+            const next = rewriteRuntimeInternalExternalSpecifiers(code, chunk.fileName);
             return next === code ? null : { code: next, map: null };
         },
         generateBundle(_options, bundle) {
             for (const item of Object.values(bundle)) {
                 if (item.type !== 'chunk') continue;
-                item.code = rewriteRootAppExternalSpecifiers(item.code, item.fileName);
+                item.code = rewriteRuntimeInternalExternalSpecifiers(item.code, item.fileName);
             }
         },
     };
@@ -162,7 +199,9 @@ function isStExternal(id) {
 }
 
 function isRuntimeExternal(id) {
-    return isStExternal(id) || id === ROOT_APP_EXTERNAL_ID;
+    return isStExternal(id)
+        || id === ROOT_APP_EXTERNAL_ID
+        || id === RUNTIME_VENDOR_SOURCE_ID;
 }
 
 function isUiRuntimeExternal(id) {
@@ -173,7 +212,7 @@ function isUiRuntimeExternal(id) {
 function createRuntimeBuildOptions(runtimeEntries) {
     return {
         ...createBaseViteOptions(),
-        plugins: [createRootAppExternalPlugin()],
+        plugins: [createRuntimeInternalExternalPlugin()],
         build: {
             target: BUILD_TARGET,
             outDir: RUNTIME_OUT_DIR,
@@ -191,7 +230,32 @@ function createRuntimeBuildOptions(runtimeEntries) {
                     preserveModulesRoot: 'src',
                     entryFileNames: '[name].js',
                     chunkFileNames: 'chunks/[name]-[hash].js',
+                    sourcemapPathTransform: stableSourceMapPath,
                     plugins: [createStExternalRewritePlugin()],
+                },
+            },
+        },
+    };
+}
+
+function createRuntimeVendorBuildOptions() {
+    return {
+        ...createBaseViteOptions(),
+        build: {
+            target: BUILD_TARGET,
+            outDir: RUNTIME_OUT_DIR,
+            emptyOutDir: false,
+            minify: false,
+            sourcemap: true,
+            lib: {
+                entry: RUNTIME_VENDOR_ENTRY,
+                formats: ['es'],
+                fileName: () => RUNTIME_VENDOR_FILE_NAME,
+            },
+            rollupOptions: {
+                output: {
+                    entryFileNames: RUNTIME_VENDOR_FILE_NAME,
+                    sourcemapPathTransform: stableSourceMapPath,
                 },
             },
         },
@@ -221,6 +285,7 @@ function createUiBundleBuildOptions() {
                 output: {
                     entryFileNames: ROOT_APP_FILE_NAME,
                     assetFileNames: 'assets/[name][extname]',
+                    sourcemapPathTransform: stableSourceMapPath,
                 },
             },
         },
@@ -231,6 +296,10 @@ export async function buildRuntimeModules() {
     await build(createRuntimeBuildOptions(await listRuntimeEntries()));
 }
 
+export async function buildRuntimeVendor() {
+    await build(createRuntimeVendorBuildOptions());
+}
+
 export async function buildUiBundle() {
     await build(createUiBundleBuildOptions());
 }
@@ -238,6 +307,7 @@ export async function buildUiBundle() {
 export async function buildAll() {
     await fs.rm(DIST_DIR, { recursive: true, force: true });
     await buildRuntimeModules();
+    await buildRuntimeVendor();
     await buildUiBundle();
 }
 
