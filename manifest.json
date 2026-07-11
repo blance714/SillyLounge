@@ -1,5 +1,5 @@
 {
-    "display_name": "ChatUI 输入框重制",
+    "display_name": "SillyTavern ChatUI",
     "loading_order": 101,
     "requires": [],
     "optional": [],
@@ -7,6 +7,5 @@
     "css": "style.css",
     "author": "blance",
     "version": "0.1.0",
-    "homePage": "https://github.com/SillyTavern/SillyTavern",
     "auto_update": false
 }
