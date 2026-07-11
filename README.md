@@ -18,12 +18,18 @@ Install dependencies:
 pnpm install
 ```
 
-Run typecheck and build:
+Development requires Node.js `^20.19.0` or `>=22.12.0` (the supported Vite
+runtime range).
+
+Run the full local verification gate:
 
 ```sh
-pnpm run typecheck
-pnpm run build
+pnpm run verify
 ```
+
+`verify` runs typecheck, the Node test suite, a clean Vite build, and the
+assembled-runtime build contract. The contract check does not replace the live
+runtime directory.
 
 Generate the local runtime install directory:
 
@@ -36,20 +42,28 @@ on its module-purge prompt:
 
 ```sh
 CI=true pnpm run typecheck
-CI=true pnpm run build
+CI=true pnpm run verify
 CI=true pnpm run runtime
 ```
 
 `pnpm run build` only writes generated artifacts under `dist/`:
 
 - runtime modules: `dist/runtime/`
+- stable runtime dependencies: `dist/runtime/chunks/vendor/`
 - bundled Preact app: `dist/root-app.mjs`
 
-`pnpm run runtime` runs the build, syncs the SillyTavern-loadable tree into
-`.runtime/SillyTavern-ChatUI`, then runs `scripts/check-runtime.mjs` against
-both `dist/` and `.runtime/SillyTavern-ChatUI`. That check fails on unresolved
-`@st/*` aliases, leftover `process.env` / Node globals, and absolute or Node-only
-import specifiers in generated browser files.
+`pnpm run runtime` builds a complete candidate tree beside
+`.runtime/SillyTavern-ChatUI`, validates it, and only then publishes it. The
+validator checks the manifest JS/CSS entries, every generated relative import,
+the explicit SillyTavern external-import allowlist, Node globals, and generated
+paths. `node_modules`, `.pnpm`, unresolved bare imports, and absolute
+machine-local paths are release blockers.
+
+The live path is a symlink to a validated release generation. Replacing that
+pointer is atomic, so SillyTavern sees either the complete previous runtime or
+the complete next runtime. A failed build or validation leaves the previous
+runtime untouched. `pnpm run check:build` validates a newly assembled candidate
+without publishing it; `pnpm run check:runtime` validates the current live tree.
 
 For local development against a SillyTavern checkout, link SillyTavern's
 `public/scripts/extensions/third-party/SillyTavern-ChatUI` path to:
@@ -61,8 +75,8 @@ For local development against a SillyTavern checkout, link SillyTavern's
 On this machine, the concrete symlink target is:
 
 ```text
-/Users/blance/Documents/SillyTavern/public/scripts/extensions/third-party/SillyTavern-ChatUI
-  -> /Users/blance/Documents/SillyTavern-ChatUI/.runtime/SillyTavern-ChatUI
+/Users/blance/Developer/SillyTavern/public/scripts/extensions/third-party/SillyTavern-ChatUI
+  -> /Users/blance/Developer/SillyTavern-ChatUI/.runtime/SillyTavern-ChatUI
 ```
 
 Then run:
@@ -71,8 +85,32 @@ Then run:
 pnpm run dev
 ```
 
-`dev` watches the Vite build inputs and runtime extension files, then keeps the
-`.runtime/SillyTavern-ChatUI` install directory synced.
+`dev` polls only the Vite/runtime source inputs (not `node_modules`). Every rebuild
+goes through the same assembled-tree validation and atomic publication path as
+`runtime`; a broken intermediate build never overwrites the live tree.
+
+## Publishing the installable branch
+
+SillyTavern's Extension Installer does not run this repository's build tools.
+The `dist` branch must therefore contain the contents of the validated runtime
+tree at its branch root: `manifest.json`, `style.css`, `index.js`, the compiled
+module directories (including `chunks/vendor/`), and `dist/root-app.mjs`.
+
+Do not publish the development branch's generated `dist/` directory by itself:
+that directory intentionally lacks the manifest, stylesheet, and extension-root
+layout. Run `pnpm run verify` first, then `pnpm run runtime`, and take the
+installable payload from the resolved `.runtime/SillyTavern-ChatUI/` tree. There
+is currently no repository CI or automated branch publication; these commands
+are the local release gate.
+
+## HTML card trust model
+
+HTML card iframes are intentionally unsandboxed so trusted cards can integrate
+with TavernHelper, MVU, and the surrounding SillyTavern runtime. Running such a
+card is equivalent to running code supplied by that chat with the extension's
+page privileges. Only load cards, character data, and chat histories you trust.
+Sandboxing or an execution-confirmation gate is deliberately not applied because
+it would break that compatibility contract.
 
 ## Docs
 
@@ -84,6 +122,7 @@ pnpm run dev
 The generated runtime directory intentionally excludes:
 
 - `node_modules/`
+- `.pnpm/`
 - `.pnpm-store/`
 - `package.json`
 - `tsconfig.json`

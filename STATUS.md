@@ -1,10 +1,13 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-05
+Last updated: 2026-07-10
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
 `ROADMAP.md` is the live completeness map + priority backlog.
+
+Current checkout: `main` at `a729627`, with the 2026-07-10 hardening described
+below still **uncommitted** in the working tree.
 
 ---
 
@@ -29,12 +32,13 @@ src/index.ts -> index.js
   |     (hides native #chat / #send_form via display:none; promotes #chatui-root)
   |
   +-- src/adapter/ -> adapter/  (the ONLY layer that touches ST internals)
-  |     st-adapter.js is the frozen facade; behavior split across
+  |     st-adapter.ts is the frozen facade; behavior split across
   |     internals · messages · composer · media · menu · selectors ·
-  |     shell · chats · qr · config · settings submodules; returns plain DTOs
+  |     chats · qr · config · settings submodules; returns immutable DTOs
   |
   +-- src/store/ -> store/  (ST-free observable view-model, createStore factory)
-  |     chat · sidebar · config · ui · toast stores + *-actions facades
+  |     chat/config/ui/toast/temp/composer stores + named action facades;
+  |     host-operation-queue serializes mutable active-chat operations
   |
   +-- src/ui/root.ts -> ui/root.js -> dist/root-app.mjs
         Preact/compat app built from src/ui/app.tsx; reads stores via hooks,
@@ -58,14 +62,19 @@ src/
   adapter/                ST runtime boundary — facade + per-domain submodules
     st-adapter.ts         frozen facade (groups the submodule actions)
     internals.ts          shared ST context / event / dispatch helpers
-    schema.ts             Zod runtime schemas (real per-field types + safe fallbacks) for raw ST/fetch/DOM adapter inputs
+    schema.ts             Zod schemas + immutable MessageSnapshot DTO projector
+    chat-key.ts           typed, collision-free character/group chatKey codec
     messages.ts  composer.ts  media.ts  menu.ts  selectors.ts
-    shell.ts     chats.ts     qr.ts     config.ts     settings.ts
+    chats.ts              stable chat adapter facade
+    chats/                state/query/navigation + rename/delete protocols
+    qr.ts        config.ts     settings.ts
   store/                  ST-free observable view-model (createStore factory)
     create-store.ts       tiny observable store primitive
     chat-store.ts / chat-actions.ts
-    sidebar-store.ts / sidebar-actions.ts
-    temp-chat-store.ts    single new-chat draft pointer (localStorage), replaces the old pending-new-chat marker
+    sidebar-actions.ts    Query-facing reads + serialized navigation/chat mutations
+    host-operation-queue.ts shared host mutation lane + last-intent-wins navigation
+    temp-chat-store.ts    versioned temp pointer + optimistic-draft CAS state
+    composer-draft-store.ts per-chatKey drafts + send-token CAS gate
     config-store.ts       persisted per-feature config (via adapter/config.ts)
     ui-store.ts           ephemeral session UI state (settings mode / drawer selection)
     toast-store.ts        ChatUI feedback layer
@@ -85,16 +94,18 @@ src/
       message/  ActionButton MenuItem MessageActions MessageAvatar
                 MessageEditor MessageMedia MessageReasoning
   types/st-externals.d.ts SillyTavern host-module declarations
-scripts/                  build / dev / runtime-sync tooling
+scripts/                  build / dev / validated atomic-runtime tooling
+test/                     Node built-in state/runtime contract tests
 dist/                     generated browser output (gitignored)
 ```
 
 The extension installer does not build plugins. Authored Preact/TSX is bundled
 with Vite into `dist/root-app.mjs`; runtime TS modules are compiled with Vite
-into `dist/runtime/`, and `pnpm run runtime` syncs the loadable tree into
-`.runtime/SillyTavern-ChatUI`. The full runtime chain is `src/` →
-`dist/runtime/` + `dist/root-app.mjs` → `.runtime/SillyTavern-ChatUI` →
-SillyTavern's third-party symlink.
+into `dist/runtime/`, with Zod bundled at the stable
+`dist/runtime/chunks/vendor/zod.js` path. `pnpm run runtime` assembles a complete
+candidate beside the live tree, validates the manifest/module graph and browser
+artifact contract, then atomically switches `.runtime/SillyTavern-ChatUI` to the
+validated release generation. `dev` uses the same validation/publication path.
 
 ---
 
@@ -146,27 +157,85 @@ New-chat drafts now use an explicit `tempChat` pointer in localStorage instead o
 `chat_metadata.chatui_isNewChat` / message-count heuristics. The pointed draft is
 hidden from the sidebar, highlights the ＋新对话 tab while active, is replaced only
 through guarded `doNewChat`, and becomes a normal kept conversation when the user
-sends or edits the greeting.
+sends or edits the greeting. Leaving a pointed draft does **not** auto-delete its
+file: navigation only compare-and-set releases the captured pointer, and the old
+file remains an ordinary conversation. This is deliberate because ST's chat
+content read is lossy and its unconditional delete endpoint offers no atomic CAS
+against a concurrent save or edit.
+
+The current uncommitted 2026-07-10 hardening closes the main correctness gaps
+found in the architecture review:
+
+- abandoned temp cleanup is pointer-only: stale navigation may release only the
+  exact captured pointer version; it never infers from lossy content that a chat
+  file is safe to delete;
+- explicit user deletion is keyed by stable avatar + file name and checks the raw
+  directory listing both before and after DELETE (not lossy chat search). Both
+  chat-save and metadata-save timers are cancelled and generation/save state is
+  rechecked. Character-card pointer writes require stable-avatar server readback;
+  neither a dropped response nor `merge-attributes` 2xx is durable proof. For a
+  current target, the page seals the host queue and reloads from the verified
+  replacement after raw DELETE confirmation. Cleanup runs only in the rebuilt
+  page and absence-checked, versioned tombstones are retained as a set for
+  idempotent retry because ST cannot acknowledge individual `CHAT_DELETED`
+  listeners;
+- current chat rename uses raw pre/post file sets, the server-sanitized filename,
+  pointer readback, and a final live-file safety proof. Response-loss ambiguity
+  holds the lane; if a different real durable chat wins, a terminal reload rebuilds
+  pointer and messages together. Active native rename preserves drafts across
+  ST's reload-before-event ordering;
+- setup is transactional (`store → root → shield`), teardown/rollback always
+  attempts every cleanup, and partial event subscriptions are rolled back;
+- `chat-key.ts` uses a typed character/group/unscoped tuple plus the session
+  filename as an ephemeral locator. This makes metadata-copy branches distinct
+  and legacy reloads stable; confirmed chat renames and `CHARACTER_RENAMED`
+  migrate ChatUI-owned drafts/temp pointers instead of misusing ST's non-unique
+  `chat_metadata.integrity` as a conversation id;
+- all known ChatUI chat-bound entry paths share `host-operation-queue.ts`, revalidate the
+  expected `chatKey` before entering ST, and are invalidated by a teardown epoch.
+  Queued navigation remains last-intent-wins; observable async completions retain
+  the lane, terminal reload rejects old/new work, and message edit awaits ST's
+  delegated jQuery handler through its save. Wand/QR can guarantee only serialized
+  click entry because arbitrary plugin async completion is not observable;
+- temp pointer/optimistic draft mutations use versioned compare-and-set. Composer
+  drafts are per `chatKey`, and send tokens capture both draft revision and
+  lifecycle epoch, so text ABA or teardown/re-enable cannot clear a newer draft;
+- normal-send acceptance has no arbitrary timeout and ignores bare
+  `MESSAGE_SENT`: it requires the same chat locator, the captured append index,
+  `USER_MESSAGE_RENDERED`, and an actual user row. Bias-only input is checked
+  against its committed system row; empty continuation waits full completion;
+  slash commands additionally require the native input-clear/busy ownership
+  boundary so a competing slash no-op cannot clear the draft. The independent
+  generation `completion` can fail later, while the shared host lane stays owned
+  until it settles;
+- raw host messages stop at the adapter as immutable `MessageSnapshotDto`
+  objects. The parent chat store keeps message ids while each row subscribes to
+  its own DTO slot, so coalesced streaming refresh is O(1) without a full-list
+  clone or parent rerender. The declarative ST event → Query invalidation table
+  covers update/delete/swipe. The extracted bounded coordinator marks an active
+  query dirty and requeues exactly one follow-up; inactive first-prefetch work
+  awaits the old promise then calls `query.fetch()` directly;
+- runtime publication is staging-first and atomic. The current 25-test Node
+  suite covers typed filename locators and rename migration, message snapshots,
+  temp/composer CAS, host queue/reload semantics, bounded dirty/requeue behavior,
+  manifest/import/path contracts, vendor drift, and release switching.
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
-- **Short-term migration hardening** — Day 1-4.5 are done: build/runtime docs are
-  pinned down, generated artifact checks are wired into `runtime`,
-  `scripts/build.mjs` has named runtime/UI/ST-external/browser-define sections,
-  and `chats` / `media` / `messages` adapter boundaries now expose local DTO and
-  input types without explicit `any`; raw ST/fetch/DOM inputs now pass through
-  `src/adapter/schema.ts` Zod parsers before becoming ChatUI DTOs — as of
-  2026-07-03 these parsers do real per-field validation with safe fallbacks, not
-  just object-shape checks. Next: regression checklist.
-- **2026-07-03 xhigh adversarial review** of the full JS→TS/Vite/TanStack-Query
-  migration branch (`main...HEAD` + then-uncommitted WIP) found 14 issues,
+- **2026-07-10 uncommitted hardening** — source/type/build/runtime contracts are
+  green. Remaining local debt is broader browser/mobile and business-state-machine
+  automation. Upstream debts are a request-scoped send/generation receipt, a
+  conditional character-pointer write, async completion receipts for plugin
+  clicks, and the actual sanitized target on non-active native rename events.
+- **2026-07-03 xhigh adversarial review** of the then-current
+  JS→TS/Vite/TanStack-Query migration diff + WIP found 14 issues,
   including one critical build-breaking bug: the `ui/` → `src/ui/` directory
   move left `root.ts`'s bundle import path one level short, so the extension
   failed to mount at all in SillyTavern (static checks didn't catch it — only
   an actual build reproduced it). All 14 fixed, independently re-verified by a
   second adversarial pass, and confirmed live. See `ROADMAP.md`'s 已完成
   section for the full list.
-- **2026-07-05**: html/js card embeds (```html fenced blocks render as live
+- **2026-07-05**: html/js card embeds (HTML fenced blocks render as live
   same-origin iframes, auto-sized via an internal ResizeObserver + postMessage
   instead of an external `scrollHeight` read), a message-level HTML memo cache
   in `chat-store.ts` (fixes a `{{random}}`-macro-driven flicker on chat
@@ -183,9 +252,16 @@ sends or edits the greeting.
   above confirmed they don't depend on native-surface visibility either way.
 - Group-chat conversation list, search 🔍, Mode B global list.
 - Still not built: a toast warning when a card script calls a
-  TavernHelper-dependent function but TavernHelper isn't installed, and an
-  opt-in "sandbox card iframes" advanced setting (cards are unsandboxed by
-  default today).
+  TavernHelper-dependent function but TavernHelper isn't installed.
+
+### HTML card trust model
+
+HTML cards intentionally run in unsandboxed iframes so TavernHelper/MVU and the
+surrounding SillyTavern page APIs remain compatible. Loading a card is therefore
+equivalent to running code from that chat with page privileges: cards, character
+data, and chat histories must be trusted. This is a product compatibility
+boundary, not an accidental missing sandbox; the 2026-07-10 hardening does not
+add a sandbox or execution-confirmation gate.
 
 ---
 
@@ -208,12 +284,11 @@ loads correctly, no console errors, and character switching is noticeably
 faster than before (progressive sidebar loading + real schema validation
 replacing the fake/wasteful Zod object-shape checks).
 
-Automated checks for the current migration + fix pass:
+Automated checks for the current uncommitted hardening:
 
-- `CI=true pnpm run typecheck`
-- `CI=true pnpm run build`
-- `CI=true pnpm run runtime` (build + sync + generated artifact check)
-- `CI=true pnpm run check:runtime` (standalone generated artifact check)
+- `CI=true pnpm run verify` (typecheck + 25 Node tests + build + assembled-tree contract)
+- `CI=true pnpm run runtime` (build + validate candidate + atomic live publish)
+- `CI=true pnpm run check:runtime` (validate the current live runtime tree)
 - `git diff --check`
 - `node --check` on representative generated runtime modules and the UI bundle
 - 2026-07-03: a 31-agent xhigh adversarial review (10 finder angles + verify +
