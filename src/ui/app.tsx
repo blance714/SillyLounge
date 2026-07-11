@@ -101,6 +101,10 @@ function ChatuiApp(): ComponentChild {
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const { settingsOpen } = useSettings();
     const messageIds = state.chat.messageIds;
+    const conversationTitle = chatHeader.sessionName || chatHeader.characterName || 'ChatUI';
+    const conversationEyebrow = chatHeader.characterName && chatHeader.characterName !== conversationTitle
+        ? chatHeader.characterName
+        : chatHeader.isGroup ? '群组手记' : '对话手记';
     const listRef = useCallback((node: HTMLDivElement | null) => {
         setListNode(node);
     }, []);
@@ -150,45 +154,50 @@ function ChatuiApp(): ComponentChild {
                           >
                               <i className="fa-solid fa-bars" />
                           </button>
-                          <SelectorChips kinds={['persona']} />
-                          <span className="cui-root-topbar-title">
-                              {chatHeader.characterName || chatHeader.sessionName || 'ChatUI'}
-                          </span>
-                          <TopbarMenu />
+                          <div className="cui-root-topbar-heading">
+                              <span className="cui-root-topbar-eyebrow">{conversationEyebrow}</span>
+                              <h1 className="cui-root-topbar-title">{conversationTitle}</h1>
+                          </div>
+                          <div className="cui-root-topbar-tools">
+                              <SelectorChips kinds={['persona']} />
+                              <TopbarMenu />
+                          </div>
                       </header>
-                      <div
-                          ref={listRef}
-                          className="cui-root-message-list"
-                          role="log"
-                          aria-live="polite"
-                          aria-relevant="additions text"
-                      >
-                          {messageIds.map(messageId => (
-                              <ChatuiMessageRow
-                                  key={`${state.chat.chatKey}:${messageId}`}
-                                  messageId={messageId}
-                                  headerMode={headerMode}
-                                  isGenerating={state.chat.isGenerating}
-                                  isEditing={editingMessage?.chatKey === state.chat.chatKey && editingMessage.id === messageId}
-                                  onStartEdit={() => setEditingMessage({ chatKey: state.chat.chatKey, id: messageId })}
-                                  onFinishEdit={() => setEditingMessage(null)}
-                              />
-                          ))}
+                      <div className="cui-root-message-stage">
+                          <div
+                              ref={listRef}
+                              className="cui-root-message-list"
+                              role="log"
+                              aria-live="polite"
+                              aria-relevant="additions text"
+                          >
+                              {messageIds.map(messageId => (
+                                  <ChatuiMessageRow
+                                      key={`${state.chat.chatKey}:${messageId}`}
+                                      messageId={messageId}
+                                      headerMode={headerMode}
+                                      isGenerating={state.chat.isGenerating}
+                                      isEditing={editingMessage?.chatKey === state.chat.chatKey && editingMessage.id === messageId}
+                                      onStartEdit={() => setEditingMessage({ chatKey: state.chat.chatKey, id: messageId })}
+                                      onFinishEdit={() => setEditingMessage(null)}
+                                  />
+                              ))}
+                              {state.chat.isGenerating && <GeneratingIndicator />}
+                          </div>
+                          <div className="cui-root-empty" hidden={messageIds.length > 0}>
+                              No messages
+                          </div>
+                          <button
+                              className="cui-root-scroll-bottom"
+                              type="button"
+                              hidden={atBottom}
+                              aria-label="回到底部"
+                              title="回到底部"
+                              onClick={scrollToBottom}
+                          >
+                              <i className="fa-solid fa-arrow-down" />
+                          </button>
                       </div>
-                      {state.chat.isGenerating && <GeneratingIndicator />}
-                      <div className="cui-root-empty" hidden={messageIds.length > 0}>
-                          No messages
-                      </div>
-                      <button
-                          className="cui-root-scroll-bottom"
-                          type="button"
-                          hidden={atBottom}
-                          aria-label="回到底部"
-                          title="回到底部"
-                          onClick={scrollToBottom}
-                      >
-                          <i className="fa-solid fa-arrow-down" />
-                      </button>
                       {state.chat.lastMessageNeedsGenerate && !state.chat.isGenerating && (
                           <div className="cui-root-generate-bar">
                               <button

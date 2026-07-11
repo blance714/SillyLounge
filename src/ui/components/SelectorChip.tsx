@@ -16,6 +16,12 @@ const KIND_ICON: Record<SelectorKind, string> = {
     persona: 'fa-solid fa-user',
 };
 
+const KIND_LABEL: Record<SelectorKind, string> = {
+    preset: '预设',
+    model: '模型',
+    persona: '人设',
+};
+
 function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): ComponentChild {
     const [isOpen, setIsOpen] = useState(false);
     const [options, setOptions] = useState<SelectorOption[]>([]);
@@ -64,8 +70,10 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
             <button
                 className="cui-root-selchip-btn"
                 type="button"
+                aria-label={`${KIND_LABEL[kind]}：${current?.label || '未选择'}`}
                 aria-haspopup="listbox"
                 aria-expanded={isOpen}
+                title={`${KIND_LABEL[kind]}：${current?.label || '未选择'}`}
                 onClick={() => setIsOpen(open => !open)}
             >
                 <i className={icon} />

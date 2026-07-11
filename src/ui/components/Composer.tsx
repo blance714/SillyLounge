@@ -17,9 +17,9 @@ import { useComposerDraft, useConfig } from '../hooks.js';
 
 export function GeneratingIndicator(): ComponentChild {
     return (
-        <div className="cui-root-generating">
-            <i className="fa-solid fa-spinner fa-spin" />
-            <span>Generating</span>
+        <div className="cui-root-generating" role="status" aria-atomic="true">
+            <span className="cui-root-generating-seal" aria-hidden="true" />
+            <span className="cui-root-generating-label">落笔中</span>
         </div>
     );
 }
@@ -88,7 +88,7 @@ export function Composer({
                     value={draft}
                     rows={singleLine ? 1 : Math.min(8, Math.max(2, draft.split('\n').length))}
                     disabled={isSending}
-                    placeholder="Message"
+                    placeholder="写下这一夜……"
                     onInput={(event) => setDraft(event.currentTarget.value)}
                     onKeyDown={(event) => {
                         // Mirrors ST's native RossAscends-mods.js hotkeys, which key off
@@ -132,7 +132,9 @@ export function Composer({
                         title={draft.trim() ? 'Send message' : 'Send or continue'}
                         disabled={isSending}
                     >
-                        <i className={isSending ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-paper-plane'} />
+                        {isSending
+                            ? <i className="fa-solid fa-spinner fa-spin" />
+                            : <span className="cui-root-send-glyph" aria-hidden="true">→</span>}
                     </button>
                 )}
             </div>
