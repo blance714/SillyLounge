@@ -18,28 +18,32 @@ let _attachmentAcceptRestore: (() => void) | null = null;
  * @param {string} optionId
  * @returns {void}
  */
-export function triggerOptionsAction(optionId: any) {
+export function triggerOptionsAction(optionId: any): boolean {
     if (typeof window.$ === 'function') {
-        window.$(`#options #${optionId}`).trigger('click', [{ fromSlashCommand: true }]);
-        return;
+        const button = window.$(`#options #${optionId}`);
+        if (!button?.length) return false;
+        button.trigger('click', [{ fromSlashCommand: true }]);
+        return true;
     }
 
     const button = document.querySelector(`#options #${optionId}`);
-    if (button) _dispatchClick(button);
+    if (!button) return false;
+    _dispatchClick(button);
+    return true;
 }
 
 /**
  * @returns {void}
  */
 export function continueMessage() {
-    triggerOptionsAction('option_continue');
+    if (!triggerOptionsAction('option_continue')) throw new Error('[ChatUI/adapter] Continue action not found');
 }
 
 /**
  * @returns {void}
  */
 export function impersonateMessage() {
-    triggerOptionsAction('option_impersonate');
+    if (!triggerOptionsAction('option_impersonate')) throw new Error('[ChatUI/adapter] Impersonate action not found');
 }
 
 /**
@@ -56,14 +60,14 @@ export function impersonateMessage() {
  * @returns {void}
  */
 export function openDeleteMessageMode() {
-    triggerOptionsAction('option_delete_mes');
+    if (!triggerOptionsAction('option_delete_mes')) throw new Error('[ChatUI/adapter] Delete mode action not found');
 }
 
 /**
  * @returns {void}
  */
 export function regenerateFromPlusMenu() {
-    triggerOptionsAction('option_regenerate');
+    if (!triggerOptionsAction('option_regenerate')) throw new Error('[ChatUI/adapter] Regenerate action not found');
 }
 
 /**
@@ -228,6 +232,8 @@ const _pendingListeners = new Set<() => void>();
 
 let _pendingObserver: MutationObserver | null = null;
 
+let _pendingObservedForm: Element | null = null;
+
 /**
  * @returns {void}
  */
@@ -248,9 +254,13 @@ function _emitPendingChanged() {
  * @param {() => void} handler
  * @returns {() => void}
  */
-export function subscribePendingChanged(handler: any) {
-    if (!_pendingObserver) {
-        const form = document.getElementById('file_form');
+export function subscribePendingChanged(handler: () => void) {
+    const form = document.getElementById('file_form');
+    if (form !== _pendingObservedForm) {
+        _pendingObserver?.disconnect();
+        _pendingObserver = null;
+        _pendingObservedForm = null;
+
         if (form) {
             _pendingObserver = new MutationObserver(() => _emitPendingChanged());
             _pendingObserver.observe(form, {
@@ -259,10 +269,16 @@ export function subscribePendingChanged(handler: any) {
                 childList: true,
                 subtree: true,
             });
+            _pendingObservedForm = form;
         }
     }
     _pendingListeners.add(handler);
     return () => {
         _pendingListeners.delete(handler);
+        if (_pendingListeners.size === 0) {
+            _pendingObserver?.disconnect();
+            _pendingObserver = null;
+            _pendingObservedForm = null;
+        }
     };
 }

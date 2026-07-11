@@ -5,8 +5,12 @@
  * reaching into SillyTavern DOM or adapter fallback details.
  */
 
-import { chatuiAdapter } from '../adapter/st-adapter.js';
+import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
 export { stEventKeys as chatuiEventKeys } from '../adapter/st-adapter.js';
+import {
+    enqueueHostTask,
+    HostOperationCancelledError,
+} from './host-operation-queue.js';
 import { pushToast, dismissToast } from './toast-store.js';
 
 export type ChatuiMessageAction = 'copy' | 'regen' | 'edit' | 'delete' | 'branch' | 'checkpoint' | 'hide';
@@ -14,18 +18,123 @@ export type ChatuiSelectorKind = 'preset' | 'model' | 'persona';
 export type ChatuiSwipeDirection = 'left' | 'right';
 export type ChatuiToastKind = 'info' | 'success' | 'error';
 
+class StaleChatOperationError extends Error {
+    constructor() {
+        super('[ChatUI] Chat changed before the queued operation could run');
+        this.name = 'StaleChatOperationError';
+    }
+}
+
+function enqueueChatBoundOperation(
+    expectedChatKey: string,
+    operation: () => Promise<void> | void,
+): Promise<void> {
+    return enqueueHostTask(async () => {
+        if (!expectedChatKey || chatuiAdapter.getCurrentChatKey() !== expectedChatKey) {
+            throw new StaleChatOperationError();
+        }
+        await operation();
+    }, { rejectOnCancelled: true }).then(() => undefined);
+}
+
+function enqueueGenerationOperation(
+    expectedChatKey: string,
+    trigger: () => Promise<void> | void,
+): Promise<void> {
+    return enqueueHostTask(async () => {
+        if (!expectedChatKey || chatuiAdapter.getCurrentChatKey() !== expectedChatKey) {
+            throw new StaleChatOperationError();
+        }
+        if (chatuiAdapter.getGenerationState().isGenerating) {
+            throw new Error('[ChatUI] Generation is already active');
+        }
+
+        let started = false;
+        let resolveStarted: () => void = () => undefined;
+        let resolveFinished: () => void = () => undefined;
+        const startedPromise = new Promise<void>((resolve) => {
+            resolveStarted = resolve;
+        });
+        const finishedPromise = new Promise<void>(resolve => {
+            resolveFinished = resolve;
+        });
+        const unsubscribers: Array<() => void> = [];
+        const cleanup = () => {
+            for (const unsubscribe of unsubscribers.reverse()) {
+                try {
+                    unsubscribe();
+                } catch (error) {
+                    console.error('[ChatUI] generation subscription cleanup failed', error);
+                }
+            }
+        };
+
+        try {
+            unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GENERATION_STARTED, () => {
+                if (chatuiAdapter.getCurrentChatKey() !== expectedChatKey) return;
+                started = true;
+                resolveStarted();
+            }));
+            const finish = () => {
+                if (started) resolveFinished();
+            };
+            unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GENERATION_STOPPED, finish));
+            unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GENERATION_ENDED, finish));
+
+            await trigger();
+            await startedPromise;
+            await finishedPromise;
+        } finally {
+            cleanup();
+        }
+    }, { rejectOnCancelled: true }).then(() => undefined);
+}
+
+function reportChatBoundFailure(label: string, error: unknown): void {
+    if (error instanceof HostOperationCancelledError) return;
+    console.error(`[ChatUI] ${label} failed`, error);
+    notifyChatui(
+        'error',
+        error instanceof StaleChatOperationError ? '对话已切换，操作已取消' : '操作失败',
+    );
+}
+
+export function isChatuiLifecycleCancellation(error: unknown): boolean {
+    return error instanceof HostOperationCancelledError;
+}
+
 /**
  * @param {number|string} messageId
  * @param {'copy'|'regen'|'edit'|'delete'|'branch'|'checkpoint'|'hide'} action
  * @returns {void}
  */
-export function triggerChatuiMessageAction(messageId: number | string, action: ChatuiMessageAction) {
-    const result = chatuiAdapter.messageActions.triggerMessageActionById(messageId, action);
-    if (action === 'copy') {
-        Promise.resolve(result)
-            .then(() => notifyChatui('success', '已复制'))
-            .catch(() => notifyChatui('error', '复制失败'));
-    }
+export function triggerChatuiMessageAction(
+    messageId: number | string,
+    action: ChatuiMessageAction,
+    expectedChatKey: string,
+): void {
+    const operation = action === 'regen'
+        ? enqueueGenerationOperation(
+            expectedChatKey,
+            () => chatuiAdapter.messageActions.triggerMessageActionById(messageId, action),
+        )
+        : enqueueChatBoundOperation(
+            expectedChatKey,
+            () => chatuiAdapter.messageActions.triggerMessageActionById(messageId, action),
+        );
+    void operation
+        .then(() => {
+            if (action === 'copy') notifyChatui('success', '已复制');
+        })
+        .catch((error: unknown) => {
+            if (isChatuiLifecycleCancellation(error)) return;
+            if (action === 'copy') {
+                console.error('[ChatUI] copy message failed', error);
+                notifyChatui('error', '复制失败');
+            } else {
+                reportChatBoundFailure(`message action ${action}`, error);
+            }
+        });
 }
 
 /**
@@ -33,16 +142,50 @@ export function triggerChatuiMessageAction(messageId: number | string, action: C
  * @param {string} text
  * @returns {Promise<void>}
  */
-export async function saveEditedChatuiMessage(messageId: number | string, text: string) {
-    await chatuiAdapter.messageActions.saveMessageEditById(messageId, text);
+export function saveEditedChatuiMessage(
+    messageId: number | string,
+    text: string,
+    expectedChatKey: string,
+): Promise<void> {
+    return enqueueChatBoundOperation(
+        expectedChatKey,
+        () => chatuiAdapter.messageActions.saveMessageEditById(messageId, text),
+    );
 }
 
 /**
- * @param {string} text
- * @returns {Promise<void>}
+ * Queue sends against navigation and reject a stale composer intent before it
+ * can land in a different mutable ST chat context.
  */
-export async function sendChatuiComposerMessage(text: string) {
-    await chatuiAdapter.composerActions.sendComposerMessage(text);
+export function sendChatuiComposerMessage(
+    text: string,
+    expectedChatKey: string,
+    onAccepted: () => void,
+): Promise<void> {
+    return enqueueHostTask(async () => {
+        if (!expectedChatKey || chatuiAdapter.getCurrentChatKey() !== expectedChatKey) {
+            throw new StaleChatOperationError();
+        }
+        const operation = chatuiAdapter.composerActions.sendComposerMessage(text);
+        let acceptanceError: unknown = null;
+        try {
+            await operation;
+            onAccepted();
+        } catch (error) {
+            acceptanceError = error;
+        }
+        // Keep the shared host lane and global send gate owned until ST's full
+        // generation lifecycle settles. Acceptance already committed the draft;
+        // a later model error must not make the user message look unsent.
+        let completionError: unknown = null;
+        try {
+            await operation.completion;
+        } catch (error) {
+            completionError = error;
+        }
+        if (acceptanceError) throw acceptanceError;
+        if (completionError) throw completionError;
+    }, { rejectOnCancelled: true }).then(() => undefined);
 }
 
 /**
@@ -73,8 +216,14 @@ export function disableChatui() {
  * @param {number} mediaIndex
  * @returns {void}
  */
-export function openChatuiMessageMedia(messageId: number | string, mediaIndex: number) {
-    chatuiAdapter.mediaActions.openMessageMedia(messageId, mediaIndex);
+export function openChatuiMessageMedia(
+    messageId: number | string,
+    mediaIndex: number,
+    expectedChatKey: string,
+): void {
+    void enqueueChatBoundOperation(expectedChatKey, () => {
+        chatuiAdapter.mediaActions.openMessageMedia(messageId, mediaIndex);
+    }).catch((error: unknown) => reportChatBoundFailure('open media', error));
 }
 
 /**
@@ -82,8 +231,14 @@ export function openChatuiMessageMedia(messageId: number | string, mediaIndex: n
  * @param {number} fileIndex
  * @returns {void}
  */
-export function openChatuiMessageFile(messageId: number | string, fileIndex: number) {
-    chatuiAdapter.mediaActions.openMessageFile(messageId, fileIndex);
+export function openChatuiMessageFile(
+    messageId: number | string,
+    fileIndex: number,
+    expectedChatKey: string,
+): void {
+    void enqueueChatBoundOperation(expectedChatKey, () => {
+        chatuiAdapter.mediaActions.openMessageFile(messageId, fileIndex);
+    }).catch((error: unknown) => reportChatBoundFailure('open file', error));
 }
 
 /**
@@ -91,32 +246,48 @@ export function openChatuiMessageFile(messageId: number | string, fileIndex: num
  * @param {'left'|'right'} direction
  * @returns {void}
  */
-export function swipeChatuiMessage(messageId: number | string, direction: ChatuiSwipeDirection) {
-    chatuiAdapter.messageActions.swipeMessageById(messageId, direction);
+export function swipeChatuiMessage(
+    messageId: number | string,
+    direction: ChatuiSwipeDirection,
+    expectedChatKey: string,
+): void {
+    void enqueueChatBoundOperation(
+        expectedChatKey,
+        () => chatuiAdapter.messageActions.swipeMessageById(messageId, direction),
+    ).catch((error: unknown) => reportChatBoundFailure('swipe message', error));
 }
 
 /**
  * Continue the last message (generate more onto it).
  * @returns {void}
  */
-export function continueChatuiGeneration() {
-    chatuiAdapter.menuActions.continueMessage();
+export function continueChatuiGeneration(expectedChatKey: string): void {
+    void enqueueGenerationOperation(
+        expectedChatKey,
+        () => chatuiAdapter.menuActions.continueMessage(),
+    ).catch((error: unknown) => reportChatBoundFailure('continue generation', error));
 }
 
 /**
  * Impersonate: have the model write the user's next message.
  * @returns {void}
  */
-export function impersonateChatui() {
-    chatuiAdapter.menuActions.impersonateMessage();
+export function impersonateChatui(expectedChatKey: string): void {
+    void enqueueGenerationOperation(
+        expectedChatKey,
+        () => chatuiAdapter.menuActions.impersonateMessage(),
+    ).catch((error: unknown) => reportChatBoundFailure('impersonate', error));
 }
 
 /**
  * Regenerate the last character message (solo or group, via ST's options path).
  * @returns {void}
  */
-export function regenerateChatuiLast() {
-    chatuiAdapter.menuActions.regenerateFromPlusMenu();
+export function regenerateChatuiLast(expectedChatKey: string): void {
+    void enqueueGenerationOperation(
+        expectedChatKey,
+        () => chatuiAdapter.menuActions.regenerateFromPlusMenu(),
+    ).catch((error: unknown) => reportChatBoundFailure('regenerate', error));
 }
 
 /**
@@ -149,8 +320,12 @@ export function listChatuiWandItems() {
  * @param {string} id
  * @returns {boolean}
  */
-export function triggerChatuiWandItem(id: string) {
-    return chatuiAdapter.menuActions.triggerWandItem(id);
+export function triggerChatuiWandItem(id: string, expectedChatKey: string): void {
+    void enqueueChatBoundOperation(expectedChatKey, () => {
+        if (!chatuiAdapter.menuActions.triggerWandItem(id)) {
+            throw new Error(`[ChatUI] Wand item no longer exists: ${id}`);
+        }
+    }).catch((error: unknown) => reportChatBoundFailure('wand action', error));
 }
 
 /**
@@ -227,8 +402,12 @@ export function listChatuiQuickReplies() {
  * @param {string} id opaque id from listChatuiQuickReplies()
  * @returns {boolean}
  */
-export function triggerChatuiQuickReply(id: string) {
-    return chatuiAdapter.qrActions.triggerQuickReply(id);
+export function triggerChatuiQuickReply(id: string, expectedChatKey: string): void {
+    void enqueueChatBoundOperation(expectedChatKey, () => {
+        if (!chatuiAdapter.qrActions.triggerQuickReply(id)) {
+            throw new Error(`[ChatUI] Quick reply no longer exists: ${id}`);
+        }
+    }).catch((error: unknown) => reportChatBoundFailure('quick reply', error));
 }
 
 /**

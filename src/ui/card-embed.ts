@@ -66,24 +66,34 @@ const CARD_EMBED_BOOTSTRAP_SOURCE = `(function () {
 // the margin still escaping). `display` isn't subject to that propagation.
 const CARD_EMBED_RESET_STYLE = 'html, body { margin: 0; } body { display: flow-root; }';
 
-const frameWindows = new WeakMap<Window, HTMLIFrameElement>();
+let frameWindows = new WeakMap<Window, HTMLIFrameElement>();
 let heightMessageListenerInstalled = false;
+
+function handleHeightMessage(event: MessageEvent): void {
+    if (!event.source) return;
+    const frame = frameWindows.get(event.source as Window);
+    if (!frame) return;
+
+    const data = event.data as Record<string, unknown> | null;
+    const height = data?.[CARD_EMBED_HEIGHT_MESSAGE_KEY];
+    if (typeof height !== 'number' || !Number.isFinite(height)) return;
+
+    frame.style.height = `${Math.ceil(Math.max(0, height))}px`;
+}
 
 function ensureHeightMessageListener(): void {
     if (heightMessageListenerInstalled) return;
     heightMessageListenerInstalled = true;
+    window.addEventListener('message', handleHeightMessage);
+}
 
-    window.addEventListener('message', event => {
-        if (!event.source) return;
-        const frame = frameWindows.get(event.source as Window);
-        if (!frame) return;
-
-        const data = event.data as Record<string, unknown> | null;
-        const height = data?.[CARD_EMBED_HEIGHT_MESSAGE_KEY];
-        if (typeof height !== 'number' || !Number.isFinite(height)) return;
-
-        frame.style.height = `${Math.ceil(Math.max(0, height))}px`;
-    });
+/** Release parent-side card runtime state when ChatUI is disabled. */
+export function teardownCardEmbedRuntime(): void {
+    if (heightMessageListenerInstalled) {
+        window.removeEventListener('message', handleHeightMessage);
+        heightMessageListenerInstalled = false;
+    }
+    frameWindows = new WeakMap<Window, HTMLIFrameElement>();
 }
 
 export function renderCardEmbeds(

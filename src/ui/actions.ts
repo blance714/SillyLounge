@@ -6,6 +6,7 @@ export {
     getChatuiSelectedSelector,
     getChatuiSelectorOptions,
     impersonateChatui,
+    isChatuiLifecycleCancellation,
     listChatuiQuickReplies,
     listChatuiStSettingsEntries,
     listChatuiWandItems,
@@ -79,3 +80,13 @@ export {
     isTempChatDraft,
     subscribeTempChatStore,
 } from '../store/temp-chat-store.js';
+
+export {
+    beginComposerSend as beginChatuiComposerSend,
+    clearComposerDraftIfMatches as clearChatuiComposerDraftIfMatches,
+    finishComposerSend as finishChatuiComposerSend,
+    getComposerDraftStoreSnapshot as getChatuiComposerDraftStoreSnapshot,
+    resetComposerDraftStore as resetChatuiComposerDraftStore,
+    setComposerDraft as setChatuiComposerDraft,
+    subscribeComposerDraftStore as subscribeChatuiComposerDraftStore,
+} from '../store/composer-draft-store.js';

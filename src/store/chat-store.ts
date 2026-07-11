@@ -7,9 +7,23 @@
  */
 
 import { chatuiAdapter, stEventKeys } from '../adapter/st-adapter.js';
-import { numberOrNull, stringValue } from '../adapter/schema.js';
+import {
+    createCharacterChatKey,
+    createConversationLocator,
+    createGroupChatKey,
+} from '../adapter/chat-key.js';
+import type { MessageSnapshotDto } from '../adapter/schema.js';
 import { createStore } from './create-store.js';
-import { clearTempChat, getTempChat } from './temp-chat-store.js';
+import {
+    clearTempChat,
+    getTempChat,
+    getTempChatSnapshot,
+    moveTempChatIfMatches,
+} from './temp-chat-store.js';
+import {
+    moveComposerDraft,
+    moveComposerDraftCharacterScope,
+} from './composer-draft-store.js';
 
 export type ChatuiMediaAttachment = {
     id: string;
@@ -32,6 +46,7 @@ export type ChatuiFileAttachment = {
 export type ChatuiMessageDto = {
     id: number;
     key: string;
+    chatKey: string;
     role: 'user' | 'character' | 'system';
     isUser: boolean;
     isSystem: boolean;
@@ -77,8 +92,9 @@ export type ChatuiChatIdentity = {
 
 export type ChatuiStoreState = {
     chat: {
-        messages: ChatuiMessageDto[];
-        byId: Record<string, ChatuiMessageDto>;
+        /** Visible message ids; message DTOs live in a granular per-id store. */
+        messageIds: number[];
+        messageCount: number;
         lastMessageId: number | null;
         chatKey: string;
         currentChat: ChatuiChatIdentity | null;
@@ -94,8 +110,8 @@ export type ChatuiStoreState = {
 
 const _initialState: ChatuiStoreState = {
     chat: {
-        messages: [],
-        byId: {},
+        messageIds: [],
+        messageCount: 0,
         lastMessageId: null,
         chatKey: '',
         currentChat: null,
@@ -112,8 +128,14 @@ const _initialState: ChatuiStoreState = {
 const _store = createStore<ChatuiStoreState>(_initialState);
 
 const _storeUnsubscribers = new Set<() => void>();
+const _messageSubscribers = new Map<number, Set<() => void>>();
+const _messageChangeSubscribers = new Set<() => void>();
+let _messageDtos = new Map<number, ChatuiMessageDto>();
 
 let _unsubscribers: Array<() => void> = [];
+let _isInitializing = false;
+let _isInitialized = false;
+const _deferredRefreshes = new Set<ReturnType<typeof setTimeout>>();
 
 /** @type {number} Pending requestAnimationFrame id for coalesced streaming refreshes. */
 let _streamFrame = 0;
@@ -128,7 +150,7 @@ type FormatHtmlCacheEntry = {
 };
 
 /**
- * Keyed by `${id}:${isReasoning}`. ST's own formatter re-resolves
+ * Keyed by `${chatKey}:${id}:${isReasoning}`. ST's own formatter re-resolves
  * non-deterministic macros (e.g. `{{random::a,b}}`) on every call, so calling
  * it again for a message whose relevant fields haven't changed produces a
  * different-looking result for no reason — this cache makes reformatting
@@ -136,26 +158,30 @@ type FormatHtmlCacheEntry = {
  * chat window only reprints a message when it has something new to show.
  */
 const _formatHtmlCache = new Map<string, FormatHtmlCacheEntry>();
+let _formatCacheChatKey = '';
+
+function _prepareFormatCache(chatKey: string): void {
+    if (_formatCacheChatKey === chatKey) return;
+    _formatHtmlCache.clear();
+    _formatCacheChatKey = chatKey;
+}
 
 /**
- * @param {Record<string, any>} message
- * @param {number} id
- * @param {boolean} isReasoning
- * @returns {string}
+ * ST's formatter stays behind the adapter and reads the live message by id.
+ * The store only compares normalized snapshot fields to decide whether that
+ * native formatter needs to run again.
  */
-function _formatMessageHtmlCached(message: Record<string, any>, id: number, isReasoning: boolean): string {
-    const extra = (message.extra ?? {}) as Record<string, any>;
-    // Mirrors formatMessageHtml's own text selection (internals.ts) exactly,
-    // so the cache key tracks precisely what determines its output.
+function _formatMessageHtmlCached(
+    message: MessageSnapshotDto,
+    chatKey: string,
+    isReasoning: boolean,
+): string {
     const text = isReasoning
-        ? (extra.reasoning_display_text || extra.reasoning || '')
-        : (extra.display_text || message.mes || '');
-    const name = typeof message.name === 'string' ? message.name : '';
-    const isSystem = message.is_system === true;
-    const isUser = message.is_user === true;
-    const usesSystemUi = extra.uses_system_ui === true;
+        ? (message.reasoningDisplayText || message.reasoning)
+        : message.displayText;
+    const { name, isSystem, isUser, usesSystemUi } = message;
 
-    const cacheKey = `${id}:${isReasoning}`;
+    const cacheKey = `${chatKey}:${message.id}:${isReasoning}`;
     const cached = _formatHtmlCache.get(cacheKey);
     if (
         cached
@@ -168,47 +194,46 @@ function _formatMessageHtmlCached(message: Record<string, any>, id: number, isRe
         return cached.html;
     }
 
-    const html = chatuiAdapter.formatMessageHtml(message, id, isReasoning);
+    const html = chatuiAdapter.messageQueries.formatHtmlById(message.id, isReasoning);
     _formatHtmlCache.set(cacheKey, { text, name, isSystem, isUser, usesSystemUi, html });
     return html;
 }
 
 /**
- * @param {object} raw
- * @param {number} id
- * @param {number} lastMessageId
- * @returns {ChatuiMessageDto}
+ * Boundary DTO -> ChatUI view-model projection. Native HTML formatting and
+ * attachment reads remain explicit adapter capabilities.
  */
-function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: number): ChatuiMessageDto {
-    const message = raw ?? {};
-    const extra = (message.extra ?? {}) as Record<string, any>;
-    const isUser = message.is_user === true;
-    const isSystem = message.is_system === true;
+function _projectChatuiMessage(
+    message: MessageSnapshotDto,
+    lastMessageId: number,
+    chatKey: string,
+): ChatuiMessageDto {
+    const { id, isUser, isSystem } = message;
     const isChar = !isUser && !isSystem;
-    const swipeId = typeof message.swipe_id === 'number' ? message.swipe_id : 0;
-    const swipeCount = Array.isArray(message.swipes) ? message.swipes.length : 0;
+    const swipeId = message.swipeId;
+    const swipeCount = message.swipeCount;
     const hasMultipleSwipes = swipeCount > 1;
     const role: ChatuiMessageDto['role'] = isUser ? 'user' : (isSystem ? 'system' : 'character');
     const isLast = id === lastMessageId;
-    const isSmallSys = extra.isSmallSys === true;
-    const isToolCall = Array.isArray(extra.tool_invocations);
-    const attachments = chatuiAdapter.mediaActions.getMessageAttachments(message);
-    const reasoningText = stringValue(extra.reasoning_display_text) || stringValue(extra.reasoning);
+    const { isSmallSys, isToolCall } = message;
+    const attachments = chatuiAdapter.messageQueries.getAttachmentsById(id);
+    const reasoningText = message.reasoningDisplayText || message.reasoning;
 
     return {
         id,
         key: String(id),
+        chatKey,
         role,
         isUser,
         isSystem,
         isChar,
-        name: stringValue(message.name),
-        text: stringValue(message.mes),
-        displayText: stringValue(extra.display_text) || stringValue(message.mes),
-        html: _formatMessageHtmlCached(message, id, false),
-        sendDate: message.send_date ?? null,
-        forceAvatar: Boolean(message.force_avatar),
-        forceAvatarSrc: stringValue(message.force_avatar),
+        name: message.name,
+        text: message.text,
+        displayText: message.displayText,
+        html: _formatMessageHtmlCached(message, chatKey, false),
+        sendDate: message.sendDate,
+        forceAvatar: message.forceAvatar,
+        forceAvatarSrc: message.forceAvatarSrc,
         swipe: {
             id: swipeId,
             count: swipeCount,
@@ -217,14 +242,14 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
         },
         attachments,
         extra: {
-            type: stringValue(extra.type),
+            type: message.type,
             isSmallSys,
             isToolCall,
-            bookmarkLink: stringValue(extra.bookmark_link),
-            tokenCount: numberOrNull(extra.token_count),
-            reasoning: stringValue(extra.reasoning),
-            reasoningHtml: reasoningText ? _formatMessageHtmlCached(message, id, true) : '',
-            reasoningDuration: extra.reasoning_duration ?? null,
+            bookmarkLink: message.bookmarkLink,
+            tokenCount: message.tokenCount,
+            reasoning: message.reasoning,
+            reasoningHtml: reasoningText ? _formatMessageHtmlCached(message, chatKey, true) : '',
+            reasoningDuration: message.reasoningDuration,
         },
         ui: {
             isLast,
@@ -245,27 +270,28 @@ function _toMessageDto(raw: Record<string, any>, id: number, lastMessageId: numb
 }
 
 /**
- * @param {Array<object>} rawMessages
- * @returns {{ messages: Array<ChatuiMessageDto>, byId: Record<string, ChatuiMessageDto>, lastMessageId: number|null, lastMessageNeedsGenerate: boolean }}
+ * @param snapshots Parsed adapter-boundary messages.
+ * @param chatKey Active chat namespace for formatter memoization.
  */
-function _buildMessageDtos(rawMessages: Array<Record<string, any>>): {
-    messages: ChatuiMessageDto[];
-    byId: Record<string, ChatuiMessageDto>;
+function _buildMessageDtos(snapshots: ReadonlyArray<MessageSnapshotDto>, chatKey: string): {
+    messagesById: Map<number, ChatuiMessageDto>;
+    visibleMessageIds: number[];
     lastMessageId: number | null;
     lastMessageNeedsGenerate: boolean;
 } {
-    const lastMessageId = rawMessages.length ? rawMessages.length - 1 : null;
-    const byId: Record<string, ChatuiMessageDto> = {};
-    const messages = rawMessages.map((message: Record<string, any>, id: number) => {
-        const dto = _toMessageDto(message, id, lastMessageId ?? -1);
-        byId[dto.key] = dto;
-        return dto;
-    });
-    const lastDto = lastMessageId === null ? null : byId[String(lastMessageId)];
+    const lastMessageId = snapshots.length ? snapshots.length - 1 : null;
+    const messagesById = new Map<number, ChatuiMessageDto>();
+    const visibleMessageIds: number[] = [];
+    for (const message of snapshots) {
+        const dto = _projectChatuiMessage(message, lastMessageId ?? -1, chatKey);
+        messagesById.set(dto.id, dto);
+        if (!dto.extra.isSmallSys && !dto.extra.isToolCall) visibleMessageIds.push(dto.id);
+    }
+    const lastDto = lastMessageId === null ? null : messagesById.get(lastMessageId);
 
     return {
-        messages,
-        byId,
+        messagesById,
+        visibleMessageIds,
         lastMessageId,
         lastMessageNeedsGenerate: lastDto?.ui.needsGenerate ?? false,
     };
@@ -286,7 +312,7 @@ export function getChatuiCurrentChatIdentity() {
  * @returns {Array<ChatuiMessageDto>}
  */
 export function getMessageDtos() {
-    return getChatuiState().chat.messages;
+    return Array.from(_messageDtos.values());
 }
 
 /**
@@ -294,7 +320,8 @@ export function getMessageDtos() {
  * @returns {ChatuiMessageDto|null}
  */
 export function getMessageDtoById(messageId: number | string) {
-    return getChatuiState().chat.byId[String(messageId)] ?? null;
+    const id = Number(messageId);
+    return Number.isInteger(id) && id >= 0 ? _messageDtos.get(id) ?? null : null;
 }
 
 /**
@@ -305,15 +332,6 @@ export function getLastMessageDto() {
     return state.chat.lastMessageId === null
         ? null
         : getMessageDtoById(state.chat.lastMessageId);
-}
-
-/**
- * @param {Element} mesEl
- * @returns {ChatuiMessageDto|null}
- */
-export function getMessageDtoByElement(mesEl: Element) {
-    const messageId = mesEl.getAttribute('mesid');
-    return messageId === null ? null : getMessageDtoById(messageId);
 }
 
 /**
@@ -329,70 +347,119 @@ export function subscribeChatuiStore(subscriber: (state: ChatuiStoreState) => vo
     };
 }
 
+/** Subscribe to one message slot; streaming updates notify only the changed row. */
+export function subscribeChatuiMessage(messageId: number, onStoreChange: () => void): () => void {
+    let subscribers = _messageSubscribers.get(messageId);
+    if (!subscribers) {
+        subscribers = new Set();
+        _messageSubscribers.set(messageId, subscribers);
+    }
+    subscribers.add(onStoreChange);
+    return () => {
+        subscribers?.delete(onStoreChange);
+        if (subscribers?.size === 0) _messageSubscribers.delete(messageId);
+    };
+}
+
+/** Subscribe to content changes without forcing the whole chat tree to render. */
+export function subscribeChatuiMessageChanges(onMessageChange: () => void): () => void {
+    _messageChangeSubscribers.add(onMessageChange);
+    return () => _messageChangeSubscribers.delete(onMessageChange);
+}
+
+function _notifyMessage(messageId: number): void {
+    for (const subscriber of _messageSubscribers.get(messageId) ?? []) subscriber();
+    for (const subscriber of _messageChangeSubscribers) subscriber();
+}
+
+function _notifyAllMessages(): void {
+    for (const subscribers of _messageSubscribers.values()) {
+        for (const subscriber of subscribers) subscriber();
+    }
+    for (const subscriber of _messageChangeSubscribers) subscriber();
+}
+
 /**
  * @returns {void}
  */
 export function refreshChatuiStore() {
-    const rawMessages = chatuiAdapter.getCurrentChat();
-    const messageState = _buildMessageDtos(rawMessages);
+    const snapshot = chatuiAdapter.messageQueries.readAll();
+    _prepareFormatCache(snapshot.chatKey);
+    const messageState = _buildMessageDtos(snapshot.messages, snapshot.chatKey);
     const state = getChatuiState();
     const isGroup = chatuiAdapter.getIsGroupChat();
+    _messageDtos = messageState.messagesById;
 
     _store.setState({
         ...state,
         chat: {
-            messages: messageState.messages,
-            byId: messageState.byId,
+            messageIds: messageState.visibleMessageIds,
+            messageCount: snapshot.messages.length,
             lastMessageId: messageState.lastMessageId,
-            chatKey: chatuiAdapter.getCurrentChatKey(),
+            chatKey: snapshot.chatKey,
             currentChat: chatuiAdapter.getCurrentChatIdentity(),
             isGroup,
             isGenerating: chatuiAdapter.getGenerationState().isGenerating,
             lastMessageNeedsGenerate: messageState.lastMessageNeedsGenerate,
         },
     });
+    _notifyAllMessages();
 }
 
 /**
- * Rebuild a single message DTO in place. Falls back to a full rebuild when the
+ * Rebuild one granular message slot. Falls back to a full rebuild when the
  * chat length changed (append/delete) or the id is out of range, so derived
  * fields (isLast / lastMessageId) stay correct. Keeps streaming, edit, and
- * swipe updates O(1) instead of reformatting the whole chat.
+ * swipe updates O(1): no full message-array clone, map spread, or parent chat
+ * rerender occurs for an in-place token update.
  *
  * @param {number|string} messageId
  * @returns {void}
  */
 export function refreshChatuiMessage(messageId: number | string) {
     const id = Number(messageId);
-    const rawMessages = chatuiAdapter.getCurrentChat();
     const state = getChatuiState();
+    const chatKey = chatuiAdapter.getCurrentChatKey();
+    const messageCount = chatuiAdapter.messageQueries.getCount();
 
     if (
         !Number.isFinite(id)
+        || !Number.isInteger(id)
         || id < 0
-        || id >= rawMessages.length
-        || rawMessages.length !== state.chat.messages.length
+        || chatKey !== state.chat.chatKey
+        || id >= messageCount
+        || messageCount !== state.chat.messageCount
     ) {
         refreshChatuiStore();
         return;
     }
 
-    const lastMessageId = rawMessages.length - 1;
-    const dto = _toMessageDto(rawMessages[id], id, lastMessageId);
-    const messages = state.chat.messages.slice();
-    messages[id] = dto;
-    const byId = { ...state.chat.byId, [dto.key]: dto };
-    const lastDto = byId[String(lastMessageId)] ?? null;
+    const message = chatuiAdapter.messageQueries.readById(id);
+    if (!message) {
+        refreshChatuiStore();
+        return;
+    }
 
-    _store.setState({
-        ...state,
-        chat: {
-            ...state.chat,
-            messages,
-            byId,
-            lastMessageNeedsGenerate: lastDto?.ui.needsGenerate ?? false,
-        },
-    });
+    _prepareFormatCache(chatKey);
+    const lastMessageId = messageCount - 1;
+    const dto = _projectChatuiMessage(message, lastMessageId, chatKey);
+    const previous = _messageDtos.get(id);
+    const wasVisible = !!previous && !previous.extra.isSmallSys && !previous.extra.isToolCall;
+    const isVisible = !dto.extra.isSmallSys && !dto.extra.isToolCall;
+    if (wasVisible !== isVisible) {
+        refreshChatuiStore();
+        return;
+    }
+
+    _messageDtos.set(id, dto);
+    const lastMessageNeedsGenerate = _messageDtos.get(lastMessageId)?.ui.needsGenerate ?? false;
+    if (lastMessageNeedsGenerate !== state.chat.lastMessageNeedsGenerate) {
+        _store.setState({
+            ...state,
+            chat: { ...state.chat, lastMessageNeedsGenerate },
+        });
+    }
+    _notifyMessage(id);
 }
 
 /**
@@ -403,6 +470,111 @@ function _clearTempChatIfCurrent() {
     const tempChat = getTempChat();
     if (current && tempChat && current.avatar === tempChat.avatar && current.fileName === tempChat.fileName) {
         clearTempChat();
+    }
+}
+
+function _stripChatExt(value: unknown): string {
+    return typeof value === 'string' ? value.replace(/\.jsonl$/i, '') : '';
+}
+
+let _pendingChatLoadTransition: Readonly<{ oldChatKey: string; newChatKey: string }> | null = null;
+let _chatLoadTransitionVersion = 0;
+
+/**
+ * Native character rename reloads the newly named chat before CHAT_RENAMED.
+ * Capture that exact load transition so the later event can still prove which
+ * old conversation was active, including a server-sanitized destination.
+ */
+function _refreshAfterChatLoaded(): void {
+    const oldChatKey = getChatuiState().chat.chatKey;
+    refreshChatuiStore();
+    const newChatKey = getChatuiState().chat.chatKey;
+    if (oldChatKey && newChatKey && oldChatKey !== newChatKey) {
+        if (
+            _pendingChatLoadTransition?.oldChatKey !== oldChatKey
+            || _pendingChatLoadTransition.newChatKey !== newChatKey
+        ) {
+            _pendingChatLoadTransition = { oldChatKey, newChatKey };
+            _chatLoadTransitionVersion += 1;
+        }
+    }
+}
+
+/** Capture the transition before a later async CHAT_CHANGED listener can yield. */
+function _handleChatChanged(): void {
+    const oldChatKey = getChatuiState().chat.chatKey;
+    const newChatKey = chatuiAdapter.getCurrentChatKey();
+    _pendingChatLoadTransition = oldChatKey && newChatKey && oldChatKey !== newChatKey
+        ? { oldChatKey, newChatKey }
+        : null;
+    _chatLoadTransitionVersion += 1;
+    _scheduleDeferredRefresh();
+}
+
+/** Expire an ordinary-navigation transition after the full host event completes. */
+function _scheduleChatLoadTransitionExpiry(): void {
+    const version = _chatLoadTransitionVersion;
+    if (!_pendingChatLoadTransition) return;
+    const timer = setTimeout(() => {
+        _deferredRefreshes.delete(timer);
+        if (_chatLoadTransitionVersion !== version) return;
+        _pendingChatLoadTransition = null;
+        _chatLoadTransitionVersion += 1;
+    }, 0);
+    _deferredRefreshes.add(timer);
+}
+
+/** Re-key ChatUI-owned ephemeral state after a host or ChatUI filename rename. */
+function _migrateRenamedChatState(eventData: unknown): void {
+    if (!eventData || typeof eventData !== 'object' || Array.isArray(eventData)) return;
+    const data = eventData as Record<string, unknown>;
+    const avatar = typeof data.avatarId === 'string' ? data.avatarId : '';
+    const groupId = data.groupId === undefined || data.groupId === null ? '' : String(data.groupId);
+    const oldFileName = _stripChatExt(data.oldFileName);
+    const eventNewFileName = _stripChatExt(data.newFileName);
+    if ((!avatar && !groupId) || !oldFileName || !eventNewFileName) return;
+
+    const oldLocator = createConversationLocator(oldFileName);
+    const oldChatKey = groupId
+        ? createGroupChatKey(groupId, oldLocator)
+        : createCharacterChatKey(avatar, oldLocator);
+    const loadedTransition = _pendingChatLoadTransition?.oldChatKey === oldChatKey
+        ? _pendingChatLoadTransition
+        : null;
+    _pendingChatLoadTransition = null;
+    _chatLoadTransitionVersion += 1;
+    // ChatUI's direct rename leaves the store at oldChatKey until this event.
+    // Native character rename instead reloads first; loadedTransition preserves
+    // the old→actual key pair across that event ordering. Renaming a non-active
+    // history file must never migrate its draft into the current conversation.
+    const currentChatKey = chatuiAdapter.getCurrentChatKey();
+    const wasActiveTarget = getChatuiState().chat.chatKey === oldChatKey
+        || loadedTransition?.oldChatKey === oldChatKey;
+    // Non-active native ST rename events expose the unsanitized requested name,
+    // not the server-confirmed filename. Do not guess and risk overwriting an
+    // unrelated draft. ChatUI's own rename action migrates that case from its
+    // checked HTTP result; an active native rename can use the live adapter key.
+    if (!wasActiveTarget) return;
+    const newChatKey = loadedTransition?.newChatKey || currentChatKey;
+    if (!newChatKey || newChatKey === oldChatKey) return;
+
+    moveComposerDraft(oldChatKey, newChatKey);
+    const temp = getTempChatSnapshot();
+    if (!groupId && temp.pointer?.avatar === avatar && temp.pointer.fileName === oldFileName) {
+        const newFileName = wasActiveTarget
+            ? chatuiAdapter.getCurrentChatIdentity()?.fileName || eventNewFileName
+            : eventNewFileName;
+        moveTempChatIfMatches(temp, { avatar, fileName: newFileName });
+    }
+}
+
+function _migrateRenamedCharacterState(oldAvatar: unknown, newAvatar: unknown): void {
+    if (typeof oldAvatar !== 'string' || typeof newAvatar !== 'string') return;
+    if (!oldAvatar || !newAvatar || oldAvatar === newAvatar) return;
+    moveComposerDraftCharacterScope(oldAvatar, newAvatar);
+    const temp = getTempChatSnapshot();
+    if (temp.pointer?.avatar === oldAvatar) {
+        moveTempChatIfMatches(temp, { avatar: newAvatar, fileName: temp.pointer.fileName });
     }
 }
 
@@ -417,61 +589,130 @@ function _scheduleStreamRefresh() {
     if (_streamFrame) return;
     _streamFrame = requestAnimationFrame(() => {
         _streamFrame = 0;
-        const rawMessages = chatuiAdapter.getCurrentChat();
-        if (rawMessages.length) refreshChatuiMessage(rawMessages.length - 1);
+        if (!_isInitialized) return;
+        const messageCount = chatuiAdapter.messageQueries.getCount();
+        if (messageCount) refreshChatuiMessage(messageCount - 1);
     });
+}
+
+function _scheduleDeferredRefresh() {
+    const timer = setTimeout(() => {
+        _deferredRefreshes.delete(timer);
+        if (_isInitialized) refreshChatuiStore();
+    }, 0);
+    _deferredRefreshes.add(timer);
+}
+
+function _clearDeferredRefreshes() {
+    for (const timer of _deferredRefreshes) clearTimeout(timer);
+    _deferredRefreshes.clear();
+}
+
+function _runUnsubscribers(unsubscribers: Array<() => void>, phase: string) {
+    for (const unsubscribe of unsubscribers.reverse()) {
+        try {
+            unsubscribe();
+        } catch (error) {
+            console.error(`[ChatUI] ${phase} unsubscribe failed`, error);
+        }
+    }
 }
 
 /**
  * @returns {void}
  */
 export function initChatuiStore() {
-    if (_unsubscribers.length) return;
+    if (_isInitialized || _isInitializing) return;
 
-    refreshChatuiStore();
+    _isInitializing = true;
+    const registered: Array<() => void> = [];
+    try {
+        refreshChatuiStore();
 
-    const refreshNow = () => refreshChatuiStore();
-    const refreshSoon = () => setTimeout(() => refreshChatuiStore(), 0);
-    const refreshMessage = (messageId: number | string) => refreshChatuiMessage(messageId);
-    const refreshSentMessage = (messageId: number | string) => {
-        _clearTempChatIfCurrent();
-        refreshChatuiMessage(messageId);
-    };
-    const refreshUpdatedMessage = (messageId: number | string) => {
-        _clearTempChatIfCurrent();
-        refreshChatuiMessage(messageId);
-    };
-    _unsubscribers = [
-        chatuiAdapter.subscribe(stEventKeys.CHAT_CHANGED, refreshSoon),
-        chatuiAdapter.subscribe(stEventKeys.CHAT_LOADED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.MORE_MESSAGES_LOADED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SENT, refreshSentMessage),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_UPDATED, refreshUpdatedMessage),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_SWIPED, refreshMessage),
-        chatuiAdapter.subscribe(stEventKeys.MESSAGE_DELETED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.CHARACTER_MESSAGE_RENDERED, refreshMessage),
-        chatuiAdapter.subscribe(stEventKeys.USER_MESSAGE_RENDERED, refreshMessage),
-        chatuiAdapter.subscribe(stEventKeys.STREAM_TOKEN_RECEIVED, _scheduleStreamRefresh),
-        chatuiAdapter.subscribe(stEventKeys.GENERATION_STARTED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.GENERATION_STOPPED, refreshNow),
-        chatuiAdapter.subscribe(stEventKeys.GENERATION_ENDED, refreshNow),
-    ];
+        const refreshNow = () => refreshChatuiStore();
+        const refreshMessage = (messageId: number | string) => refreshChatuiMessage(messageId);
+        const refreshSentMessage = (messageId: number | string) => {
+            _clearTempChatIfCurrent();
+            refreshChatuiMessage(messageId);
+        };
+        const refreshUpdatedMessage = (messageId: number | string) => {
+            _clearTempChatIfCurrent();
+            refreshChatuiMessage(messageId);
+        };
+        const register = (key: string, handler: (...args: any[]) => void) => {
+            registered.push(chatuiAdapter.subscribe(key, handler));
+        };
+        const registerFirst = (key: string, handler: (...args: any[]) => void) => {
+            registered.push(chatuiAdapter.subscribeFirst(key, handler));
+        };
+        const registerLast = (key: string, handler: (...args: any[]) => void) => {
+            registered.push(chatuiAdapter.subscribeLast(key, handler));
+        };
+
+        registerFirst(stEventKeys.CHAT_CHANGED, _handleChatChanged);
+        registerLast(stEventKeys.CHAT_CHANGED, _scheduleChatLoadTransitionExpiry);
+        // Consume the captured transition before async third-party listeners;
+        // event order is part of the native rename correlation contract.
+        registerFirst(stEventKeys.CHAT_RENAMED, (eventData: unknown) => {
+            _migrateRenamedChatState(eventData);
+            _scheduleDeferredRefresh();
+        });
+        register(stEventKeys.CHARACTER_RENAMED, (oldAvatar: unknown, newAvatar: unknown) => {
+            _migrateRenamedCharacterState(oldAvatar, newAvatar);
+            _scheduleDeferredRefresh();
+        });
+        registerFirst(stEventKeys.CHAT_LOADED, _refreshAfterChatLoaded);
+        registerLast(stEventKeys.CHAT_LOADED, _scheduleChatLoadTransitionExpiry);
+        register(stEventKeys.MORE_MESSAGES_LOADED, refreshNow);
+        register(stEventKeys.MESSAGE_SENT, refreshSentMessage);
+        register(stEventKeys.MESSAGE_UPDATED, refreshUpdatedMessage);
+        register(stEventKeys.MESSAGE_SWIPED, refreshMessage);
+        register(stEventKeys.MESSAGE_DELETED, refreshNow);
+        register(stEventKeys.CHARACTER_MESSAGE_RENDERED, refreshMessage);
+        register(stEventKeys.USER_MESSAGE_RENDERED, refreshMessage);
+        register(stEventKeys.STREAM_TOKEN_RECEIVED, _scheduleStreamRefresh);
+        register(stEventKeys.GENERATION_STARTED, refreshNow);
+        register(stEventKeys.GENERATION_STOPPED, refreshNow);
+        register(stEventKeys.GENERATION_ENDED, refreshNow);
+
+        _unsubscribers = registered;
+        _isInitialized = true;
+    } catch (error) {
+        _clearDeferredRefreshes();
+        _runUnsubscribers(registered, 'store-init rollback');
+        throw error;
+    } finally {
+        _isInitializing = false;
+    }
 }
 
 /**
  * @returns {void}
  */
 export function teardownChatuiStore() {
+    _isInitialized = false;
+    _isInitializing = false;
+
     if (_streamFrame) {
         cancelAnimationFrame(_streamFrame);
         _streamFrame = 0;
     }
-    for (const unsubscribe of _unsubscribers) {
-        unsubscribe();
-    }
+    _clearDeferredRefreshes();
+    _pendingChatLoadTransition = null;
+    _chatLoadTransitionVersion += 1;
+
+    const eventUnsubscribers = _unsubscribers;
     _unsubscribers = [];
-    for (const unsubscribe of _storeUnsubscribers) {
-        unsubscribe();
-    }
+    _runUnsubscribers(eventUnsubscribers, 'store teardown');
+
+    const storeUnsubscribers = [..._storeUnsubscribers];
     _storeUnsubscribers.clear();
+    _runUnsubscribers(storeUnsubscribers, 'store-listener teardown');
+
+    _messageSubscribers.clear();
+    _messageChangeSubscribers.clear();
+    _messageDtos = new Map();
+
+    _formatHtmlCache.clear();
+    _formatCacheChatKey = '';
 }

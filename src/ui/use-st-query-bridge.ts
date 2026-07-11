@@ -1,13 +1,55 @@
 import { useEffect } from 'preact/compat';
 import { useQueryClient } from '@tanstack/react-query';
-import { chatuiEventKeys, getChatuiCurrentChatIdentity, subscribeChatuiEvent } from './actions.js';
-import { SIDEBAR_RECENTS_MAX, sidebarQueryKeys } from './sidebar-queries.js';
+import type { QueryKey } from '@tanstack/react-query';
+import { createBoundedWorkCoordinator } from '../store/bounded-work-coordinator.js';
+import {
+    chatuiEventKeys,
+    disableChatui,
+    getChatuiCurrentChatIdentity,
+    subscribeChatuiEvent,
+} from './actions.js';
+import { SIDEBAR_BACKFILL_CONCURRENCY, SIDEBAR_RECENTS_MAX, sidebarQueryKeys } from './sidebar-queries.js';
+
+export type SidebarInvalidationScope =
+    | 'header'
+    | 'characters'
+    | 'recents'
+    | 'current-character'
+    | 'all-characters';
+
+/**
+ * Single source of truth for translating ST domain events into sidebar cache
+ * invalidations. Keeping this declarative makes omissions visible and lets the
+ * event/cache contract be unit-tested without mounting Preact.
+ */
+export const SIDEBAR_INVALIDATIONS_BY_EVENT: Readonly<Record<string, readonly SidebarInvalidationScope[]>> = Object.freeze({
+    [chatuiEventKeys.CHAT_CHANGED]: ['header', 'characters', 'current-character'],
+    [chatuiEventKeys.CHAT_RENAMED]: ['header', 'current-character', 'recents'],
+    // all-characters already includes the current character prefix; listing both
+    // would mark the just-started fetch dirty and force a redundant follow-up.
+    [chatuiEventKeys.CHAT_DELETED]: ['header', 'characters', 'all-characters', 'recents'],
+    [chatuiEventKeys.MESSAGE_SENT]: ['characters', 'current-character', 'recents'],
+    [chatuiEventKeys.MESSAGE_RECEIVED]: ['characters', 'current-character', 'recents'],
+    [chatuiEventKeys.MESSAGE_UPDATED]: ['characters', 'current-character', 'recents'],
+    [chatuiEventKeys.MESSAGE_DELETED]: ['characters', 'current-character', 'recents'],
+    [chatuiEventKeys.MESSAGE_SWIPED]: ['characters', 'current-character', 'recents'],
+    [chatuiEventKeys.CHARACTER_EDITED]: ['header', 'characters', 'current-character'],
+    [chatuiEventKeys.CHARACTER_DELETED]: ['characters', 'all-characters', 'recents'],
+    [chatuiEventKeys.CHARACTER_DUPLICATED]: ['characters', 'all-characters', 'recents'],
+    [chatuiEventKeys.CHARACTER_RENAMED]: ['characters', 'all-characters', 'recents'],
+    [chatuiEventKeys.CHARACTER_PAGE_LOADED]: ['characters'],
+});
 
 export function useStQueryBridge(): void {
     const queryClient = useQueryClient();
 
     useEffect(() => {
         const timers = new Set<ReturnType<typeof setTimeout>>();
+        let disposed = false;
+        const refetchCoordinator = createBoundedWorkCoordinator(
+            SIDEBAR_BACKFILL_CONCURRENCY,
+            error => console.error('[ChatUI] bounded character refetch failed', error),
+        );
 
         const schedule = (fn: () => void): void => {
             const timer = setTimeout(() => {
@@ -28,70 +70,87 @@ export function useStQueryBridge(): void {
         };
         const invalidateCurrentByCharacter = (): void => {
             const avatar = getChatuiCurrentChatIdentity()?.avatar;
-            if (avatar) void queryClient.invalidateQueries({ queryKey: sidebarQueryKeys.byCharacter(avatar) });
+            if (!avatar) return;
+            const prefix = sidebarQueryKeys.byCharacter(avatar);
+            void queryClient.invalidateQueries({ queryKey: prefix, refetchType: 'none' });
+            enqueueLoadableByCharacterRefetches(prefix);
         };
+        const enqueueLoadableByCharacterRefetches = (prefix: QueryKey): void => {
+            const loadableQueries = queryClient.getQueryCache()
+                .findAll({ queryKey: prefix })
+                .filter(query => query.isActive() || query.state.fetchStatus !== 'idle');
+            for (const query of loadableQueries) {
+                const existing = query.promise;
+                refetchCoordinator.enqueue({
+                    key: query.queryHash,
+                    run: async () => {
+                        // A first inactive prefetch is considered "disabled" by
+                        // refetchQueries and its old success clears isInvalidated.
+                        // Await its exact public promise, then call Query.fetch()
+                        // directly so a guaranteed post-event request runs even
+                        // with zero observers and no prior data.
+                        if (existing) {
+                            try {
+                                await existing;
+                            } catch {
+                                // A failed/cancelled stale request still needs the
+                                // same post-event retry below.
+                            }
+                        }
+                        if (disposed) return;
+                        await query.fetch();
+                    },
+                });
+            }
+        };
+
         const invalidateAllByCharacter = (): void => {
-            void queryClient.invalidateQueries({ queryKey: sidebarQueryKeys.byCharacterAll() });
+            const prefix = sidebarQueryKeys.byCharacterAll();
+            // Mark every cached group stale without letting Query fan them all out
+            // at once. Active groups are then refetched through the same bounded
+            // worker count used by initial sidebar backfill.
+            void queryClient.invalidateQueries({ queryKey: prefix, refetchType: 'none' });
+            enqueueLoadableByCharacterRefetches(prefix);
         };
 
-        const subscriptions = [
-            subscribeChatuiEvent(chatuiEventKeys.CHAT_CHANGED, () => schedule(() => {
-                invalidateHeader();
-                invalidateCharacters();
-                invalidateCurrentByCharacter();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.CHAT_RENAMED, () => schedule(() => {
-                invalidateHeader();
-                invalidateCurrentByCharacter();
-                invalidateRecents();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.CHAT_DELETED, () => schedule(() => {
-                invalidateHeader();
-                invalidateCharacters();
-                invalidateCurrentByCharacter();
-                invalidateAllByCharacter();
-                invalidateRecents();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.MESSAGE_SENT, () => schedule(() => {
-                invalidateCharacters();
-                invalidateCurrentByCharacter();
-                invalidateRecents();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.MESSAGE_RECEIVED, () => schedule(() => {
-                invalidateCharacters();
-                invalidateCurrentByCharacter();
-                invalidateRecents();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.CHARACTER_EDITED, () => schedule(() => {
-                invalidateHeader();
-                invalidateCharacters();
-                invalidateCurrentByCharacter();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.CHARACTER_DELETED, () => schedule(() => {
-                invalidateCharacters();
-                invalidateAllByCharacter();
-                invalidateRecents();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.CHARACTER_DUPLICATED, () => schedule(() => {
-                invalidateCharacters();
-                invalidateAllByCharacter();
-                invalidateRecents();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.CHARACTER_RENAMED, () => schedule(() => {
-                invalidateCharacters();
-                invalidateAllByCharacter();
-                invalidateRecents();
-            })),
-            subscribeChatuiEvent(chatuiEventKeys.CHARACTER_PAGE_LOADED, () => schedule(() => {
-                invalidateCharacters();
-            })),
-        ];
+        const invalidateScope = (scope: SidebarInvalidationScope): void => {
+            switch (scope) {
+                case 'header': invalidateHeader(); break;
+                case 'characters': invalidateCharacters(); break;
+                case 'recents': invalidateRecents(); break;
+                case 'current-character': invalidateCurrentByCharacter(); break;
+                case 'all-characters': invalidateAllByCharacter(); break;
+            }
+        };
 
-        return () => {
+        const subscriptions: Array<() => void> = [];
+        const dispose = (): void => {
+            disposed = true;
+            refetchCoordinator.dispose();
             for (const timer of timers) clearTimeout(timer);
             timers.clear();
-            for (const unsubscribe of subscriptions) unsubscribe();
+            for (const unsubscribe of subscriptions.reverse()) {
+                try {
+                    unsubscribe();
+                } catch (error) {
+                    console.error('[ChatUI] sidebar query subscription cleanup failed', error);
+                }
+            }
         };
+
+        try {
+            for (const [eventKey, scopes] of Object.entries(SIDEBAR_INVALIDATIONS_BY_EVENT)) {
+                subscriptions.push(subscribeChatuiEvent(eventKey, () => schedule(() => {
+                    for (const scope of scopes) invalidateScope(scope);
+                })));
+            }
+        } catch (error) {
+            dispose();
+            console.error('[ChatUI] sidebar query bridge initialization failed', error);
+            queueMicrotask(() => disableChatui());
+        }
+
+        return dispose;
     }, [queryClient]);
 }
 

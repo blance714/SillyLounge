@@ -1,6 +1,9 @@
 import React, { useEffect, useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { saveEditedChatuiMessage } from '../../actions.js';
+import {
+    isChatuiLifecycleCancellation,
+    saveEditedChatuiMessage,
+} from '../../actions.js';
 import type { ChatuiMessage } from '../../types.js';
 
 export function MessageEditor({
@@ -31,10 +34,12 @@ export function MessageEditor({
         if (isSaving) return;
         setIsSaving(true);
         try {
-            await saveEditedChatuiMessage(message.id, draft);
+            await saveEditedChatuiMessage(message.id, draft, message.chatKey);
             onSaved();
         } catch (error) {
-            console.error('[ChatUI] Failed to save message edit', error);
+            if (!isChatuiLifecycleCancellation(error)) {
+                console.error('[ChatUI] Failed to save message edit', error);
+            }
         } finally {
             setIsSaving(false);
         }

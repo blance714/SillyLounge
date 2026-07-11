@@ -19,6 +19,7 @@ import { initConfigStore } from './store/config-store.js';
 import { initTempChatStore } from './store/temp-chat-store.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
+import { finalizePendingCharacterChatDeletion } from './adapter/chats.js';
 
 // ── Module constants ──────────────────────────────────────────────────────────
 
@@ -38,6 +39,7 @@ const defaultSettings = {
 
 /** @type {boolean} */
 let isSetup = false;
+let isSettingUp = false;
 
 // ── Settings ──────────────────────────────────────────────────────────────────
 
@@ -62,34 +64,75 @@ function getSettings() {
 // ── Setup / Teardown ──────────────────────────────────────────────────────────
 
 /**
- * Activate ChatUI: mount shield, store, and Preact root. Idempotent.
+ * Run every teardown even if an earlier one fails. Restoring the native ST
+ * surface is deliberately first, so a broken ChatUI can never strand the page
+ * behind its shield.
+ */
+function cleanupLifecycle(phase: 'rollback' | 'teardown') {
+    const cleanups = [
+        ['DOM shield', teardownStDomShield],
+        ['Preact root', teardownChatuiRoot],
+        ['chat store', teardownChatuiStore],
+    ] as const;
+
+    for (const [label, cleanup] of cleanups) {
+        try {
+            cleanup();
+        } catch (error) {
+            console.error(`[ChatUI] ${phase} failed for ${label}`, error);
+        }
+    }
+}
+
+/**
+ * Activate ChatUI transactionally. Store and root health are established before
+ * the DOM shield commits the visible switch; any failure rolls every layer back.
  *
  * @returns {void}
  */
 function setup() {
-    if (isSetup) return;
+    if (isSetup || isSettingUp) return;
 
-    initStDomShield();
-    initChatuiStore();
-    initChatuiRoot();
+    isSettingUp = true;
+    try {
+        initChatuiStore();
+        initChatuiRoot();
+        initStDomShield();
 
-    isSetup = true;
+        isSetup = true;
+    } catch (error) {
+        isSetup = false;
+        cleanupLifecycle('rollback');
+        throw error;
+    } finally {
+        isSettingUp = false;
+    }
 }
 
 /**
- * Deactivate ChatUI: tear down in reverse order so the Preact app unmounts
- * before the shield removes #chatui-root. Idempotent.
+ * Deactivate ChatUI. This intentionally repairs every layer even when the
+ * committed flag is false, so teardown also heals a partially-failed setup.
  *
  * @returns {void}
  */
 function teardown() {
-    if (!isSetup) return;
-
-    teardownChatuiRoot();
-    teardownChatuiStore();
-    teardownStDomShield();
-
     isSetup = false;
+    cleanupLifecycle('teardown');
+}
+
+/** Keep the persisted toggle honest when activation cannot be completed. */
+function setupOrDisable(enabledCb?: HTMLInputElement | null): boolean {
+    try {
+        setup();
+        return true;
+    } catch (error) {
+        console.error('[ChatUI] setup failed; ChatUI has been disabled', error);
+        const settings = getSettings();
+        settings.enabled = false;
+        saveSettingsDebounced();
+        if (enabledCb) enabledCb.checked = false;
+        return false;
+    }
 }
 
 // ── Settings UI ───────────────────────────────────────────────────────────────
@@ -160,7 +203,7 @@ function injectSettingsUI() {
         settings.enabled = enabledCb.checked;
         saveSettingsDebounced();
         if (settings.enabled) {
-            setup();
+            setupOrDisable(enabledCb);
         } else {
             teardown();
         }
@@ -205,7 +248,14 @@ function init() {
     initTempChatStore();
     injectSettingsUI();
     window.addEventListener(CHATUI_DISABLE_EVENT, disableFromUi);
-    if (settings.enabled) setup();
+    if (settings.enabled) {
+        const enabledCb = document.getElementById('chatui_enabled') as HTMLInputElement | null;
+        setupOrDisable(enabledCb);
+    }
+    // A current-chat delete reloads before emitting CHAT_DELETED so arbitrary
+    // third-party listeners can never observe/save the stale deleted runtime.
+    // APP_READY guarantees the replacement chat is now reconstructed.
+    void finalizePendingCharacterChatDeletion();
 }
 
 // autoFireAfterEmit — APP_READY re-emits to late subscribers, so this is safe.

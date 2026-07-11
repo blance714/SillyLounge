@@ -2,7 +2,7 @@
  * SillyTavern-ChatUI · media adapter
  */
 
-import { _dispatchClick, getMessageElementById } from './internals.js';
+import { _dispatchClick, getMessageById, getMessageElementById } from './internals.js';
 import {
     type UnknownRecord,
     numberOrNull,
@@ -95,8 +95,14 @@ export function getMessageAttachments(rawMessage: unknown): MessageAttachmentsDt
     };
 }
 
+/** Read attachments for one live message without leaking its raw host record. */
+export function getMessageAttachmentsById(messageId: number | string): MessageAttachmentsDto {
+    return getMessageAttachments(getMessageById(messageId));
+}
+
 export function openMessageMedia(messageId: number | string, mediaIndex: number): void {
     const mesEl = getMessageElementById(messageId);
+    if (!mesEl) throw new Error(`[ChatUI/adapter] Message element not found for media: ${messageId}`);
     const button = mesEl?.querySelector(`.mes_media_container[data-index="${mediaIndex}"] .mes_media_enlarge`);
     if (button) {
         _dispatchClick(button);
@@ -104,11 +110,14 @@ export function openMessageMedia(messageId: number | string, mediaIndex: number)
     }
 
     const media = mesEl?.querySelector(`.mes_media_container[data-index="${mediaIndex}"] .mes_img, .mes_media_container[data-index="${mediaIndex}"] .mes_video`);
-    if (media) _dispatchClick(media);
+    if (!media) throw new Error(`[ChatUI/adapter] Media item not found: ${messageId}/${mediaIndex}`);
+    _dispatchClick(media);
 }
 
 export function openMessageFile(messageId: number | string, fileIndex: number): void {
     const mesEl = getMessageElementById(messageId);
+    if (!mesEl) throw new Error(`[ChatUI/adapter] Message element not found for file: ${messageId}`);
     const button = mesEl?.querySelector(`.mes_file_container[data-index="${fileIndex}"] .mes_file_open`);
-    if (button) _dispatchClick(button);
+    if (!button) throw new Error(`[ChatUI/adapter] File item not found: ${messageId}/${fileIndex}`);
+    _dispatchClick(button);
 }

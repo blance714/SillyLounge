@@ -14,7 +14,7 @@ type QRItem = { id: string; label: string; title: string; iconHtml: string };
  * Each button proxies the primary click to the live ST element; context-menu
  * / linked-set secondary actions are out of scope.
  */
-export function QRBar(): ComponentChild {
+export function QRBar({ chatKey }: { chatKey: string }): ComponentChild {
     const [items, setItems] = useState<QRItem[]>([]);
 
     useEffect(() => {
@@ -32,7 +32,7 @@ export function QRBar(): ComponentChild {
                     className="cui-root-qrbar-btn"
                     type="button"
                     title={item.title}
-                    onClick={() => triggerChatuiQuickReply(item.id)}
+                    onClick={() => triggerChatuiQuickReply(item.id, chatKey)}
                 >
                     {item.iconHtml && (
                         <span

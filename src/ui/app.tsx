@@ -5,7 +5,7 @@
  * UI reads Store DTOs and action facades only; ST runtime details stay in adapter.
  */
 
-import React, { useCallback, useEffect, useMemo, useState } from 'preact/compat';
+import React, { Component, useCallback, useEffect, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { createRoot } from 'preact/compat/client';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -20,8 +20,9 @@ import { SettingsNav } from './components/settings/SettingsNav.js';
 import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useCardEmbedRendering, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useRootDomEnhancements, useSidebarBasics, useSettings } from './hooks.js';
-import { clearChatuiToasts, closeChatuiSettings, regenerateChatuiLast } from './actions.js';
+import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings } from './hooks.js';
+import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, resetChatuiComposerDraftStore } from './actions.js';
+import { teardownCardEmbedRuntime } from './card-embed.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
@@ -35,6 +36,57 @@ type EditingMessageTarget = {
     id: ChatuiMessage['id'];
 };
 
+class ChatuiErrorBoundary extends Component<
+    { children: ComponentChild },
+    { failed: boolean }
+> {
+    state = { failed: false };
+
+    static getDerivedStateFromError(): { failed: boolean } {
+        return { failed: true };
+    }
+
+    componentDidCatch(error: unknown): void {
+        console.error('[ChatUI] render failed; restoring the native SillyTavern UI', error);
+        // Avoid unmounting the root re-entrantly from Preact's error lifecycle.
+        queueMicrotask(() => disableChatui());
+    }
+
+    render(): ComponentChild {
+        return this.state.failed ? null : this.props.children;
+    }
+}
+
+function ChatuiMessageRow({
+    messageId,
+    headerMode,
+    isGenerating,
+    isEditing,
+    onStartEdit,
+    onFinishEdit,
+}: {
+    messageId: number;
+    headerMode: MessageHeaderMode;
+    isGenerating: boolean;
+    isEditing: boolean;
+    onStartEdit: () => void;
+    onFinishEdit: () => void;
+}): ComponentChild {
+    const message = useChatuiMessage(messageId);
+    if (!message) return null;
+    return (
+        <MessageItem
+            message={message}
+            headerMode={headerMode}
+            isGenerating={isGenerating}
+            isEditing={isEditing}
+            onStartEdit={onStartEdit}
+            onCancelEdit={onFinishEdit}
+            onSavedEdit={onFinishEdit}
+        />
+    );
+}
+
 function ChatuiApp(): ComponentChild {
     const state = useChatuiSnapshot();
     const config = useConfig();
@@ -43,44 +95,36 @@ function ChatuiApp(): ComponentChild {
     const sidebarBasics = useSidebarBasics();
     const chatHeader = sidebarBasics.header;
     const isTempChatActive = useIsTempChatActive();
-    const [rootNode, setRootNode] = useState<HTMLElement | null>(null);
     const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
     const [editingMessage, setEditingMessage] = useState<EditingMessageTarget | null>(null);
     const headerMode: MessageHeaderMode = state.chat.isGroup ? config.headerGroup : config.headerSolo;
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const { settingsOpen } = useSettings();
-    const messages = useMemo(() => state.chat.messages.filter(message => (
-        !message.extra.isSmallSys && !message.extra.isToolCall
-    )), [state]);
-    const rootRef = useCallback((node: HTMLElement | null) => {
-        setRootNode(node);
-    }, []);
+    const messageIds = state.chat.messageIds;
     const listRef = useCallback((node: HTMLDivElement | null) => {
         setListNode(node);
     }, []);
 
     useEffect(() => {
         if (editingMessage === null) return;
-        if (editingMessage.chatKey === state.chat.chatKey && state.chat.byId[String(editingMessage.id)]) return;
+        if (editingMessage.chatKey === state.chat.chatKey && messageIds.includes(editingMessage.id)) return;
         setEditingMessage(null);
-    }, [editingMessage, state.chat.byId, state.chat.chatKey]);
+    }, [editingMessage, messageIds, state.chat.chatKey]);
 
     useEffect(() => {
         setIsSidebarMobileOpen(false);
     }, [settingsOpen, state.chat.chatKey]);
 
-    useRootDomEnhancements(rootNode, messages, state.chat.isGenerating);
-    useCardEmbedRendering(rootNode, messages, state.chat.isGenerating);
-    const { atBottom, scrollToBottom } = useAutoScroll(listNode, messages, state.chat.isGenerating, state.chat.chatKey);
+    const { atBottom, scrollToBottom } = useAutoScroll(listNode, messageIds, state.chat.isGenerating, state.chat.chatKey);
     useEscapeToStopGeneration(state.chat.isGenerating);
 
     const summonSidebar = () => setIsSidebarMobileOpen(true);
     const dismissSidebarNavigation = () => setIsSidebarMobileOpen(false);
     const handleEditLast = useCallback(() => {
-        const lastMessage = messages[messages.length - 1];
-        if (!lastMessage || state.chat.isGenerating) return;
-        setEditingMessage({ chatKey: state.chat.chatKey, id: lastMessage.id });
-    }, [messages, state.chat.isGenerating, state.chat.chatKey]);
+        const lastMessageId = messageIds[messageIds.length - 1];
+        if (lastMessageId === undefined || state.chat.isGenerating) return;
+        setEditingMessage({ chatKey: state.chat.chatKey, id: lastMessageId });
+    }, [messageIds, state.chat.isGenerating, state.chat.chatKey]);
 
     return (
         <>
@@ -95,7 +139,7 @@ function ChatuiApp(): ComponentChild {
             }
             {settingsOpen
                 ? <SettingsContent />
-                : <section ref={rootRef} className="cui-root-app" aria-label="ChatUI message root">
+                : <section className="cui-root-app" aria-label="ChatUI message root">
                       <header className="cui-root-topbar">
                           <button
                               className="cui-root-shell-toggle cui-root-shell-hamburger"
@@ -119,20 +163,20 @@ function ChatuiApp(): ComponentChild {
                           aria-live="polite"
                           aria-relevant="additions text"
                       >
-                          {messages.map(message => (
-                              <MessageItem
-                                  key={`${state.chat.chatKey}:${message.id}`}
-                                  message={message}
+                          {messageIds.map(messageId => (
+                              <ChatuiMessageRow
+                                  key={`${state.chat.chatKey}:${messageId}`}
+                                  messageId={messageId}
                                   headerMode={headerMode}
-                                  isEditing={editingMessage?.chatKey === state.chat.chatKey && editingMessage.id === message.id}
-                                  onStartEdit={() => setEditingMessage({ chatKey: state.chat.chatKey, id: message.id })}
-                                  onCancelEdit={() => setEditingMessage(null)}
-                                  onSavedEdit={() => setEditingMessage(null)}
+                                  isGenerating={state.chat.isGenerating}
+                                  isEditing={editingMessage?.chatKey === state.chat.chatKey && editingMessage.id === messageId}
+                                  onStartEdit={() => setEditingMessage({ chatKey: state.chat.chatKey, id: messageId })}
+                                  onFinishEdit={() => setEditingMessage(null)}
                               />
                           ))}
                       </div>
                       {state.chat.isGenerating && <GeneratingIndicator />}
-                      <div className="cui-root-empty" hidden={messages.length > 0}>
+                      <div className="cui-root-empty" hidden={messageIds.length > 0}>
                           No messages
                       </div>
                       <button
@@ -150,14 +194,14 @@ function ChatuiApp(): ComponentChild {
                               <button
                                   className="cui-root-generate-btn"
                                   type="button"
-                                  onClick={regenerateChatuiLast}
+                                  onClick={() => regenerateChatuiLast(state.chat.chatKey)}
                               >
                                   <i className="fa-solid fa-rotate-right" />
                                   <span>生成回复</span>
                               </button>
                           </div>
                       )}
-                      <QRBar />
+                      <QRBar chatKey={state.chat.chatKey} />
                       {isTempChatActive && (
                           <NewChatCharacterPicker
                               characters={sidebarBasics.characters}
@@ -165,7 +209,11 @@ function ChatuiApp(): ComponentChild {
                               isGenerating={state.chat.isGenerating}
                           />
                       )}
-                      <Composer isGenerating={state.chat.isGenerating} onEditLast={handleEditLast} />
+                      <Composer
+                          chatKey={state.chat.chatKey}
+                          isGenerating={state.chat.isGenerating}
+                          onEditLast={handleEditLast}
+                      />
                   </section>
             }
             <Toaster />
@@ -180,27 +228,39 @@ export function initChatuiRoot(): void {
     rootEl.setAttribute('data-cui-root-mounted', '1');
     rootApi = createRoot(rootEl);
     rootApi.render(
-        <QueryClientProvider client={chatuiQueryClient}>
-            <StQueryBridge />
-            <ChatuiApp />
-        </QueryClientProvider>,
+        <ChatuiErrorBoundary>
+            <QueryClientProvider client={chatuiQueryClient}>
+                <StQueryBridge />
+                <ChatuiApp />
+            </QueryClientProvider>
+        </ChatuiErrorBoundary>,
     );
     isSetup = true;
 }
 
 export function teardownChatuiRoot(): void {
-    if (!isSetup) return;
+    isSetup = false;
 
-    // The ui-store is a module singleton that outlives the Preact tree, so reset
-    // the settings mode flag here — a disable→re-enable cycle should start clean.
-    closeChatuiSettings();
-    clearChatuiToasts();
-    rootApi?.unmount();
-    resetChatuiQueryClient();
-    rootEl?.removeAttribute('data-cui-root-mounted');
-    rootEl?.replaceChildren();
+    // Every cleanup is best-effort: this function is also the rollback path for
+    // a partially-mounted root, so one failure must not strand other resources.
+    const cleanups: Array<() => void> = [
+        closeChatuiSettings,
+        clearChatuiToasts,
+        resetChatuiComposerDraftStore,
+        () => rootApi?.unmount(),
+        resetChatuiQueryClient,
+        teardownCardEmbedRuntime,
+        () => rootEl?.removeAttribute('data-cui-root-mounted'),
+        () => rootEl?.replaceChildren(),
+    ];
+    for (const cleanup of cleanups) {
+        try {
+            cleanup();
+        } catch (error) {
+            console.error('[ChatUI] root cleanup failed', error);
+        }
+    }
 
     rootApi = null;
     rootEl = null;
-    isSetup = false;
 }
