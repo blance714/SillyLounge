@@ -29,7 +29,7 @@ export function SettingsContent(): ComponentChild {
             {stEntries.map(entry => (
                 <StDrawerHost
                     key={entry.drawerContentId}
-                    drawerContentId={entry.drawerContentId!}
+                    drawerContentId={entry.drawerContentId}
                     active={activeSettingsId === entry.id}
                 />
             ))}

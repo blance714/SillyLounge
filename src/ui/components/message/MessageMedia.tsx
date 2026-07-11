@@ -34,7 +34,7 @@ export function MessageMedia({ message }: { message: ChatuiMessage }): Component
                                     type="button"
                                     aria-label={`Open ${item.title}`}
                                     title={item.title}
-                                    onClick={() => openChatuiMessageMedia(message.id, item.index)}
+                                    onClick={() => openChatuiMessageMedia(message.id, item.index, message.chatKey)}
                                 >
                                     <img className="cui-root-media-image" src={item.url} alt={item.title} loading="lazy" />
                                 </button>
@@ -56,7 +56,7 @@ export function MessageMedia({ message }: { message: ChatuiMessage }): Component
                             className="cui-root-file-item"
                             type="button"
                             title={file.name}
-                            onClick={() => openChatuiMessageFile(message.id, file.index)}
+                            onClick={() => openChatuiMessageFile(message.id, file.index, message.chatKey)}
                         >
                             <i className="fa-solid fa-file-lines" />
                             <span className="cui-root-file-name">{file.name}</span>

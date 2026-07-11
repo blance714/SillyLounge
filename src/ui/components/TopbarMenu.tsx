@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { deleteChatuiChat, renameChatuiChat, getChatuiCurrentChatIdentity } from '../actions.js';
-import { useChatuiSnapshot, useSidebarBasics } from '../hooks.js';
+import { useCurrentChatIdentity, useSidebarBasics } from '../hooks.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { MenuItem } from './message/MenuItem.js';
 
@@ -21,13 +21,12 @@ const _isLiveTarget = (t: ChatOperationTarget) => {
  * rename and delete (guarded by ConfirmDialog).
  */
 export function TopbarMenu(): ComponentChild {
-    const state = useChatuiSnapshot();
+    const identity = useCurrentChatIdentity();
     const sidebar = useSidebarBasics();
     const [renameTarget, setRenameTarget] = useState<ChatOperationTarget | null>(null);
     const [draft, setDraft] = useState('');
     const [deleteTarget, setDeleteTarget] = useState<ChatOperationTarget | null>(null);
 
-    const identity = state.chat.currentChat;
     const isGroup = sidebar.header.isGroup;
     const hasCurrentChat = !!identity && !isGroup;
     const currentTarget = hasCurrentChat

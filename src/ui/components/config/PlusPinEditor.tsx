@@ -17,7 +17,7 @@ export function PlusPinEditor(): ComponentChild {
     const pinned = useConfig().plusPinned;
     const atCap = pinned.length >= PLUS_PIN_CAP;
 
-    const toggle = (id: string) => {
+    const toggle = (id: (typeof PLUS_TOOL_META)[number]['id']) => {
         // Remove if present; otherwise append (preserving existing pin order),
         // ignoring the add when already at the cap.
         if (pinned.includes(id)) {

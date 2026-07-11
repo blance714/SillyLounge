@@ -8,15 +8,14 @@ import { branchChat, createNewBookmark } from '@st/bookmarks';
 import { hideChatMessage, unhideChatMessage } from '@st/chats';
 import {
     _dispatchClick,
+    _dispatchClickAndWait,
     _getJQueryMessage,
     _getMessageId,
-    _waitForEvent,
     getContext,
     getCurrentChat,
     getMessageByElement,
     getMessageById,
     getMessageElementById,
-    stEventKeys,
 } from './internals.js';
 import { parseMessageRecord } from './schema.js';
 
@@ -29,10 +28,6 @@ type DeleteSettingsContext = {
         confirm_message_delete?: unknown;
     };
 };
-
-function reportAsyncFailure(work: unknown, message: string): void {
-    Promise.resolve(work).catch((error: unknown) => console.error(message, error));
-}
 
 function arrayLength(value: unknown): number {
     return Array.isArray(value) ? value.length : 0;
@@ -79,25 +74,33 @@ export function triggerOverflowAction(original: Element): void {
 }
 
 export async function copyMessage(mesEl: Element): Promise<void> {
-    const msg = parseMessageRecord(getMessageByElement(mesEl));
-    const text = msg?.mes ?? '';
-    await copyText(text);
+    const rawMessage = getMessageByElement(mesEl);
+    if (
+        !rawMessage
+        || typeof rawMessage !== 'object'
+        || Array.isArray(rawMessage)
+        || typeof (rawMessage as Record<string, unknown>).mes !== 'string'
+    ) {
+        throw new Error(`[ChatUI/adapter] Message record not found for copy: ${_getMessageId(mesEl)}`);
+    }
+    await copyText((rawMessage as Record<string, string>).mes);
 }
 
 /**
  * @returns {void}
  */
 export function regenerateMessage() {
-    if (isGenerating()) return;
-    document.getElementById('option_regenerate')?.click();
+    if (isGenerating()) throw new Error('[ChatUI/adapter] Generation is already active');
+    const button = document.getElementById('option_regenerate');
+    if (!button) throw new Error('[ChatUI/adapter] Regenerate action not found');
+    button.click();
 }
 
 /**
  * @returns {void}
  */
 export function regenerateLast() {
-    if (isGenerating()) return;
-    document.getElementById('option_regenerate')?.click();
+    regenerateMessage();
 }
 
 export function editMessage(mesEl: Element): void {
@@ -144,39 +147,48 @@ export async function saveMessageEditById(mesId: MessageId, text: string): Promi
         throw new Error(`[ChatUI/adapter] Native edit done button not found for message: ${normalizedId}`);
     }
 
-    const updated = _waitForEvent(
-        stEventKeys.MESSAGE_UPDATED,
-        (updatedMessageId: unknown) => Number(updatedMessageId) === normalizedId,
-    );
-    _dispatchClick(done);
-    await updated;
+    // ST emits MESSAGE_UPDATED before its async save finishes. Await the actual
+    // delegated jQuery handler promise so the shared host-operation lane stays
+    // occupied through both the in-memory update and durable save.
+    await _dispatchClickAndWait(done as HTMLElement);
 }
 
-export function createBranch(mesEl: Element): void {
+export async function createBranch(mesEl: Element): Promise<void> {
     const mesId = _getMessageId(mesEl);
-    if (!Number.isFinite(mesId)) return;
-    reportAsyncFailure(branchChat(mesId), '[ChatUI/adapter] branchChat failed');
+    if (!Number.isInteger(mesId) || mesId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for branch: ${mesId}`);
+    }
+    await branchChat(mesId);
 }
 
-export function createCheckpoint(mesEl: Element): void {
+export async function createCheckpoint(mesEl: Element): Promise<void> {
     const mesId = _getMessageId(mesEl);
-    if (!Number.isFinite(mesId)) return;
-    reportAsyncFailure(createNewBookmark(mesId), '[ChatUI/adapter] createNewBookmark failed');
+    if (!Number.isInteger(mesId) || mesId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for checkpoint: ${mesId}`);
+    }
+    await createNewBookmark(mesId);
 }
 
-export function toggleHideMessage(mesEl: Element): void {
+export async function toggleHideMessage(mesEl: Element): Promise<void> {
     const mesId = _getMessageId(mesEl);
+    if (!Number.isInteger(mesId) || mesId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for hide: ${mesId}`);
+    }
     const msg = parseMessageRecord(getMessageById(mesId));
-    if (!msg) return;
+    if (!msg) {
+        throw new Error(`[ChatUI/adapter] Message record not found for hide: ${mesId}`);
+    }
     // Source of truth is the message flag (is_system), not native button
     // visibility — reading the DOM could pick the wrong direction.
     const action = msg.is_system === true ? unhideChatMessage(mesId) : hideChatMessage(mesId);
-    reportAsyncFailure(action, '[ChatUI/adapter] toggle hide failed');
+    await action;
 }
 
-export function deleteMessage(mesEl: Element): void {
+export async function deleteMessage(mesEl: Element): Promise<void> {
     const mesId = _getMessageId(mesEl);
-    if (!Number.isFinite(mesId)) return;
+    if (!Number.isInteger(mesId) || mesId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for delete: ${mesId}`);
+    }
 
     // Call ST's exported deleteMessage(id, swipeIndex, askConfirmation) directly
     // instead of simulating an edit-mode → .mes_edit_delete click on the
@@ -186,61 +198,72 @@ export function deleteMessage(mesEl: Element): void {
     // selected swipe rather than the whole message. (fromSlashCommand is always
     // false from the ChatUI surface.)  See ST script.js .mes_edit_delete handler.
     const message = parseMessageRecord(getMessageById(mesId));
+    if (!message) {
+        throw new Error(`[ChatUI/adapter] Message record not found for delete: ${mesId}`);
+    }
     const confirm = !!(getContext() as DeleteSettingsContext).powerUserSettings?.confirm_message_delete;
-    const swipes = message?.swipes ?? [];
-    const selectedSwipe = message?.swipe_id;
+    const swipes = message.swipes;
+    const selectedSwipe = message.swipe_id;
     const isLast = mesId === arrayLength(getCurrentChat()) - 1;
     const deleteOnlySwipe = confirm
-        && !message?.is_user
+        && !message.is_user
         && swipes.length > 1
         && isLast
         && selectedSwipe !== undefined;
 
-    reportAsyncFailure(
-        stDeleteMessage(mesId, deleteOnlySwipe ? selectedSwipe : undefined, confirm),
-        '[ChatUI/adapter] deleteMessage failed',
-    );
+    await stDeleteMessage(mesId, deleteOnlySwipe ? selectedSwipe : undefined, confirm);
 }
 
-export function swipeMessage(mesEl: Element, direction: SwipeDirection): void {
+export async function swipeMessage(mesEl: Element, direction: SwipeDirection): Promise<void> {
     const mesId = _getMessageId(mesEl);
-    if (!Number.isFinite(mesId)) return;
+    if (!Number.isInteger(mesId) || mesId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for swipe: ${mesId}`);
+    }
+    const rawMessage = getMessageById(mesId);
+    if (!parseMessageRecord(rawMessage)) {
+        throw new Error(`[ChatUI/adapter] Message record not found for swipe: ${mesId}`);
+    }
     // Call ST's exported swipe() with forceMesId (it tolerates a null event when
     // forceMesId is a number) instead of clicking the off-screen .swipe_left /
     // .swipe_right buttons. direction 'left'|'right' matches ST's SWIPE_DIRECTION.
-    reportAsyncFailure(
-        stSwipe(null, direction, { forceMesId: mesId, message: getMessageById(mesId) ?? undefined }),
-        '[ChatUI/adapter] swipe failed',
-    );
+    await stSwipe(null, direction, { forceMesId: mesId, message: rawMessage });
 }
 
-export function triggerMessageAction(mesEl: Element, action: MessageAction): Promise<void> | void {
+export async function triggerMessageAction(mesEl: Element, action: MessageAction): Promise<void> {
     switch (action) {
-        case 'copy':       return copyMessage(mesEl);
+        case 'copy':       await copyMessage(mesEl);       break;
 
         case 'regen':      regenerateMessage();         break;
         case 'edit':       editMessage(mesEl);         break;
-        case 'branch':     createBranch(mesEl);        break;
-        case 'checkpoint': createCheckpoint(mesEl);    break;
-        case 'hide':       toggleHideMessage(mesEl);   break;
-        case 'delete':     deleteMessage(mesEl);       break;
+        case 'branch':     await createBranch(mesEl);     break;
+        case 'checkpoint': await createCheckpoint(mesEl); break;
+        case 'hide':       await toggleHideMessage(mesEl); break;
+        case 'delete':     await deleteMessage(mesEl);     break;
         default: break;
     }
 }
 
-export function triggerMessageActionById(mesId: MessageId, action: MessageAction): Promise<void> | void {
-    if (action === 'regen') {
-        regenerateMessage();
-        return;
+export async function triggerMessageActionById(mesId: MessageId, action: MessageAction): Promise<void> {
+    const normalizedId = Number(mesId);
+    if (!Number.isInteger(normalizedId) || normalizedId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for ${action}: ${mesId}`);
     }
 
-    const mesEl = getMessageElementById(mesId);
-    if (!mesEl) return;
-    return triggerMessageAction(mesEl, action);
+    const mesEl = getMessageElementById(normalizedId);
+    if (!mesEl) {
+        throw new Error(`[ChatUI/adapter] Message element not found for ${action}: ${normalizedId}`);
+    }
+    await triggerMessageAction(mesEl, action);
 }
 
-export function swipeMessageById(mesId: MessageId, direction: SwipeDirection): void {
-    const mesEl = getMessageElementById(mesId);
-    if (!mesEl) return;
-    swipeMessage(mesEl, direction);
+export async function swipeMessageById(mesId: MessageId, direction: SwipeDirection): Promise<void> {
+    const normalizedId = Number(mesId);
+    if (!Number.isInteger(normalizedId) || normalizedId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for swipe: ${mesId}`);
+    }
+    const mesEl = getMessageElementById(normalizedId);
+    if (!mesEl) {
+        throw new Error(`[ChatUI/adapter] Message element not found for swipe: ${normalizedId}`);
+    }
+    await swipeMessage(mesEl, direction);
 }

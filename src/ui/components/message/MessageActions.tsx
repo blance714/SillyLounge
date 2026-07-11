@@ -92,7 +92,7 @@ export function MessageActions({
     message: ChatuiMessage;
     onEdit: () => void;
 }): ComponentChild {
-    const dispatch = (action: ChatuiAction) => triggerChatuiMessageAction(message.id, action);
+    const dispatch = (action: ChatuiAction) => triggerChatuiMessageAction(message.id, action, message.chatKey);
 
     // Each action is defined once and routed to either the tiled row or the
     // overflow menu, so the two presentations never drift apart.
@@ -130,7 +130,7 @@ export function MessageActions({
                         <ActionButton
                             label="Previous swipe"
                             iconClass="fa-solid fa-chevron-left"
-                            onClick={() => swipeChatuiMessage(message.id, 'left')}
+                            onClick={() => swipeChatuiMessage(message.id, 'left', message.chatKey)}
                         />
                     )}
                     {message.swipe.hasMultiple && (
@@ -139,7 +139,7 @@ export function MessageActions({
                     <ActionButton
                         label="Next swipe"
                         iconClass="fa-solid fa-chevron-right"
-                        onClick={() => swipeChatuiMessage(message.id, 'right')}
+                        onClick={() => swipeChatuiMessage(message.id, 'right', message.chatKey)}
                     />
                 </>
             )}

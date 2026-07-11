@@ -1,17 +1,26 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/compat';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'preact/compat';
 import { useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getChatuiState, subscribeChatuiStore } from '../store/chat-store.js';
+import {
+    getChatuiState,
+    getMessageDtoById,
+    subscribeChatuiMessage,
+    subscribeChatuiMessageChanges,
+    subscribeChatuiStore,
+} from '../store/chat-store.js';
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
 import { getConfig, subscribeConfig } from '../store/config-store.js';
 import { getUiState, subscribeUiStore } from '../store/ui-store.js';
 import {
     getChatuiCurrentChatHeader,
+    getChatuiComposerDraftStoreSnapshot,
     getTempChat,
     getTempChatDraft,
     isTempChatDraft,
     listChatuiCharacters,
     notifyChatui,
+    setChatuiComposerDraft,
     stopChatuiGeneration,
+    subscribeChatuiComposerDraftStore,
     subscribeTempChatStore,
 } from './actions.js';
 import { renderCardEmbeds } from './card-embed.js';
@@ -62,14 +71,28 @@ function withSetValue<T>(source: Set<T>, value: T, included: boolean): Set<T> {
     return next;
 }
 
+export function useComposerDraft(chatKey: string): {
+    draft: string;
+    pendingSend: ReturnType<typeof getChatuiComposerDraftStoreSnapshot>['pendingSend'];
+    setDraft: (text: string) => void;
+} {
+    const snapshot = useSyncExternalStore(
+        subscribeChatuiComposerDraftStore,
+        getChatuiComposerDraftStoreSnapshot,
+    );
+    const setDraft = useCallback((text: string) => {
+        setChatuiComposerDraft(chatKey, text);
+    }, [chatKey]);
+
+    return {
+        draft: snapshot.drafts[chatKey] ?? '',
+        pendingSend: snapshot.pendingSend,
+        setDraft,
+    };
+}
+
 export function useConfig(): ChatuiConfig {
-    const [config, setConfig] = useState<ChatuiConfig>(() => getConfig());
-
-    useEffect(() => subscribeConfig(() => {
-        setConfig(getConfig());
-    }), []);
-
-    return config;
+    return useSyncExternalStore(subscribeConfig, getConfig);
 }
 
 /** Shape returned by useSettings; matches ChatuiUiState from store/ui-store.js. */
@@ -77,23 +100,20 @@ export type SettingsModeState = { settingsOpen: boolean; activeSettingsId: strin
 
 /** Reactive read of the full settings mode state (settingsOpen + activeSettingsId). */
 export function useSettings(): SettingsModeState {
-    const [state, setState] = useState<SettingsModeState>(() => ({
-        settingsOpen: getUiState().settingsOpen,
-        activeSettingsId: getUiState().activeSettingsId,
-    }));
-
-    useEffect(() => subscribeUiStore(() => {
-        const s = getUiState();
-        setState({ settingsOpen: s.settingsOpen, activeSettingsId: s.activeSettingsId });
-    }), []);
-
-    return state;
+    return useSyncExternalStore(subscribeUiStore, getUiState);
 }
 
 export function useToasts(): ReturnType<typeof getToasts> {
-    const [toasts, setToasts] = useState(() => getToasts());
-    useEffect(() => subscribeToasts(setToasts), []);
-    return toasts;
+    return useSyncExternalStore(subscribeToasts, getToasts);
+}
+
+function getCurrentChatSnapshot(): ChatuiState['chat']['currentChat'] {
+    return getChatuiState().chat.currentChat;
+}
+
+/** Subscribe only to active-chat identity; streaming message updates stay local to the chat pane. */
+export function useCurrentChatIdentity(): ChatuiState['chat']['currentChat'] {
+    return useSyncExternalStore(subscribeChatuiStore, getCurrentChatSnapshot);
 }
 
 export function useSidebarBasics(): {
@@ -102,7 +122,7 @@ export function useSidebarBasics(): {
     getDraftSnapshot: (avatar: string) => { fileNames: string[]; complete: boolean };
 } {
     const queryClient = useQueryClient();
-    const chatState = useChatuiSnapshot();
+    const currentChat = useCurrentChatIdentity();
     const headerQuery = useQuery({
         ...sidebarQueryOptions.header(),
         initialData: getChatuiCurrentChatHeader,
@@ -111,8 +131,6 @@ export function useSidebarBasics(): {
         ...sidebarQueryOptions.characters(),
         initialData: listChatuiCharacters,
     });
-    const currentChat = chatState.chat.currentChat;
-
     const header = headerQuery.data ?? { sessionName: '', characterName: '', avatarImgURL: '', isGroup: false };
     const characters = useMemo<CharacterSummary[]>(() => (charactersQuery.data ?? []).map(character => ({
         ...character,
@@ -145,7 +163,7 @@ export function useSidebarBasics(): {
 
 export function useSidebarData(): ChatuiSidebarState {
     const queryClient = useQueryClient();
-    const chatState = useChatuiSnapshot();
+    const currentChat = useCurrentChatIdentity();
     const tempChat = useTempChat();
     const tempDraft = useTempChatDraft();
     const headerQuery = useQuery({
@@ -160,7 +178,6 @@ export function useSidebarData(): ChatuiSidebarState {
         ...sidebarQueryOptions.recents(SIDEBAR_RECENTS_MAX),
         placeholderData: [],
     });
-    const currentChat = chatState.chat.currentChat;
     const recentsReady = recentsQuery.isSuccess && !recentsQuery.isPlaceholderData;
     const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
     const [pendingBackfillAvatars, setPendingBackfillAvatars] = useState<Set<string>>(() => new Set());
@@ -391,40 +408,31 @@ export function useSidebarData(): ChatuiSidebarState {
 }
 
 export function useChatuiSnapshot(): ChatuiState {
-    const [state, setState] = useState<ChatuiState>(() => getChatuiState());
+    return useSyncExternalStore(subscribeChatuiStore, getChatuiState);
+}
 
-    useEffect(() => subscribeChatuiStore(() => {
-        setState(getChatuiState());
-    }), []);
-
-    return state;
+/** Granular message subscription: only the changed row rerenders while streaming. */
+export function useChatuiMessage(messageId: number): ChatuiMessage | null {
+    const subscribe = useCallback(
+        (onStoreChange: () => void) => subscribeChatuiMessage(messageId, onStoreChange),
+        [messageId],
+    );
+    const getSnapshot = useCallback(() => getMessageDtoById(messageId), [messageId]);
+    return useSyncExternalStore(subscribe, getSnapshot);
 }
 
 export function useTempChat(): ReturnType<typeof getTempChat> {
-    const [tempChat, setTempChat] = useState(() => getTempChat());
-
-    useEffect(() => subscribeTempChatStore(() => {
-        setTempChat(getTempChat());
-    }), []);
-
-    return tempChat;
+    return useSyncExternalStore(subscribeTempChatStore, getTempChat);
 }
 
 export function useTempChatDraft(): ReturnType<typeof getTempChatDraft> {
-    const [tempDraft, setTempDraft] = useState(() => getTempChatDraft());
-
-    useEffect(() => subscribeTempChatStore(() => {
-        setTempDraft(getTempChatDraft());
-    }), []);
-
-    return tempDraft;
+    return useSyncExternalStore(subscribeTempChatStore, getTempChatDraft);
 }
 
 export function useIsTempChatActive(): boolean {
-    const state = useChatuiSnapshot();
+    const current = useCurrentChatIdentity();
     const tempChat = useTempChat();
     const tempDraft = useTempChatDraft();
-    const current = state.chat.currentChat;
     if (tempDraft) return true;
     if (current && tempChat && current.avatar === tempChat.avatar && current.fileName === tempChat.fileName) return true;
     return false;
@@ -506,7 +514,7 @@ const AT_BOTTOM_THRESHOLD = 80;
  */
 export function useAutoScroll(
     root: HTMLElement | null,
-    messages: ChatuiMessage[],
+    messageIds: readonly number[],
     isGenerating: boolean,
     chatKey: string,
 ): { atBottom: boolean; scrollToBottom: () => void } {
@@ -517,6 +525,30 @@ export function useAutoScroll(
     const wasAtBottomRef = useRef(true);
     // null sentinel so the very first render also counts as a switch → land at bottom.
     const chatKeyRef = useRef<string | null>(null);
+    const contentFrameRef = useRef(0);
+
+    const followContent = useCallback(() => {
+        if (!root || !wasAtBottomRef.current) return;
+        root.scrollTop = root.scrollHeight;
+        wasAtBottomRef.current = true;
+        setAtBottom(true);
+    }, [root]);
+
+    useEffect(() => {
+        if (!root) return;
+        return subscribeChatuiMessageChanges(() => {
+            if (!wasAtBottomRef.current || contentFrameRef.current) return;
+            contentFrameRef.current = requestAnimationFrame(() => {
+                contentFrameRef.current = 0;
+                followContent();
+            });
+        });
+    }, [followContent, root]);
+
+    useEffect(() => () => {
+        if (contentFrameRef.current) cancelAnimationFrame(contentFrameRef.current);
+        contentFrameRef.current = 0;
+    }, []);
 
     useEffect(() => {
         if (!root) return;
@@ -547,7 +579,7 @@ export function useAutoScroll(
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
         setAtBottom(true);
-    }, [root, messages, isGenerating, chatKey]);
+    }, [root, messageIds, isGenerating, chatKey]);
 
     const scrollToBottom = useCallback(() => {
         if (!root) return;

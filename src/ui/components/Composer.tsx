@@ -1,6 +1,10 @@
-import React, { useRef, useState } from 'preact/compat';
+import React, { useRef } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
+    beginChatuiComposerSend,
+    clearChatuiComposerDraftIfMatches,
+    finishChatuiComposerSend,
+    isChatuiLifecycleCancellation,
     notifyChatui,
     regenerateChatuiLast,
     sendChatuiComposerMessage,
@@ -9,7 +13,7 @@ import {
 import { PlusMenu } from './PlusMenu.js';
 import { AttachmentChips } from './AttachmentChips.js';
 import { SelectorChips } from './SelectorChip.js';
-import { useConfig } from '../hooks.js';
+import { useComposerDraft, useConfig } from '../hooks.js';
 
 export function GeneratingIndicator(): ComponentChild {
     return (
@@ -21,15 +25,19 @@ export function GeneratingIndicator(): ComponentChild {
 }
 
 export function Composer({
+    chatKey,
     isGenerating,
     onEditLast,
 }: {
+    chatKey: string;
     isGenerating: boolean;
     onEditLast?: () => void;
 }): ComponentChild {
-    const [draft, setDraft] = useState('');
-    const [isSending, setIsSending] = useState(false);
+    const { draft, pendingSend, setDraft } = useComposerDraft(chatKey);
+    const isSending = pendingSend !== null;
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const chatKeyRef = useRef(chatKey);
+    chatKeyRef.current = chatKey;
     const singleLine = useConfig().composerLines === 'single';
     // Slot B = preset + model. Multi-line shows it on its own row below the input;
     // single-line relocates it into the ＋ menu top (DESIGN §4.2).
@@ -38,16 +46,26 @@ export function Composer({
     const submit = async () => {
         if (isSending || isGenerating) return;
 
-        setIsSending(true);
+        const sendToken = beginChatuiComposerSend(chatKey, draft);
+        if (!sendToken) return;
+        let accepted = false;
         try {
-            await sendChatuiComposerMessage(draft);
-            setDraft('');
-            textareaRef.current?.focus();
+            await sendChatuiComposerMessage(sendToken.text, sendToken.chatKey, () => {
+                accepted = true;
+                clearChatuiComposerDraftIfMatches(sendToken);
+                if (chatKeyRef.current === sendToken.chatKey) textareaRef.current?.focus();
+            });
         } catch (error) {
-            console.error('[ChatUI] Failed to send composer message', error);
-            notifyChatui('error', '发送失败');
+            if (isChatuiLifecycleCancellation(error)) {
+                // Full teardown intentionally invalidated this queued intent.
+            } else if (accepted) {
+                console.error('[ChatUI] Generation failed after the message was accepted', error);
+            } else {
+                console.error('[ChatUI] Failed to send composer message', error);
+                notifyChatui('error', '发送失败');
+            }
         } finally {
-            setIsSending(false);
+            finishChatuiComposerSend(sendToken);
         }
     };
 
@@ -63,7 +81,7 @@ export function Composer({
         >
             <AttachmentChips />
             <div className="cui-root-composer-row">
-                <PlusMenu topSlot={singleLine ? selectorSlotB : undefined} />
+                <PlusMenu chatKey={chatKey} topSlot={singleLine ? selectorSlotB : undefined} />
                 <textarea
                     ref={textareaRef}
                     className="cui-root-composer-input"
@@ -88,7 +106,7 @@ export function Composer({
 
                         if ((event.ctrlKey || event.metaKey) && draft.trim() === '' && !isGenerating) {
                             event.preventDefault();
-                            regenerateChatuiLast();
+                            regenerateChatuiLast(chatKey);
                             return;
                         }
 

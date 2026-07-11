@@ -11,45 +11,51 @@
 import { chatuiAdapter } from '../adapter/st-adapter.js';
 import { createStore } from './create-store.js';
 
-// ── Types ────────────────────────────────────────────────────────────────────
-
-export type MessageHeaderValue = 'icon' | 'name' | 'none';
-export type ComposerLinesValue = 'multi' | 'single';
-
-export type ChatuiConfig = {
-    headerGroup: MessageHeaderValue;
-    headerSolo: MessageHeaderValue;
-    composerLines: ComposerLinesValue;
-    plusPinned: string[];
-};
-
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 /**
  * Canonical ordered list of identity-header modes — single source of truth for
  * defaults, validation, and the settings select order.
- * @type {MessageHeaderValue[]}
+ * @type {readonly MessageHeaderValue[]}
  */
-export const MESSAGE_HEADERS: MessageHeaderValue[] = ['icon', 'name', 'none'];
+export const MESSAGE_HEADERS = ['icon', 'name', 'none'] as const;
 
 /**
  * Canonical ordered list of composer line modes — single source for default,
  * validation, and the settings select order.
- * @type {ComposerLinesValue[]}
+ * @type {readonly ComposerLinesValue[]}
  */
-export const COMPOSER_LINES: ComposerLinesValue[] = ['multi', 'single'];
+export const COMPOSER_LINES = ['multi', 'single'] as const;
 
 /**
  * Canonical ordered list of ＋menu tool ids — the single source of truth for which
  * tools exist and their order. The UI (ui/components/PlusMenu) supplies each id's
  * label / icon / behavior; this list owns the id universe used to validate the
  * persisted plusPinned setting. Same contract as the enums above.
- * @type {string[]}
+ * @type {readonly PlusToolId[]}
  */
-export const PLUS_TOOL_IDS: string[] = ['photos', 'files', 'continue', 'impersonate', 'regenerate'];
+export const PLUS_TOOL_IDS = ['photos', 'files', 'continue', 'impersonate', 'regenerate'] as const;
 
 /** Max number of ＋menu tools that can be pinned as top tiles (DESIGN §4.3). */
 export const PLUS_PIN_CAP = 4;
+
+// Derived unions stay coupled to the canonical runtime lists above.
+export type MessageHeaderValue = (typeof MESSAGE_HEADERS)[number];
+export type ComposerLinesValue = (typeof COMPOSER_LINES)[number];
+export type PlusToolId = (typeof PLUS_TOOL_IDS)[number];
+
+export type ChatuiConfig = {
+    headerGroup: MessageHeaderValue;
+    headerSolo: MessageHeaderValue;
+    composerLines: ComposerLinesValue;
+    plusPinned: PlusToolId[];
+};
+
+const PLUS_TOOL_ID_SET = new Set<string>(PLUS_TOOL_IDS);
+
+function isPlusToolId(value: unknown): value is PlusToolId {
+    return typeof value === 'string' && PLUS_TOOL_ID_SET.has(value);
+}
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -81,16 +87,15 @@ const _store = createStore(DEFAULT_CONFIG);
  * empty stays empty (a valid, recoverable "nothing pinned" state).
  *
  * @param {unknown} raw
- * @returns {string[]}
+ * @returns {PlusToolId[]}
  */
-function normalizePlusPinned(raw: unknown): string[] {
+function normalizePlusPinned(raw: unknown): PlusToolId[] {
     if (!Array.isArray(raw)) return [...DEFAULT_CONFIG.plusPinned];
 
-    const seen = new Set<string>();
-    const out: string[] = [];
+    const seen = new Set<PlusToolId>();
+    const out: PlusToolId[] = [];
     for (const id of raw) {
-        if (typeof id !== 'string') continue;
-        if (!PLUS_TOOL_IDS.includes(id)) continue;
+        if (!isPlusToolId(id)) continue;
         if (seen.has(id)) continue;
         seen.add(id);
         out.push(id);
