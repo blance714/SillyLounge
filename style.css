@@ -1217,7 +1217,7 @@ body.chatui-active .cui-root-floor-popover-preview {
     -webkit-line-clamp: 3;
 }
 
-@media (max-width: 768px), (hover: none), (pointer: coarse) {
+@media (max-width: 768px) {
     body.chatui-active .cui-root-floor-rail {
         display: none;
     }
