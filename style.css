@@ -1122,6 +1122,107 @@ body.chatui-active .cui-root-message-stage {
     min-height: 0;
 }
 
+/* Desktop-only message floor navigator. The rail uses the full manuscript
+   gutter between the app edge and the centered reading surface; it does not
+   mount when that gutter or a precise hover pointer is unavailable. */
+body.chatui-active .cui-root-floor-rail {
+    position: absolute;
+    top: 0.75rem;
+    bottom: 0.75rem;
+    z-index: 6;
+    display: flex;
+    width: 2.35rem;
+    box-sizing: border-box;
+    padding: 0.15rem 0;
+    color: var(--cui-color-text);
+    cursor: pointer;
+    outline: none;
+    user-select: none;
+}
+
+body.chatui-active .cui-root-floor-ticks {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    min-height: 0;
+    padding: 0.2rem 0;
+}
+
+body.chatui-active .cui-root-floor-tick {
+    display: block;
+    height: 1px;
+    min-height: 1px;
+    border-radius: 999px;
+    background: var(--cui-rule-faint);
+    opacity: 0.52;
+    transition:
+        width 110ms ease-out,
+        opacity 110ms ease-out,
+        background-color 110ms ease-out;
+}
+
+body.chatui-active .cui-root-floor-rail.is-inspecting .cui-root-floor-tick {
+    opacity: 0.72;
+}
+
+body.chatui-active .cui-root-floor-tick.is-current {
+    background: var(--cui-rule-accent);
+    opacity: 0.96;
+}
+
+body.chatui-active .cui-root-floor-rail:focus-visible .cui-root-floor-tick.is-current {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--cui-rule-accent) 28%, transparent);
+}
+
+body.chatui-active .cui-root-floor-popover-anchor {
+    position: absolute;
+    left: calc(100% + 0.45rem);
+    width: min(22rem, 38vw);
+    min-width: 15rem;
+    transform: translateY(-50%);
+    pointer-events: none;
+}
+
+body.chatui-active .cui-root-floor-popover {
+    display: flex;
+    flex-direction: column;
+    gap: 0.42rem;
+    padding: 0.8rem 0.95rem 0.9rem;
+    border: 1px solid var(--cui-rule-structure);
+    border-radius: var(--cui-radius-lg);
+    background: color-mix(in srgb, var(--cui-color-surface) 94%, transparent);
+    box-shadow: 0 0.7rem 2.2rem color-mix(in srgb, var(--cui-color-shadow) 78%, transparent);
+    backdrop-filter: blur(14px);
+}
+
+body.chatui-active .cui-root-floor-popover-meta {
+    color: var(--cui-color-accent);
+    font-family: var(--cui-font-ui);
+    font-size: var(--cui-font-2xs);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+}
+
+body.chatui-active .cui-root-floor-popover-preview {
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--cui-color-text);
+    font-family: var(--cui-font-body);
+    font-size: var(--cui-font-sm);
+    line-height: 1.55;
+    opacity: 0.82;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+    body.chatui-active .cui-root-floor-rail {
+        display: none;
+    }
+}
+
 body.chatui-active .cui-root-message-list {
     display: flex;
     flex-direction: column;
@@ -1689,6 +1790,10 @@ body.chatui-active .cui-root-generating-label {
         animation: none;
         opacity: 0.82;
         transform: none;
+    }
+
+    body.chatui-active .cui-root-floor-tick {
+        transition: none;
     }
 }
 
