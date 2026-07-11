@@ -1131,7 +1131,7 @@ body.chatui-active .cui-root-floor-rail {
     bottom: 0.75rem;
     z-index: 6;
     display: flex;
-    width: 2.35rem;
+    width: 30px;
     box-sizing: border-box;
     padding: 0.15rem 0;
     color: var(--cui-color-text);
@@ -1152,11 +1152,11 @@ body.chatui-active .cui-root-floor-ticks {
 
 body.chatui-active .cui-root-floor-tick {
     display: block;
-    height: 1px;
-    min-height: 1px;
+    height: 2px;
+    min-height: 2px;
     border-radius: 999px;
-    background: var(--cui-rule-faint);
-    opacity: 0.52;
+    background: color-mix(in srgb, var(--cui-color-text) 32%, transparent);
+    opacity: 0.88;
     transition:
         width 110ms ease-out,
         opacity 110ms ease-out,
@@ -1164,12 +1164,12 @@ body.chatui-active .cui-root-floor-tick {
 }
 
 body.chatui-active .cui-root-floor-rail.is-inspecting .cui-root-floor-tick {
-    opacity: 0.72;
+    opacity: 1;
 }
 
 body.chatui-active .cui-root-floor-tick.is-current {
-    background: var(--cui-rule-accent);
-    opacity: 0.96;
+    background: color-mix(in srgb, var(--cui-color-text) 82%, var(--cui-color-accent));
+    opacity: 1;
 }
 
 body.chatui-active .cui-root-floor-rail:focus-visible .cui-root-floor-tick.is-current {

@@ -10,7 +10,7 @@ import type { ComponentChild } from 'preact';
 import { useChatuiMessage } from '../hooks.js';
 
 const MAX_VISIBLE_TICKS = 48;
-const RAIL_WIDTH_PX = 38;
+const RAIL_WIDTH_PX = 30;
 
 type RailPlacement = Readonly<{ left: number }>;
 type HoveredFloor = Readonly<{ index: number; ratio: number }>;
@@ -289,7 +289,7 @@ export function MessageFloorRail({
                     const distance = previewFloor ? Math.abs(markerRatio - previewFloor.ratio) : 1;
                     const wave = previewFloor ? Math.pow(Math.max(0, 1 - distance * 7.5), 1.7) : 0;
                     const isCurrent = markerIndex === activeMarker;
-                    const width = 0.42 + wave * 1.45 + (isCurrent ? 0.28 : 0);
+                    const width = 0.5 + wave * 1.1 + (isCurrent ? 0.25 : 0);
                     return (
                         <span
                             key={`${messageIndex}:${markerIndex}`}
