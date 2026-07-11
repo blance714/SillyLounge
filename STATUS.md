@@ -1,13 +1,14 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
 `ROADMAP.md` is the live completeness map + priority backlog.
 
-The 2026-07-10 architecture hardening described below is committed as a series
-of reviewable semantic batches on `main`.
+Current development branch: `main`; latest functional baseline: `af9a9d9`. The
+2026-07-10/11 architecture hardening and Manuscript Flow restoration described
+below are committed as reviewable semantic batches.
 
 ## Current Visual Identity
 
@@ -177,8 +178,8 @@ list; prompt dry-runs and quiet background generation do not adopt a draft; an
 uncertain rename keeps both possible filenames quarantined until raw state
 settles.
 
-The current uncommitted 2026-07-10/11 hardening closes the main correctness gaps
-found in the architecture review:
+The committed 2026-07-10/11 hardening closes the main correctness gaps found in
+the architecture review:
 
 - abandoned temp state is a per-conversation quarantine set, not one replaceable
   pointer. Queued navigation captures after prior creation commits, local
@@ -239,8 +240,9 @@ found in the architecture review:
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
-- **2026-07-10/11 uncommitted hardening** — source/type/build/runtime contracts are
-  green. Remaining local debt is broader browser/mobile and business-state-machine
+- **2026-07-10/11 hardening baseline** — committed through `af9a9d9`; source,
+  type, build, runtime, adversarial review, and focused browser checks are green.
+  Remaining local debt is broader browser/mobile and business-state-machine
   automation. Upstream debts are a request-scoped send/generation receipt, a
   conditional character-pointer write, async completion receipts for plugin
   clicks, and the actual sanitized target on non-active native rename events.
@@ -301,7 +303,13 @@ loads correctly, no console errors, and character switching is noticeably
 faster than before (progressive sidebar loading + real schema validation
 replacing the fake/wasteful Zod object-shape checks).
 
-Automated checks for the current uncommitted hardening:
+**2026-07-11 new-chat lifecycle live-test**: the exact quick path
+`＋新对话 → immediately open an old chat` kept the new file out of ordinary
+history and exposed one recoverable 未完成草稿 entry. Restore and explicit delete
+both succeeded, and the ordinary conversation list returned to its pre-test
+state without touching existing chats.
+
+Automated checks for the committed hardening baseline:
 
 - `CI=true pnpm run verify` (typecheck + 36 Node tests + build + assembled-tree contract)
 - `CI=true pnpm run runtime` (build + validate candidate + atomic live publish)

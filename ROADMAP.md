@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Roadmap
 
-Last updated: 2026-07-11
+Last updated: 2026-07-12
 
 三份文档的分工:`DESIGN.md` = 产品北极星(目标形态)、`STATUS.md` = 当前实现快照、
 **本文 = 完整度地图 + 剩余工作的优先级排期**。架构记录见 `ARCHITECTURE.md`。
@@ -74,7 +74,7 @@ Last updated: 2026-07-11
 - 侧栏弱化联系人列表符号，回到安静的篇目索引。
 - `DESIGN.md` 已改为可验收的 Manuscript Flow 唯一视觉真源。
 
-## 2026-07-10 已提交加固
+## 2026-07-10/11 已提交加固
 
 以下架构加固已按语义拆分并提交到 `main`:
 
@@ -146,7 +146,7 @@ Last updated: 2026-07-11
 - **第 2 期 内容区**(主干):消息流、操作行、思考块、编辑、媒体、swipe、代码复制。
 - **第 3 期 侧栏导航中心 = M-A 全部 5 刀**(Phase 3 Slice 1-5):对话列表(模式 A) → 角色切换 → 重命名/删除 → 上段配置 rail → 三形态常驻侧栏 + 响应式。
 - **B/D**:store 增量更新 + 流式实时。**H1**:ChatUI 自有 toast 反馈层。
-- **本次会话 · 加固 + 体感修复**:
+- **早期基础加固 + 体感修复**:
   - delete → ST `deleteMessage(id, swipeIdx, confirm)`(复刻原生确认/单 swipe 删除语义)、swipe → ST `swipe(null, dir, {forceMesId})`,**退役模拟点击**。
   - 补订阅 `MESSAGE_DELETED`(修删除后列表不刷新的现存 bug)。
   - `useAutoScroll`:贴底守卫 + **回到底部钮**;以 `chatKey` 判断换对话(替掉脆弱启发式)。
@@ -222,14 +222,16 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
 
 ## 当前分支与工作树
 
-当前为 `main @ a729627`。工作树**不干净**:包含本节所列 2026-07-10
-hardening 的未提交实现与文档修改;不要把这些能力描述成已经进入提交历史或已由
-仓库 CI 发布。历史 milestone 的提交信息保留在上文和 git history。
+当前开发分支为 `main`,最新功能基线为 `af9a9d9`;本次文档收口后工作树保持干净。
+2026-07-10/11 hardening、Manuscript Flow 视觉复归与 new-chat quarantine 修复均已
+进入提交历史;本地 validated runtime 也已发布并通过 assembled-tree 检查。仓库仍没有
+远端 CI / 自动发布,所以“已提交、已通过本地发布门”不等于已自动同步到 installable
+`dist` branch。
 
 **五大区主干已闭环,settings 已转为 two-pane mode swap,独立配置面已解锁 §7,
 侧栏已迁移到 TanStack Query,全源码已 TypeScript 化(Vite 构建)。**
 2026-07-03 对整条迁移分支做了一轮 xhigh 10-角度对抗审查,发现 14 个问题
 (含 1 个致命的挂载路径 bug,插件完全无法启动),全部修复并经独立第二轮
-对抗复核 + 回归扫描确认无遗留,实机 live-test 通过。下一阶段重心:扩大浏览器/
-手机回归覆盖、§7 深化(选择框槽位 / ＋菜单拖拽排序)、剩余模拟点击写路径迁移、
-手机适配。
+对抗复核 + 回归扫描确认无遗留,实机 live-test 通过。下一阶段重心:手机回归覆盖与
+适配、产品行为浏览器脚本化、§7 深化(选择框槽位 / ＋菜单拖拽排序),再推进搜索、
+群聊列表与 Mode B。剩余模拟点击写路径已降级为普通架构债。
