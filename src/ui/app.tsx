@@ -14,6 +14,7 @@ import { Composer, GeneratingIndicator } from './components/Composer.js';
 import { QRBar } from './components/QRBar.js';
 import { NewChatCharacterPicker } from './components/composer/NewChatCharacterPicker.js';
 import { MessageItem } from './components/MessageItem.js';
+import { MessageFloorRail } from './components/MessageFloorRail.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
 import { SettingsNav } from './components/settings/SettingsNav.js';
@@ -164,6 +165,7 @@ function ChatuiApp(): ComponentChild {
                           </div>
                       </header>
                       <div className="cui-root-message-stage">
+                          <MessageFloorRail root={listNode} messageIds={messageIds} />
                           <div
                               ref={listRef}
                               className="cui-root-message-list"

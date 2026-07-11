@@ -6,17 +6,19 @@ This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
 `ROADMAP.md` is the live completeness map + priority backlog.
 
-Current development branch: `main`; latest functional baseline: `af9a9d9`. The
-2026-07-10/11 architecture hardening and Manuscript Flow restoration described
-below are committed as reviewable semantic batches.
+Current development branch: `main`. The 2026-07-10/11 architecture hardening,
+Manuscript Flow restoration, and desktop floor navigation described below are
+kept as reviewable semantic batches.
 
 ## Current Visual Identity
 
 ChatUI follows the Manuscript Flow contract in `DESIGN.md`: a title-page topbar,
 three tiers of hairline rules, open reading-flow messages, a rust-red user
 margin, a seal-shaped generation state, a quiet index sidebar, and a ledger
-composer. The palette and serif typography support that structure; they are not
-a skin over a generic bubble-chat layout.
+composer. Desktop long-form reading also has a quiet left-spine floor index: it
+forms a local wave and reveals a short manuscript excerpt only while inspected.
+The palette and serif typography support that structure; they are not a skin
+over a generic bubble-chat layout.
 
 ---
 
@@ -95,7 +97,7 @@ src/
     actions.ts hooks.ts format.ts types.ts sidebar-queries.ts query-client.ts
     components/
       Composer  PlusMenu  QRBar  SelectorChip  AttachmentChips
-      MessageItem  TopbarMenu  ConfirmDialog  Toaster
+      MessageItem  MessageFloorRail  TopbarMenu  ConfirmDialog  Toaster
       composer/ NewChatCharacterPicker
       sidebar/  Sidebar CharacterConversationList NewChatButton SettingsEntry
       settings/ SettingsNav SettingsContent ChatUiSettingsContent StDrawerHost
@@ -121,8 +123,9 @@ validated release generation. `dev` uses the same validation/publication path.
 ## Ownership Boundary
 
 ChatUI owns: the sidebar navigation center, the root topbar, the visible message
-list, message body/media/reasoning rendering, the inline edit surface, the
-composer (＋menu, selector chips, attachment chips, QR bar), the toast feedback
+list and its desktop floor navigator, message body/media/reasoning rendering,
+the inline edit surface, the composer (＋menu, selector chips, attachment chips,
+QR bar), the toast feedback
 layer, and the ChatUI-native settings shell.
 
 SillyTavern still owns: chat persistence, generation/regeneration, settings,
@@ -161,6 +164,15 @@ simulated clicks. The old three-form sidebar cycle and third settings column hav
 been replaced by the Codex-app-style two-pane model: `Sidebar | chat`, with
 settings as a mode swap that shows ChatUI-owned nav on the left and either
 ChatUI-native settings or a live ST drawer host on the right.
+
+Desktop long conversations now expose a left-spine floor navigator without
+changing message width: at most 48 hairline marks visualize the whole thread,
+while continuous pointer position still maps to every message. Hover produces a
+local wave and a three-line floor preview; click, wheel, and slider keyboard
+controls navigate the real message scroll surface. It activates only for precise
+hover pointers above the mobile breakpoint and when the manuscript gutter can
+hold it. Touch/mobile deliberately remains unchanged until a separate
+mis-touch-resistant interaction is designed.
 
 New-chat drafts now use per-conversation quarantine leases in localStorage instead
 of `chat_metadata.chatui_isNewChat` / message-count heuristics. A leased draft is
@@ -246,6 +258,10 @@ the architecture review:
   automation. Upstream debts are a request-scoped send/generation receipt, a
   conditional character-pointer write, async completion receipts for plugin
   clicks, and the actual sanitized target on non-active native rename events.
+- **Desktop floor navigator** — implemented and live-tested on a 21-floor
+  conversation, including wave/preview lifecycle, click and keyboard jumps,
+  embedded HTML-card exit, and the `768/769px` boundary. The mobile counterpart
+  is intentionally a later product-design task, not a missing hover fallback.
 - **2026-07-03 xhigh adversarial review** of the then-current
   JS→TS/Vite/TanStack-Query migration diff + WIP found 14 issues,
   including one critical build-breaking bug: the `ui/` → `src/ui/` directory
@@ -308,6 +324,13 @@ replacing the fake/wasteful Zod object-shape checks).
 history and exposed one recoverable 未完成草稿 entry. Restore and explicit delete
 both succeeded, and the ordinary conversation list returned to its pre-test
 state without touching existing chats.
+
+**2026-07-12 desktop floor-navigation live-test**: a 21-message conversation
+showed the left-spine ticks only on desktop. Hover selected floor 10 with a
+speaker/excerpt popover; clicking the upper track jumped to floor 4; keyboard
+`End` reached the final message; leaving through ordinary content or a live HTML
+card removed the popover. At `768px` the rail and hit area were absent; at
+`769px` the desktop manuscript gutter remained intact.
 
 Automated checks for the committed hardening baseline:
 
