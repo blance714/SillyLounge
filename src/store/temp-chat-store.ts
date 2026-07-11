@@ -13,20 +13,34 @@ const TEMP_CHAT_STORAGE_KEY = 'chatui:tempChat';
 
 export type TempChatPointer = { avatar: string; fileName: string };
 
+export type TempChatPointerSnapshot = Readonly<{
+    pointer: TempChatPointer | null;
+    version: number;
+}>;
+
 export type TempChatDraft = {
     avatar: string;
     knownFileNames: string[];
     complete: boolean;
 };
 
+export type TempChatDraftSnapshot = Readonly<{
+    draft: TempChatDraft | null;
+    version: number;
+}>;
+
 type TempChatState = {
     tempChat: TempChatPointer | null;
+    pointerVersion: number;
     optimisticDraft: TempChatDraft | null;
+    draftVersion: number;
 };
 
 const _initialState: TempChatState = {
     tempChat: null,
+    pointerVersion: 0,
     optimisticDraft: null,
+    draftVersion: 0,
 };
 
 const _store = createStore<TempChatState>(_initialState);
@@ -122,21 +136,50 @@ export function getTempChatDraft() {
 }
 
 /**
+ * Capture the concrete pointer together with its mutation version. Async
+ * cleanup must compare this snapshot before clearing: identity alone is not
+ * enough because the same file can be cleared and adopted again (ABA).
+ */
+export function getTempChatSnapshot(): TempChatPointerSnapshot {
+    const state = _store.getState();
+    return {
+        pointer: state.tempChat ? { ...state.tempChat } : null,
+        version: state.pointerVersion,
+    };
+}
+
+/** Capture an optimistic draft intent for compare-and-set completion. */
+export function getTempChatDraftSnapshot(): TempChatDraftSnapshot {
+    const state = _store.getState();
+    return {
+        draft: state.optimisticDraft
+            ? { ...state.optimisticDraft, knownFileNames: [...state.optimisticDraft.knownFileNames] }
+            : null,
+        version: state.draftVersion,
+    };
+}
+
+/**
  * Mark draft intent before ST has created the concrete chat file.
  * @param {{ avatar: string, knownFileNames?: string[], complete?: boolean }} draft
  * @returns {void}
  */
-export function beginTempChatDraft(draft: { avatar: string; knownFileNames?: string[]; complete?: boolean }) {
+export function beginTempChatDraft(
+    draft: { avatar: string; knownFileNames?: string[]; complete?: boolean },
+): TempChatDraftSnapshot {
     const avatar = typeof draft?.avatar === 'string' ? draft.avatar : '';
-    if (!avatar) return;
+    if (!avatar) return getTempChatDraftSnapshot();
+    const state = _store.getState();
     _store.setState({
-        ..._store.getState(),
+        ...state,
         optimisticDraft: {
             avatar,
             knownFileNames: _normalizeKnownFileNames(draft.knownFileNames),
             complete: !!draft.complete,
         },
+        draftVersion: state.draftVersion + 1,
     });
+    return getTempChatDraftSnapshot();
 }
 
 /**
@@ -144,10 +187,27 @@ export function beginTempChatDraft(draft: { avatar: string; knownFileNames?: str
  * @returns {void}
  */
 export function cancelTempChatDraft() {
+    const state = _store.getState();
     _store.setState({
-        ..._store.getState(),
+        ...state,
         optimisticDraft: null,
+        draftVersion: state.draftVersion + 1,
     });
+}
+
+/**
+ * Cancel only the optimistic intent captured by the caller. A slower request
+ * must never cancel a newer click's marker.
+ */
+export function cancelTempChatDraftIfMatches(snapshot: TempChatDraftSnapshot): boolean {
+    const state = _store.getState();
+    if (state.draftVersion !== snapshot.version) return false;
+    _store.setState({
+        ...state,
+        optimisticDraft: null,
+        draftVersion: state.draftVersion + 1,
+    });
+    return true;
 }
 
 /**
@@ -156,19 +216,81 @@ export function cancelTempChatDraft() {
  */
 export function setTempChat(ptr: TempChatPointer | null) {
     const next = _normalizePointer(ptr);
+    const state = _store.getState();
     _writeStoredPointer(next);
     _store.setState({
         tempChat: next,
+        pointerVersion: state.pointerVersion + 1,
         optimisticDraft: null,
+        draftVersion: state.draftVersion + 1,
     });
 }
 
 /**
- * @returns {void}
+ * Commit a concrete temp chat created for one captured optimistic intent.
+ * The pointer is always recorded, but a newer optimistic marker is preserved
+ * so an older completed request cannot erase the user's latest new-chat click.
  */
+export function commitTempChatDraft(
+    ptr: TempChatPointer,
+    draftSnapshot: TempChatDraftSnapshot,
+): boolean {
+    const next = _normalizePointer(ptr);
+    if (!next) return false;
+
+    const state = _store.getState();
+    const ownsDraft = state.draftVersion === draftSnapshot.version;
+    _writeStoredPointer(next);
+    _store.setState({
+        tempChat: next,
+        pointerVersion: state.pointerVersion + 1,
+        optimisticDraft: ownsDraft ? null : state.optimisticDraft,
+        draftVersion: ownsDraft ? state.draftVersion + 1 : state.draftVersion,
+    });
+    return true;
+}
+
+/** Clear the concrete pointer without erasing a newer optimistic intent. */
 export function clearTempChat() {
+    const state = _store.getState();
     _writeStoredPointer(null);
-    _store.setState({ tempChat: null, optimisticDraft: null });
+    _store.setState({
+        ...state,
+        tempChat: null,
+        pointerVersion: state.pointerVersion + 1,
+    });
+}
+
+/**
+ * Clear a concrete pointer only if it is still the exact version captured by
+ * the async caller. This is the destructive-cleanup CAS boundary.
+ */
+export function clearTempChatIfMatches(snapshot: TempChatPointerSnapshot): boolean {
+    const state = _store.getState();
+    if (state.pointerVersion !== snapshot.version) return false;
+    _writeStoredPointer(null);
+    _store.setState({
+        ...state,
+        tempChat: null,
+        pointerVersion: state.pointerVersion + 1,
+    });
+    return true;
+}
+
+/** Rename exactly the temp pointer version captured before an async host call. */
+export function moveTempChatIfMatches(
+    snapshot: TempChatPointerSnapshot,
+    next: TempChatPointer,
+): boolean {
+    const state = _store.getState();
+    if (
+        state.pointerVersion !== snapshot.version
+        || state.tempChat?.avatar !== snapshot.pointer?.avatar
+        || state.tempChat?.fileName !== snapshot.pointer?.fileName
+    ) return false;
+    if (!snapshot.pointer) return false;
+    setTempChat(next);
+    return true;
 }
 
 /**
@@ -214,8 +336,11 @@ export function subscribeTempChatStore(cb: (state: TempChatState) => void) {
  */
 export function initTempChatStore() {
     const tempChat = _readStoredPointer();
+    const state = _store.getState();
     _store.setState({
         tempChat,
+        pointerVersion: state.pointerVersion + 1,
         optimisticDraft: null,
+        draftVersion: state.draftVersion + 1,
     });
 }
