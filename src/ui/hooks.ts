@@ -14,6 +14,7 @@ import {
     getChatuiCurrentChatHeader,
     getChatuiComposerDraftStoreSnapshot,
     getTempChat,
+    getTempChats,
     getTempChatDraft,
     isTempChatDraft,
     listChatuiCharacters,
@@ -164,7 +165,7 @@ export function useSidebarBasics(): {
 export function useSidebarData(): ChatuiSidebarState {
     const queryClient = useQueryClient();
     const currentChat = useCurrentChatIdentity();
-    const tempChat = useTempChat();
+    const tempChats = useTempChats();
     const tempDraft = useTempChatDraft();
     const headerQuery = useQuery({
         ...sidebarQueryOptions.header(),
@@ -285,12 +286,13 @@ export function useSidebarData(): ChatuiSidebarState {
     }, [backfillNeededAvatarKey, queryClient, recentsReady]);
 
     const shouldHideChat = useCallback((avatar: string, chat: ChatListItem): boolean => {
-        if (tempChat?.avatar === avatar && tempChat.fileName === normalizeFileName(chat.fileName)) return true;
+        if (tempChats.some(pointer => (
+            pointer.avatar === avatar && pointer.fileName === normalizeFileName(chat.fileName)
+        ))) return true;
         if (tempDraft?.avatar !== avatar) return false;
         return isTempChatDraft(avatar, chat.fileName);
     }, [
-        tempChat?.avatar,
-        tempChat?.fileName,
+        tempChats,
         tempDraft?.avatar,
         tempDraft?.knownFileNames,
     ]);
@@ -425,16 +427,22 @@ export function useTempChat(): ReturnType<typeof getTempChat> {
     return useSyncExternalStore(subscribeTempChatStore, getTempChat);
 }
 
+export function useTempChats(): ReturnType<typeof getTempChats> {
+    return useSyncExternalStore(subscribeTempChatStore, getTempChats);
+}
+
 export function useTempChatDraft(): ReturnType<typeof getTempChatDraft> {
     return useSyncExternalStore(subscribeTempChatStore, getTempChatDraft);
 }
 
 export function useIsTempChatActive(): boolean {
     const current = useCurrentChatIdentity();
-    const tempChat = useTempChat();
+    const tempChats = useTempChats();
     const tempDraft = useTempChatDraft();
     if (tempDraft) return true;
-    if (current && tempChat && current.avatar === tempChat.avatar && current.fileName === tempChat.fileName) return true;
+    if (current && tempChats.some(pointer => (
+        pointer.avatar === current.avatar && pointer.fileName === current.fileName
+    ))) return true;
     return false;
 }
 

@@ -78,9 +78,12 @@ Last updated: 2026-07-11
 
 以下架构加固已按语义拆分并提交到 `main`:
 
-- **temp 放弃只释放 pointer**:ST 内容接口有损,无条件 delete 又没有与并发
-  save/edit 原子 CAS,所以自动 cleanup 不再删除文件;导航只 CAS 清自己捕获的
-  pointer,旧草稿保留为普通对话。
+- **temp quarantine + 2026-07-11 修正**:7/10 先移除基于有损 `/get` 的猜测删除;
+  7/11 将单 pointer 改为 per-conversation quarantine lease set。导航在真正进入 host
+  lane 后才捕获 departing lease,所以能覆盖“new 尚未完成就点旧 chat”;无本地工作时
+  只 deactivate、继续从普通历史隐藏,有草稿/发送/附件则 adopt。每个 lease 独立
+  localStorage key 并用 storage event 跨 tab 同步;未完成草稿 shelf 可显式恢复,
+  恢复前以 raw filename list 防止 ST 复活已缺失文件;dry-run/quiet generation 不 adopt。
 - **手动删除分态确认**:破坏性请求始终携带 stable avatar + file name;用原始文件
   endpoint 做前/后确认并取消 chat/metadata 两类 timer。角色卡 pointer 写以
   `/api/characters/get` readback 为准,不信 transport 或 merge 2xx;删除当前 chat 前
@@ -111,7 +114,7 @@ Last updated: 2026-07-11
   在 refetch 期间标 dirty 并只 requeue 一次;inactive first prefetch 等旧 promise 后直接
   `query.fetch()`,不被 React Query disabled filter 吞掉。
 - **发布契约**:Zod 收口到稳定 `chunks/vendor/zod.js`;runtime staging 验证后原子
-  发布;`verify` = typecheck + 25 Node tests + build + assembled-tree contract。
+  发布;`verify` = typecheck + 36 Node tests + build + assembled-tree contract。
 - **HTML card 信任模型不变**:unsandboxed iframe 是 TavernHelper/MVU 兼容所需,
   等价于运行受信任聊天代码;本轮不加 sandbox 或执行确认。
 - **上游契约债**:ST 尚无 request-scoped textarea-send receipt;全局事件无法在真正
@@ -125,7 +128,7 @@ Last updated: 2026-07-11
 
 | 区域 | 状态 | 已落地 | 还缺 |
 |---|---|---|---|
-| **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂;**2026-07-05**:shield 升级为真 `display:none`;**2026-07-10 未提交**:temp pointer-only abandon、stable-avatar 手动删除确认/分态、typed filename locator + rename migration、lifecycle mutation queue、composer revision/epoch + acceptance/completion、per-message O(1) streaming、Query dirty/requeue、typed snapshots、validated atomic runtime + 25 tests | host request-scoped send receipt、剩余模拟点击写路径迁移(降级为架构债,不阻塞)、浏览器/手机回归脚本化 |
+| **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂;**2026-07-10/11**:per-chat temp quarantine、stable-avatar 手动删除确认/分态、typed filename locator + rename migration、lifecycle mutation queue、composer revision/epoch + acceptance/completion、per-message O(1) streaming、Query dirty/requeue、typed snapshots、validated atomic runtime + 36 tests | host request-scoped send receipt、server-side conditional temp delete、剩余模拟点击写路径迁移(降级为架构债,不阻塞)、浏览器/手机回归脚本化 |
 | **①② 顶栏** | 🟢 ~72% | **M-B**:☰ 召唤侧栏、动态标题(绑 chatHeader)、选择框槽 A(人设)、顶栏右 ⋯(重命名/删除,群聊态自动禁用;操作目标已捕获防串 chat) | ★ 收藏、管理聊天文件/转群聊(均缺 adapter 导出)、手机【返回】 |
 | **③ 内容区** | 🟢 ~92% | 角色整宽/用户锈红页边、操作行、思考块换皮、内联编辑、媒体、swipe `‹n/m›`、代码复制、回到底部钮;**M-D 收尾**:身份标头 3 档可配(群/单各一套)、代码块语言名头、生成回复钮、用户消息平铺全显菜单;**2026-07-05**:HTML fenced card 挂载为同源 unsandboxed iframe(bootstrap 转发 TavernHelper/SillyTavern/Mvu),高度由 iframe 内部 ResizeObserver + postMessage 上报;unsandboxed 是明确兼容信任模型 | 代码块语言名头仅对声明围栏(自动检测不显,符合预期);TavernHelper 缺失提醒 toast 待做;当前契约下不把 sandbox/执行确认列为缺口 |
 | **④ 输入框** | 🟢 ~90% | ＋菜单(置顶磁贴 + 工具列表 + wand 动态)、textarea、选择框 B、发送/停止、附件 chips;**M-C**:QR 悬浮条(镜像 #qr--bar,含 popout)、单/多行切换;**M-F**:＋菜单**置顶磁贴编辑器**(配置面内,封顶 4) | ＋菜单**拖拽排序**编辑器、批量删除磁贴(待 ChatUI 自有多选 UI) |
@@ -159,7 +162,7 @@ Last updated: 2026-07-11
   - 退役旧"三形态循环 + 配置 rail"和第三列 ConfigPanel;当前 shell 是 `Sidebar | chat`,settings 作为 mode swap 接管两 pane。
   - settings 左 pane 是返回 + ST drawers(默认顺序,含角色管理)+ ChatUI 区;右 pane 通过 embed engine move-not-clone 托管 live ST `.drawer-content`,并 precise restore。
   - sidebar 内容固定为 ＋新对话 → 角色分组会话列表 → 设置;角色 header 不高亮,＋新对话在草稿激活时作为 tab 高亮。
-  - 新增 `store/temp-chat-store.js`:localStorage `chatui:tempChat` 的 `{avatar,fileName}` 指针,替代 `chat_metadata.chatui_isNewChat` / 消息数 freshness。2026-07-10 最终契约明确取消 navigation-time 文件回收:草稿始终从列表隐藏;创建永远 `doNewChat`;放弃时只 CAS 释放 pointer,旧文件保留为普通对话;发送或编辑首楼即清指针并保留会话。
+  - 新增 `store/temp-chat-store.js`,替代 `chat_metadata.chatui_isNewChat` / 消息数 freshness。2026-07-11 将 7/10 的 pointer-only 基线改为 per-conversation quarantine:草稿始终从普通列表隐藏;创建永远 `doNewChat`;导航在 host lane 内捕获并 deactivate lease,不做无法原子证明的后台 DELETE;任何消息 mutation 会 adopt,未完成草稿 shelf 提供恢复入口。
   - Codex adversarial review 修 3 个真问题并通过 browser live-test:topbar destructive target 改用权威 chat identity 并二次校验、temp-draft 创建串行化、群聊态 ＋新对话 disabled/inert。
 - **侧栏迁移 TanStack Query + 渐进式加载**(commit `27d9bcb`,2026-07-01):
   侧栏 server-state 从自建 store 迁到 `@tanstack/react-query`(仅限 `ui/` 层,store 层不碰);角色分组懒加载(先 recents 后按需 backfill 全量)+ optimistic temp-chat draft(点击即时隐藏,不等 ST 落地)。经一轮 4-finding 对抗审查修正 placeholder/backfill/optimistic-draft 问题;2026-07-10 又为有界 active refetch 加 dirty/requeue,保证 in-flight 期间的新事件不会被旧响应吞掉。

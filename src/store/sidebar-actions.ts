@@ -11,22 +11,39 @@ import {
     beginTempChatDraft,
     cancelTempChatDraft,
     cancelTempChatDraftIfMatches,
-    clearTempChatIfMatches,
     commitTempChatDraft,
+    deactivateTempChatIfMatches,
     getTempChatDraft,
     getTempChatDraftSnapshot,
     getTempChatSnapshot,
+    isTempChat,
+    isTempChatSnapshotCurrent,
+    markTempChatActive,
     moveTempChatIfMatches,
+    removeTempChat,
+    retainTempChatRenameCandidateIfMatches,
 } from './temp-chat-store.js';
-import type { TempChatDraftSnapshot, TempChatPointerSnapshot } from './temp-chat-store.js';
+import type {
+    TempChatDraftSnapshot,
+    TempChatPointer,
+} from './temp-chat-store.js';
 import { createCharacterChatKey, createConversationLocator } from '../adapter/chat-key.js';
-import { deleteComposerDraft, moveComposerDraft } from './composer-draft-store.js';
+import {
+    deleteComposerDraft,
+    getComposerDraft,
+    getComposerDraftStoreSnapshot,
+    moveComposerDraft,
+} from './composer-draft-store.js';
 import {
     enqueueHostTask,
     enqueueLatestNavigation,
     sealHostOperationQueueForReload,
     waitForHostOperationsIdle,
 } from './host-operation-queue.js';
+import {
+    finishTempChatDeparture,
+    prepareTempChatDeparture,
+} from './temp-chat-navigation.js';
 import { pushToast } from './toast-store.js';
 
 type ChatIdentity = { avatar: string; fileName: string } | null | undefined;
@@ -68,6 +85,42 @@ function _sameChatIdentity(a: ChatIdentity, b: ChatIdentity) {
     return !!a && !!b && a.avatar === b.avatar && a.fileName === b.fileName;
 }
 
+function _chatKey(pointer: TempChatPointer): string {
+    return createCharacterChatKey(pointer.avatar, createConversationLocator(pointer.fileName));
+}
+
+function _hasLocalTempWork(pointer: TempChatPointer): boolean {
+    const chatKey = _chatKey(pointer);
+    const composer = getComposerDraftStoreSnapshot();
+    try {
+        return getComposerDraft(chatKey) !== ''
+            || composer.pendingSend?.chatKey === chatKey
+            || chatuiAdapter.menuActions.getPendingAttachments().length > 0;
+    } catch (error) {
+        // Failure to inspect unsaved UI state must retain the file.
+        console.error('[ChatUI] failed to inspect temp-chat local work', error);
+        return true;
+    }
+}
+
+/**
+ * Capture immediately before entering ST, after older queued work has finished.
+ * This sees a concrete pointer even when the user clicked away while new-chat
+ * creation was still materializing. Local composer work adopts the chat before
+ * ST's CHAT_CHANGED listeners can reset pending attachment state.
+ */
+function _captureDepartingTempChat() {
+    return prepareTempChatDeparture(
+        chatuiAdapter.getCurrentChatIdentity(),
+        _hasLocalTempWork,
+    );
+}
+
+function _restoreLoadedTempChatActivity(): void {
+    const current = chatuiAdapter.getCurrentChatIdentity();
+    if (current) markTempChatActive(current.avatar, current.fileName);
+}
+
 /** Deterministic completion boundary for focused store/action tests. */
 export function waitForChatuiSidebarActionsIdle(): Promise<void> {
     return waitForHostOperationsIdle();
@@ -89,10 +142,15 @@ async function _createTempDraft(avatar: string, draftIntent: TempChatDraftSnapsh
     const current = chatuiAdapter.getCurrentChatIdentity();
     if (!current || current.avatar !== avatar) {
         cancelTempChatDraftIfMatches(draftIntent);
+        _restoreLoadedTempChatActivity();
         return;
     }
 
-    const old = getTempChatSnapshot();
+    let old = getTempChatSnapshot();
+    if (old.pointer && !_sameChatIdentity(old.pointer, current)) {
+        deactivateTempChatIfMatches(old);
+        old = getTempChatSnapshot();
+    }
     if (_sameChatIdentity(old.pointer, current)) {
         cancelTempChatDraftIfMatches(draftIntent);
         return;
@@ -103,34 +161,24 @@ async function _createTempDraft(avatar: string, draftIntent: TempChatDraftSnapsh
         const created = chatuiAdapter.getCurrentChatIdentity();
         if (!created || created.avatar !== avatar) {
             cancelTempChatDraftIfMatches(draftIntent);
+            _restoreLoadedTempChatActivity();
             return;
         }
 
-        // Transfer ownership only if the concrete pointer is still the version
-        // captured before ST created this chat. An older operation must never
-        // overwrite a newer pointer; the unadopted file simply remains a normal
-        // visible conversation.
-        if (getTempChatSnapshot().version !== old.version) {
+        // The host lane excludes a newer local creation, while storage events
+        // may legitimately add/remove unrelated dormant leases. Claim the
+        // concrete result unless another active temp actually took this slot.
+        if (!isTempChatSnapshotCurrent(old)) {
             cancelTempChatDraftIfMatches(draftIntent);
+            _restoreLoadedTempChatActivity();
             return;
         }
         commitTempChatDraft(created, draftIntent);
     } catch (error) {
         cancelTempChatDraftIfMatches(draftIntent);
+        _restoreLoadedTempChatActivity();
         throw error;
     }
-}
-
-function _releaseAbandonedTempChat(snapshot: TempChatPointerSnapshot) {
-    const ptr = snapshot.pointer;
-    if (!ptr) return;
-
-    const current = chatuiAdapter.getCurrentChatIdentity();
-    if (current && _sameChatIdentity(ptr, current)) return;
-    // Releasing temp ownership never deletes the file. The abandoned draft is
-    // retained as an ordinary conversation and the version CAS protects a newer
-    // pointer from stale navigation completion.
-    clearTempChatIfMatches(snapshot);
 }
 
 /**
@@ -140,8 +188,8 @@ function _releaseAbandonedTempChat(snapshot: TempChatPointerSnapshot) {
  */
 export function switchChatuiCharacter(avatar: string): Promise<void> {
     if (getTempChatDraft()) cancelTempChatDraft();
-    const tempSnapshot = getTempChatSnapshot();
     return enqueueLatestNavigation(async (operation) => {
+        const departing = _captureDepartingTempChat();
         try {
             const result = await chatuiAdapter.sidebarActions.switchCharacter(avatar);
             if (result === 'notfound') {
@@ -149,7 +197,7 @@ export function switchChatuiCharacter(avatar: string): Promise<void> {
             } else if (result === 'busy') {
                 if (operation.isLatest()) pushToast('info', '正在保存或生成，请稍候');
             } else {
-                _releaseAbandonedTempChat(tempSnapshot);
+                finishTempChatDeparture(departing, chatuiAdapter.getCurrentChatIdentity());
             }
         } catch (error) {
             console.error('[ChatUI] switch character failed', error);
@@ -165,11 +213,18 @@ export function switchChatuiCharacter(avatar: string): Promise<void> {
  */
 export function openChatuiChat(fileName: string): Promise<void> {
     if (getTempChatDraft()) cancelTempChatDraft();
-    const tempSnapshot = getTempChatSnapshot();
     return enqueueLatestNavigation(async (operation) => {
+        const departing = _captureDepartingTempChat();
         try {
+            const owner = chatuiAdapter.getCurrentChatIdentity()?.avatar;
             await chatuiAdapter.sidebarActions.openCharacterChatByName(fileName);
-            _releaseAbandonedTempChat(tempSnapshot);
+            const opened = chatuiAdapter.getCurrentChatIdentity();
+            const expected = typeof fileName === 'string' ? fileName.replace(/\.jsonl$/i, '') : '';
+            if (!owner || opened?.avatar !== owner || opened.fileName !== expected) {
+                if (operation.isLatest()) pushToast('error', '打开对话失败');
+                return;
+            }
+            finishTempChatDeparture(departing, opened);
         } catch (error) {
             console.error('[ChatUI] open chat failed', error);
             if (operation.isLatest()) pushToast('error', '打开对话失败');
@@ -185,26 +240,26 @@ export function openChatuiChat(fileName: string): Promise<void> {
  */
 export function renameChatuiChat(oldFileName: string, newName: string): Promise<void> {
     const expectedAvatar = chatuiAdapter.getCurrentChatIdentity()?.avatar ?? null;
-    const tempSnapshot = getTempChatSnapshot();
+    const expectedFileName = typeof oldFileName === 'string'
+        ? oldFileName.replace(/\.jsonl$/i, '')
+        : '';
     return enqueueHostTask(async () => {
         try {
-            if (!expectedAvatar || chatuiAdapter.getCurrentChatIdentity()?.avatar !== expectedAvatar) {
+            const liveTarget = chatuiAdapter.getCurrentChatIdentity();
+            if (
+                !expectedAvatar
+                || liveTarget?.avatar !== expectedAvatar
+                || liveTarget.fileName !== expectedFileName
+            ) {
                 pushToast('info', '对话已切换，请重试');
                 return;
             }
+            const tempSnapshot = getTempChatSnapshot();
             const result = await chatuiAdapter.sidebarActions.renameCharacterChat(
                 expectedAvatar,
                 oldFileName,
                 newName,
             );
-            if (result.reloadRequired) {
-                // The durable pointer names a real winning chat, but the active
-                // message buffer still belongs to the vanished/other filename.
-                // No queued mutation may run before ST rebuilds them together.
-                sealHostOperationQueueForReload();
-                window.location.reload();
-                return;
-            }
             if (!result.renamed) {
                 pushToast('error', result.uncertain
                     ? '无法确认重命名结果；请刷新页面后再操作'
@@ -213,15 +268,35 @@ export function renameChatuiChat(oldFileName: string, newName: string): Promise<
             }
             if (result.reconciled) {
                 moveComposerDraft(result.oldChatKey, result.newChatKey);
-                if (_sameChatIdentity(tempSnapshot.pointer, {
-                    avatar: result.avatar,
-                    fileName: result.oldFileName,
-                })) {
+            }
+            if (_sameChatIdentity(tempSnapshot.pointer, {
+                avatar: result.avatar,
+                fileName: result.oldFileName,
+            })) {
+                if (result.uncertain) {
+                    // A file conflict means old and new may both exist even if
+                    // the selected pointer reconciled to new. Quarantine both;
+                    // only the authoritative live identity becomes active.
+                    const retained = retainTempChatRenameCandidateIfMatches(tempSnapshot, {
+                        avatar: result.avatar,
+                        fileName: result.newFileName,
+                    });
+                    if (retained && result.reconciled) {
+                        markTempChatActive(result.avatar, result.newFileName);
+                    }
+                } else if (result.reconciled) {
                     moveTempChatIfMatches(tempSnapshot, {
                         avatar: result.avatar,
                         fileName: result.newFileName,
                     });
                 }
+            }
+            if (result.reloadRequired) {
+                // Persist quarantine migration before the reload: the durable
+                // pointer names a real winner while the live buffer does not.
+                sealHostOperationQueueForReload();
+                window.location.reload();
+                return;
             }
             if (result.uncertain) {
                 pushToast('error', result.reconciled
@@ -245,14 +320,11 @@ export function renameChatuiChat(oldFileName: string, newName: string): Promise<
  */
 export function deleteChatuiChat(avatar: string, fileName: string): Promise<void> {
     return enqueueHostTask(async () => {
-        const snapshot = getTempChatSnapshot();
         try {
             const result = await chatuiAdapter.sidebarActions.deleteCharacterChat(avatar, fileName);
             if (result.deleted) {
                 deleteComposerDraft(createCharacterChatKey(avatar, createConversationLocator(fileName)));
-                if (_sameChatIdentity(snapshot.pointer, { avatar, fileName })) {
-                    clearTempChatIfMatches(snapshot);
-                }
+                removeTempChat(avatar, fileName);
             }
             if (result.reloadRequired) {
                 // The adapter deliberately leaves current-chat live state
@@ -312,6 +384,7 @@ export function newChatuiChat(): Promise<void> {
 export function switchChatuiCharacterAndNewChat(avatar: string): Promise<void> {
     const draftIntent = _captureDraftIntent(avatar);
     return enqueueLatestNavigation(async (operation) => {
+        const departing = _captureDepartingTempChat();
         try {
             const result = await chatuiAdapter.sidebarActions.switchCharacter(avatar);
             if (result === 'notfound') {
@@ -325,6 +398,8 @@ export function switchChatuiCharacterAndNewChat(avatar: string): Promise<void> {
                 return;
             }
 
+            // This action intentionally replaces the current chat next.
+            finishTempChatDeparture(departing, null);
             await _createTempDraft(avatar, draftIntent);
         } catch (error) {
             console.error('[ChatUI] switchChatuiCharacterAndNewChat failed', error);
@@ -341,17 +416,29 @@ export function switchChatuiCharacterAndNewChat(avatar: string): Promise<void> {
  * @returns {Promise<void>}
  */
 export function openChatuiChatForCharacter(avatar: string, fileName: string): Promise<void> {
+    const wasQuarantined = isTempChat(avatar, fileName);
     if (getTempChatDraft()) cancelTempChatDraft();
-    const tempSnapshot = getTempChatSnapshot();
     return enqueueLatestNavigation(async (operation) => {
+        const departing = _captureDepartingTempChat();
         try {
+            if (
+                wasQuarantined
+                && !await chatuiAdapter.sidebarActions.hasCharacterChatFile(avatar, fileName)
+            ) {
+                removeTempChat(avatar, fileName);
+                if (operation.isLatest()) pushToast('error', '草稿文件已不存在');
+                return;
+            }
             const result = await chatuiAdapter.sidebarActions.openChatForCharacter(avatar, fileName);
             if (result === 'notfound') {
+                // The host is authoritative: a stale quarantined lease whose
+                // file vanished must not become an immortal shelf row.
+                removeTempChat(avatar, fileName);
                 if (operation.isLatest()) pushToast('error', '角色或对话不存在');
             } else if (result === 'busy') {
                 if (operation.isLatest()) pushToast('info', '正在保存或生成，请稍候');
             } else {
-                _releaseAbandonedTempChat(tempSnapshot);
+                finishTempChatDeparture(departing, chatuiAdapter.getCurrentChatIdentity());
             }
         } catch (error) {
             console.error('[ChatUI] open chat for character failed', error);

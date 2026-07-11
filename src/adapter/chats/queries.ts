@@ -20,6 +20,7 @@ import {
     stripChatExt,
     type StContext,
 } from './state.js';
+import { listRawCharacterChatNames } from './selection-protocol.js';
 
 function chatTimestamp(lastMes: unknown): { ts: number; label: string } {
     const moment = timestampToMoment(lastMes);
@@ -165,6 +166,13 @@ export async function listChatsForCharacterAvatar(
         chats: typeof limit === 'number' ? chats.slice(0, limit) : chats,
         totalCount: chats.length,
     };
+}
+
+/** Raw filename existence check; unlike chat search, this cannot invent a greeting. */
+export async function hasCharacterChatFile(avatar: string, fileName: string): Promise<boolean> {
+    const bareName = stripChatExt(fileName);
+    if (typeof avatar !== 'string' || !avatar || !bareName) return false;
+    return (await listRawCharacterChatNames(avatar)).includes(bareName);
 }
 
 export function listCharacters(): CharacterSummaryDto[] {

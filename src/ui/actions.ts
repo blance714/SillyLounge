@@ -75,6 +75,7 @@ export {
     beginTempChatDraft,
     cancelTempChatDraft,
     getTempChat,
+    getTempChats,
     getTempChatDraft,
     isTempChat,
     isTempChatDraft,

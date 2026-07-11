@@ -23,6 +23,7 @@ export {
 export {
     listCharacterChats,
     listCharacterConversationHeaders,
+    hasCharacterChatFile,
     listRecentCharacterChatRows,
     listChatsForCharacterAvatar,
     listCharacters,
