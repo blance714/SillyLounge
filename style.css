@@ -35,6 +35,14 @@
     --cui-color-shadow: rgba(0, 0, 0, 0.4);
     --cui-color-user-mark: #8a5a44;
 
+    /* Manuscript rules have three distinct jobs. Faint rules organize the
+       page, structural rules separate regions, and the rust/brass accent is
+       reserved for the reader's own marks and active state. */
+    --cui-rule-faint: color-mix(in srgb, var(--cui-color-border) 58%, transparent);
+    --cui-rule-structure: color-mix(in srgb, var(--cui-color-border) 88%, transparent);
+    --cui-rule-accent: color-mix(in srgb, var(--cui-color-user-mark) 72%, var(--cui-color-accent));
+    --cui-color-seal: color-mix(in srgb, var(--cui-color-user-mark) 46%, var(--cui-color-accent));
+
     /* Type roles: serif for read content (names, message/reasoning body,
        composer input), sans for chrome (buttons, labels, timestamps). Most
        chrome rules reference --cui-font-family, kept as an alias to
@@ -93,7 +101,7 @@
     --cui-message-user-border: none;
     --cui-message-user-radius: 0;
     --cui-message-user-bg: transparent;
-    --cui-message-user-rule: 2px solid var(--cui-color-user-mark);
+    --cui-message-user-rule: 2px solid var(--cui-rule-accent);
 
     /* Plus-menu pinned tile vs. unpinned tool row: same button semantics,
        two hardcoded looks on the same DOM shape — the second of the 3
@@ -108,8 +116,8 @@
        of a hardcoded value kept in sync by a comment. Changing any of the
        three below now keeps the nested rows aligned automatically. */
     --cui-sidebar-row-padding-x: 1rem;
-    --cui-sidebar-avatar-size: 1.7rem;
-    --cui-sidebar-row-gap: 0.5rem;
+    --cui-sidebar-avatar-size: 1.4rem;
+    --cui-sidebar-row-gap: 0.6rem;
     --cui-sidebar-indent: calc(
         var(--cui-sidebar-row-padding-x) + var(--cui-sidebar-avatar-size) + var(--cui-sidebar-row-gap)
     );
@@ -207,15 +215,11 @@ body.chatui-active .cui-root-topbar {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 0.55rem;
+    gap: 0.7rem;
     width: min(100%, var(--cui-content-max-width));
     margin: 0 auto;
-    padding: 0.15rem 0 0.25rem;
-    background: linear-gradient(
-        to bottom,
-        var(--cui-color-ground) 75%,
-        color-mix(in srgb, var(--cui-color-ground) 0%, transparent)
-    );
+    padding: 0.45rem 0 0.75rem;
+    border-bottom: 1px solid var(--cui-rule-faint);
 }
 
 body.chatui-active .cui-root-shell-toggle,
@@ -241,18 +245,48 @@ body.chatui-active .cui-root-shell-close:focus-visible {
     outline: 1px solid var(--interactable-outline-color-faint);
 }
 
-body.chatui-active .cui-root-topbar-title {
+body.chatui-active .cui-root-topbar-heading {
     flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.08rem;
     min-width: 0;
+}
+
+body.chatui-active .cui-root-topbar-eyebrow,
+body.chatui-active .cui-root-topbar-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-family: var(--cui-font-display);
+}
+
+body.chatui-active .cui-root-topbar-eyebrow {
+    color: var(--cui-color-accent);
+    font-family: var(--cui-font-ui);
+    font-size: var(--cui-font-2xs);
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    line-height: 1.2;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-size: calc(var(--mainFontSize) * 0.92);
-    font-weight: 700;
-    opacity: 0.78;
+    opacity: 0.72;
+}
+
+body.chatui-active .cui-root-topbar-title {
+    margin: 0;
+    font-family: var(--cui-font-display);
+    font-size: calc(var(--mainFontSize) * 1.08);
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    line-height: 1.28;
+}
+
+body.chatui-active .cui-root-topbar-tools {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    margin-left: auto;
 }
 
 /* Slot-A selchips (persona chip in the topbar) — compact; may shrink so a long
@@ -268,13 +302,55 @@ body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
     max-width: 9rem;
 }
 
+/* Composer selector menus open upward; the title-page selector lives at the
+   top edge and must open into the page instead. */
+body.chatui-active .cui-root-topbar .cui-root-selchip-menu {
+    top: calc(100% + 0.35rem);
+    right: 0;
+    bottom: auto;
+    left: auto;
+}
+
 /* Topbar ⋯ menu container — positioned relative so the dropdown anchors here */
 body.chatui-active .cui-root-topbar-menu {
     flex: 0 0 auto;
     position: relative;
     display: flex;
     align-items: center;
-    margin-left: auto;
+    margin-left: 0;
+}
+
+@media (max-width: 768px) {
+    body.chatui-active .cui-root-topbar {
+        gap: 0.35rem;
+        padding: 0.25rem 0 0.6rem;
+    }
+
+    body.chatui-active .cui-root-topbar-title {
+        font-size: calc(var(--mainFontSize) * 0.98);
+    }
+
+    body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
+        max-width: 5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    body.chatui-active .cui-root-topbar .cui-root-selchip-label,
+    body.chatui-active .cui-root-topbar .cui-root-selchip-caret {
+        display: none;
+    }
+
+    body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
+        justify-content: center;
+        width: 2rem;
+        min-width: 2rem;
+        padding-inline: 0;
+    }
+
+    body.chatui-active .cui-root-topbar-rename {
+        width: min(42vw, 12rem);
+    }
 }
 
 /* Inline rename input shown in place of the ⋯ button */
@@ -391,9 +467,16 @@ body.chatui-active .cui-root-shell-header {
     align-items: center;
     justify-content: space-between;
     gap: 0.75rem;
-    padding: 0.75rem;
-    border-bottom: 1px solid var(--cui-color-border);
+    padding: 0.8rem 1rem;
+    border-bottom: 1px solid var(--cui-rule-structure);
     font-weight: 700;
+}
+
+body.chatui-active .cui-root-sidebar-title {
+    font-family: var(--cui-font-display);
+    font-size: calc(var(--mainFontSize) * 0.9);
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
 }
 
 /* ── Sidebar top section (NewChatButton wrapper) ─────────────────────────── */
@@ -409,7 +492,7 @@ body.chatui-active .cui-root-sidebar-footer {
     flex: 0 0 auto;
     margin-top: auto;
     padding: 0.35rem 0.45rem 0.45rem;
-    border-top: 1px solid var(--cui-color-border);
+    border-top: 1px solid var(--cui-rule-structure);
 }
 
 body.chatui-active .cui-root-settings-entry,
@@ -547,7 +630,7 @@ body.chatui-active .cui-root-convlist {
     gap: 0.2rem;
     min-height: 0;
     padding: 0.45rem 0;
-    border-top: 1px solid var(--cui-color-border);
+    border-top: 1px solid var(--cui-rule-faint);
 }
 
 /* Only the chat list scrolls; the switcher + 新对话 stay pinned, and the
@@ -586,7 +669,7 @@ body.chatui-active .cui-root-newchat:focus-visible {
 }
 
 body.chatui-active .cui-root-newchat.is-active {
-    border-left-color: var(--cui-color-accent);
+    border-left-color: var(--cui-rule-accent);
     background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
 }
 
@@ -716,7 +799,7 @@ body.chatui-active .cui-root-char-group-header {
     align-items: center;
     gap: var(--cui-sidebar-row-gap);
     width: 100%;
-    min-height: 2.5rem;
+    min-height: 2.35rem;
     border: none;
     border-radius: 0;
     background: none;
@@ -724,7 +807,8 @@ body.chatui-active .cui-root-char-group-header {
     cursor: pointer;
     font-family: var(--cui-font-family);
     font-size: calc(var(--mainFontSize) * 0.94);
-    font-weight: 600;
+    font-weight: 500;
+    letter-spacing: 0.025em;
     padding: 0.3rem var(--cui-sidebar-row-padding-x);
     text-align: left;
 }
@@ -738,8 +822,9 @@ body.chatui-active .cui-root-char-group-header:focus-visible {
 body.chatui-active .cui-root-char-group-avatar {
     width: var(--cui-sidebar-avatar-size);
     height: var(--cui-sidebar-avatar-size);
-    border-radius: 50%;
+    border-radius: 0.18rem;
     object-fit: cover;
+    opacity: 0.78;
     flex: 0 0 auto;
 }
 
@@ -851,14 +936,12 @@ body.chatui-active .cui-root-nested-chat-row:focus-visible {
 }
 
 body.chatui-active .cui-root-nested-chat-row.is-current {
-    border-left-color: var(--cui-color-accent);
+    border-left-color: var(--cui-rule-accent);
     background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
 }
 
 body.chatui-active .cui-root-nested-chat-row-icon {
-    opacity: 0.45;
-    flex: 0 0 auto;
-    font-size: calc(var(--mainFontSize) * 0.82);
+    display: none;
 }
 
 body.chatui-active .cui-root-nested-chat-row-main {
@@ -931,10 +1014,19 @@ body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-
 }
 
 /* collapsed forms: hide the grouped list body just like the old convlist */
+body.chatui-active .cui-root-message-stage {
+    position: relative;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    width: 100%;
+    min-height: 0;
+}
+
 body.chatui-active .cui-root-message-list {
     display: flex;
     flex-direction: column;
-    gap: 0.65rem;
+    gap: 1.3rem;
     width: 100%;
     flex: 1 1 auto;
     min-height: 0;
@@ -944,12 +1036,13 @@ body.chatui-active .cui-root-message-list {
     overscroll-behavior: contain;
     max-width: 58rem;
     margin: 0 auto;
+    padding: 0.25rem 0 0.5rem;
 }
 
 body.chatui-active .cui-root-message {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.38rem;
     max-width: min(100%, 52rem);
     box-sizing: border-box;
 }
@@ -1018,7 +1111,7 @@ body.chatui-active .cui-root-message-name {
 body.chatui-active .cui-root-message-connector {
     flex: 1 1 auto;
     height: 1px;
-    background: var(--cui-color-border);
+    background: linear-gradient(to right, var(--cui-rule-structure), var(--cui-rule-faint));
 }
 
 body.chatui-active .cui-root-message-time,
@@ -1031,7 +1124,7 @@ body.chatui-active .cui-root-message-swipe {
 body.chatui-active .cui-root-message-body {
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-    line-height: 1.5;
+    line-height: 1.82;
     font-family: var(--cui-font-body);
 }
 
@@ -1044,7 +1137,7 @@ body.chatui-active .cui-root-reasoning-body q::after {
 
 body.chatui-active .cui-root-message-body p,
 body.chatui-active .cui-root-reasoning-body p {
-    margin: 0 0 0.65rem;
+    margin: 0 0 0.82rem;
 }
 
 body.chatui-active .cui-root-message-body p:last-child,
@@ -1060,6 +1153,7 @@ body.chatui-active .cui-root-reasoning-body pre {
     border: 1px solid var(--cui-color-border);
     border-radius: 0.5rem;
     background-color: color-mix(in srgb, var(--cui-color-text) 7%, transparent);
+    line-height: 1.55;
     white-space: pre;
 }
 
@@ -1180,7 +1274,7 @@ body.chatui-active .cui-root-code-lang {
 body.chatui-active .cui-root-reasoning {
     width: 100%;
     margin: 0.15rem 0 0.25rem;
-    border-left: 1px dashed var(--cui-color-border);
+    border-left: 1px dashed var(--cui-rule-faint);
     padding-left: 0.65rem;
     opacity: 0.82;
 }
@@ -1202,7 +1296,7 @@ body.chatui-active .cui-root-reasoning-body {
     margin-top: 0.45rem;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-    line-height: 1.45;
+    line-height: 1.62;
     font-family: var(--cui-font-body);
     font-style: italic;
 }
@@ -1425,6 +1519,14 @@ body.chatui-active .cui-root-menu-item:disabled:hover {
     body.chatui-active .cui-root-message-actions {
         opacity: 0.85;
     }
+
+    body.chatui-active .cui-root-message-list {
+        gap: 1rem;
+    }
+
+    body.chatui-active .cui-root-message-body {
+        line-height: 1.72;
+    }
 }
 
 body.chatui-active .cui-root-empty {
@@ -1436,26 +1538,65 @@ body.chatui-active .cui-root-empty {
 body.chatui-active .cui-root-generating {
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
-    align-self: center;
-    margin: 0.35rem auto 0;
-    padding: 0.35rem 0.65rem;
-    border: 1px solid var(--cui-color-border);
-    border-radius: 999px;
-    background-color: color-mix(in srgb, var(--cui-color-text) 6%, transparent);
-    color: var(--cui-color-text);
-    font-size: var(--cui-font-sm);
-    opacity: 0.78;
+    gap: 0.55rem;
+    align-self: flex-start;
+    margin: 0.05rem 0 0.25rem;
+    padding: 0 0.15rem;
+    color: color-mix(in srgb, var(--cui-color-seal) 74%, var(--cui-color-text));
+    font-family: var(--cui-font-body);
+    font-size: var(--cui-font-xs);
 }
 
-body.chatui-active .cui-root-generating[hidden] {
-    display: none;
+body.chatui-active .cui-root-generating-seal {
+    position: relative;
+    width: 0.82rem;
+    height: 0.82rem;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    border: 1px solid var(--cui-color-seal);
+    border-radius: 50%;
+    animation: cui-seal-breathe 3.8s ease-in-out infinite;
+}
+
+body.chatui-active .cui-root-generating-seal::after {
+    content: "";
+    position: absolute;
+    inset: 0.2rem;
+    border-radius: 50%;
+    background-color: var(--cui-color-seal);
+}
+
+body.chatui-active .cui-root-generating-label {
+    font-style: italic;
+    letter-spacing: 0.06em;
+    opacity: 0.72;
+}
+
+@keyframes cui-seal-breathe {
+    0%, 100% {
+        opacity: 0.52;
+        transform: scale(0.88);
+        box-shadow: 0 0 0 0 color-mix(in srgb, var(--cui-color-seal) 0%, transparent);
+    }
+    50% {
+        opacity: 1;
+        transform: scale(1);
+        box-shadow: 0 0 0 0.24rem color-mix(in srgb, var(--cui-color-seal) 10%, transparent);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.chatui-active .cui-root-generating-seal {
+        animation: none;
+        opacity: 0.82;
+        transform: none;
+    }
 }
 
 body.chatui-active .cui-root-scroll-bottom {
     position: absolute;
     left: 50%;
-    bottom: 5.25rem;
+    bottom: 0.85rem;
     z-index: 7;
     transform: translateX(-50%);
     display: inline-flex;
@@ -1511,19 +1652,33 @@ body.chatui-active .cui-root-generate-btn:focus-visible {
 }
 
 body.chatui-active .cui-root-composer {
+    position: relative;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     gap: 0.35rem;
     width: min(100%, var(--cui-content-max-width));
-    margin: 0.35rem auto 0;
-    padding: 0.5rem 0 0.15rem;
-    background: linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--cui-color-surface) 0%, transparent),
-        var(--cui-color-surface) 35%
-    );
+    margin: 0.25rem auto 0;
+    padding: 0.65rem 0 0.15rem;
+    border-top: 1px solid var(--cui-rule-structure);
+    background: none;
     box-sizing: border-box;
+}
+
+body.chatui-active .cui-root-composer::before {
+    content: "";
+    position: absolute;
+    top: -1px;
+    left: 0;
+    width: 2.75rem;
+    height: 1px;
+    background-color: var(--cui-rule-accent);
+    transition: width var(--animation-duration-2x, 0.2s) ease, background-color var(--animation-duration-2x, 0.2s) ease;
+}
+
+body.chatui-active .cui-root-composer:focus-within::before {
+    width: 4.5rem;
+    background-color: var(--cui-color-seal);
 }
 
 body.chatui-active .cui-root-composer-row {
@@ -1531,12 +1686,7 @@ body.chatui-active .cui-root-composer-row {
     align-items: flex-end;
     gap: 0.45rem;
     width: 100%;
-    padding-bottom: 0.35rem;
-    box-shadow: inset 0 -1px 0 0 var(--cui-color-border);
-}
-
-body.chatui-active .cui-root-composer-row:focus-within {
-    box-shadow: inset 0 -2px 0 0 var(--cui-color-accent);
+    padding-bottom: 0;
 }
 
 body.chatui-active .cui-root-composer-input {
@@ -1551,8 +1701,14 @@ body.chatui-active .cui-root-composer-input {
     color: var(--cui-color-text);
     font-family: var(--cui-font-body);
     font-size: var(--mainFontSize);
-    line-height: 1.45;
-    padding: 0.65rem 0.75rem;
+    line-height: 1.65;
+    padding: 0.42rem 0.45rem 0.52rem;
+    outline: none;
+}
+
+body.chatui-active .cui-root-composer-input::placeholder {
+    color: color-mix(in srgb, var(--cui-color-text) 42%, transparent);
+    font-style: italic;
 }
 
 /* Selector B relocated into the ＋ menu top when single-line. */
@@ -1582,7 +1738,7 @@ body.chatui-active .cui-root-composer-btn {
     height: 2.45rem;
     flex: 0 0 auto;
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: 0.3rem;
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
@@ -1607,6 +1763,14 @@ body.chatui-active .cui-root-composer-stop {
     background-color: color-mix(in srgb, var(--cui-color-danger) 22%, transparent);
 }
 
+body.chatui-active .cui-root-send-glyph {
+    color: var(--cui-color-seal);
+    font-family: var(--cui-font-display);
+    font-size: calc(var(--mainFontSize) * 1.35);
+    line-height: 1;
+    transform: translateY(-0.04em);
+}
+
 /* ---------------------------------------------------------------------------
    4. Composer + menu  (the + button in the root composer)
    Mobile-first: half-sheet from the bottom. Desktop: popup above the button.
@@ -1624,7 +1788,7 @@ body.chatui-active .cui-root-plus-btn {
     width: 2.45rem;
     height: 2.45rem;
     border: 1px solid transparent;
-    border-radius: 999px;
+    border-radius: 0.3rem;
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
