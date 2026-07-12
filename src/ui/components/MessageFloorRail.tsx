@@ -209,10 +209,13 @@ export function MessageFloorRail({
     const activeIndex = useActiveTurn(root, turns);
     const [windowStart, setWindowStart] = useState(0);
     const [hovered, setHovered] = useState<HoveredTurn | null>(null);
-    const [focused, setFocused] = useState(false);
+    const [keyboardFocused, setKeyboardFocused] = useState(false);
     const railRef = useRef<HTMLDivElement | null>(null);
     const hoverFrameRef = useRef(0);
     const pendingHoverRef = useRef<HoveredTurn | null>(null);
+    // Firefox may match :focus-visible for a pointer-focused custom slider, so
+    // retain the actual focus origin instead of inferring it from CSS state.
+    const pointerFocusRef = useRef(false);
     const wheelDeltaRef = useRef(0);
 
     const capacity = Math.min(layout?.capacity ?? 0, turns.length);
@@ -291,7 +294,9 @@ export function MessageFloorRail({
 
     if (!root || !layout || visibleTurns.length === 0) return null;
 
-    const previewIndex = hovered ? windowStart + hovered.slot : (focused ? activeIndex : null);
+    const previewIndex = hovered
+        ? windowStart + hovered.slot
+        : (keyboardFocused ? activeIndex : null);
     const previewTurn = previewIndex === null ? null : turns[previewIndex];
     const previewSlot = previewIndex === null
         ? 0
@@ -318,6 +323,16 @@ export function MessageFloorRail({
             onPointerMove={event => {
                 scheduleHoveredTurn(turnFromClientY(event.clientY, event.currentTarget));
             }}
+            onPointerDown={() => {
+                pointerFocusRef.current = true;
+                setKeyboardFocused(false);
+            }}
+            onPointerUp={() => {
+                pointerFocusRef.current = false;
+            }}
+            onPointerCancel={() => {
+                pointerFocusRef.current = false;
+            }}
             onPointerLeave={clearHoveredTurn}
             onPointerOut={event => {
                 const nextTarget = event.relatedTarget;
@@ -328,8 +343,10 @@ export function MessageFloorRail({
                 const target = turnFromClientY(event.clientY, event.currentTarget);
                 jumpToTurn(windowStart + target.slot);
             }}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
+            onFocus={() => {
+                if (!pointerFocusRef.current) setKeyboardFocused(true);
+            }}
+            onBlur={() => setKeyboardFocused(false)}
             onKeyDown={event => {
                 let next = activeIndex;
                 if (event.key === 'ArrowUp') next -= 1;
@@ -340,6 +357,7 @@ export function MessageFloorRail({
                 else if (event.key === 'End') next = turns.length - 1;
                 else return;
                 event.preventDefault();
+                setKeyboardFocused(true);
                 jumpToTurn(next);
             }}
             onWheel={event => {
