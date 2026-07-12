@@ -1,5 +1,5 @@
 {
-    "display_name": "SillyTavern ChatUI",
+    "display_name": "SillyLounge 🍸",
     "loading_order": 101,
     "requires": [],
     "optional": [],
@@ -7,5 +7,6 @@
     "css": "style.css",
     "author": "blance",
     "version": "0.1.0",
-    "auto_update": false
+    "homePage": "https://github.com/blance714/SillyLounge",
+    "auto_update": true
 }
