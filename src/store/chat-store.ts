@@ -94,10 +94,17 @@ export type ChatuiChatIdentity = {
     fileName: string;
 };
 
+export type ChatuiUserTurn = {
+    userMessageId: number;
+    responseMessageId: number | null;
+};
+
 export type ChatuiStoreState = {
     chat: {
         /** Visible message ids; message DTOs live in a granular per-id store. */
         messageIds: number[];
+        /** User-authored turns paired with their immediately following character reply. */
+        userTurns: ChatuiUserTurn[];
         messageCount: number;
         lastMessageId: number | null;
         chatKey: string;
@@ -115,6 +122,7 @@ export type ChatuiStoreState = {
 const _initialState: ChatuiStoreState = {
     chat: {
         messageIds: [],
+        userTurns: [],
         messageCount: 0,
         lastMessageId: null,
         chatKey: '',
@@ -280,6 +288,7 @@ function _projectChatuiMessage(
 function _buildMessageDtos(snapshots: ReadonlyArray<MessageSnapshotDto>, chatKey: string): {
     messagesById: Map<number, ChatuiMessageDto>;
     visibleMessageIds: number[];
+    userTurns: ChatuiUserTurn[];
     lastMessageId: number | null;
     lastMessageNeedsGenerate: boolean;
 } {
@@ -291,11 +300,30 @@ function _buildMessageDtos(snapshots: ReadonlyArray<MessageSnapshotDto>, chatKey
         messagesById.set(dto.id, dto);
         if (!dto.extra.isSmallSys && !dto.extra.isToolCall) visibleMessageIds.push(dto.id);
     }
+    const userTurns: ChatuiUserTurn[] = [];
+    let pendingTurnIndex: number | null = null;
+    for (const messageId of visibleMessageIds) {
+        const message = messagesById.get(messageId);
+        if (!message) continue;
+        if (message.isUser) {
+            userTurns.push({ userMessageId: messageId, responseMessageId: null });
+            pendingTurnIndex = userTurns.length - 1;
+            continue;
+        }
+        if (message.isChar && pendingTurnIndex !== null) {
+            userTurns[pendingTurnIndex] = {
+                ...userTurns[pendingTurnIndex],
+                responseMessageId: messageId,
+            };
+            pendingTurnIndex = null;
+        }
+    }
     const lastDto = lastMessageId === null ? null : messagesById.get(lastMessageId);
 
     return {
         messagesById,
         visibleMessageIds,
+        userTurns,
         lastMessageId,
         lastMessageNeedsGenerate: lastDto?.ui.needsGenerate ?? false,
     };
@@ -398,6 +426,7 @@ export function refreshChatuiStore() {
         ...state,
         chat: {
             messageIds: messageState.visibleMessageIds,
+            userTurns: messageState.userTurns,
             messageCount: snapshot.messages.length,
             lastMessageId: messageState.lastMessageId,
             chatKey: snapshot.chatKey,
