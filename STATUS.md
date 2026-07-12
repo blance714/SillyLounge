@@ -173,8 +173,10 @@ when the resulting left gutter leaves at least `12px` after its wave, so it neve
 overlays prose. Hover previews that user's words plus the next character reply.
 Overflow becomes a height-bounded tick window with `40px`
 top/bottom safety; it follows the active turn to the bottom and uses wheel input
-to browse hidden turns. Touch/mobile deliberately remains unchanged until a
-separate mis-touch-resistant interaction is designed.
+to browse hidden turns. While that window moves, tiny top/bottom labels expose
+its first and last user-turn numbers, then fade after input stops. Touch/mobile
+deliberately remains unchanged until a separate mis-touch-resistant interaction
+is designed.
 
 New-chat drafts now use per-conversation quarantine leases in localStorage instead
 of `chat_metadata.chatui_isNewChat` / message-count heuristics. A leased draft is
