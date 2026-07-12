@@ -379,7 +379,7 @@ export function MessageFloorRail({
                     const distance = previewIndex === null ? Number.POSITIVE_INFINITY : Math.abs(index - previewIndex);
                     const wave = Math.pow(Math.max(0, 1 - distance / 5), 1.65);
                     const isCurrent = index === activeIndex;
-                    const width = 8 + wave * 18 + (isCurrent ? 4 : 0);
+                    const width = 8 + wave * 18;
                     return (
                         <span
                             key={turn.userMessageId}
