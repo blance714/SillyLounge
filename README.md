@@ -35,8 +35,7 @@ Install dependencies:
 pnpm install
 ```
 
-Development requires Node.js `^20.19.0` or `>=22.12.0` (the supported Vite
-runtime range).
+Development requires Node.js `>=22.13.0`, matching the pinned pnpm toolchain.
 
 Run the full local verification gate:
 
