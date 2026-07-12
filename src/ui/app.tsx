@@ -165,7 +165,7 @@ function ChatuiApp(): ComponentChild {
                           </div>
                       </header>
                       <div className="cui-root-message-stage">
-                          <MessageFloorRail root={listNode} messageIds={messageIds} />
+                          <MessageFloorRail root={listNode} turns={state.chat.userTurns} />
                           <div
                               ref={listRef}
                               className="cui-root-message-list"

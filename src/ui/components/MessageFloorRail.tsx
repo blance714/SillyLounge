@@ -9,22 +9,33 @@ import React, {
 import type { ComponentChild } from 'preact';
 import { useChatuiMessage } from '../hooks.js';
 
-const MAX_VISIBLE_TICKS = 48;
+const APP_EDGE_INSET_PX = 16;
 const RAIL_WIDTH_PX = 30;
+const CONTENT_CLEARANCE_PX = 12;
+const VERTICAL_SAFE_AREA_PX = 40;
+const TICK_HEIGHT_PX = 2;
+const TICK_GAP_PX = 6;
+const TICK_PITCH_PX = TICK_HEIGHT_PX + TICK_GAP_PX;
+const WHEEL_STEP_PX = 24;
+const POPOVER_EDGE_GUARD_PX = 56;
 
-type RailPlacement = Readonly<{ left: number }>;
-type HoveredFloor = Readonly<{ index: number; ratio: number }>;
+type UserTurn = Readonly<{
+    userMessageId: number;
+    responseMessageId: number | null;
+}>;
+type RailLayout = Readonly<{ capacity: number; left: number }>;
+type HoveredTurn = Readonly<{ slot: number }>;
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
-function useRailPlacement(root: HTMLDivElement | null): RailPlacement | null {
-    const [placement, setPlacement] = useState<RailPlacement | null>(null);
+function useRailLayout(root: HTMLDivElement | null): RailLayout | null {
+    const [layout, setLayout] = useState<RailLayout | null>(null);
 
     useLayoutEffect(() => {
         if (!root) {
-            setPlacement(null);
+            setLayout(null);
             return;
         }
         const stage = root.parentElement;
@@ -34,20 +45,32 @@ function useRailPlacement(root: HTMLDivElement | null): RailPlacement | null {
         let observedMouse = false;
 
         const update = () => {
-            const app = stage.closest<HTMLElement>('.cui-root-app');
-            const stageLeft = stage.getBoundingClientRect().left;
-            const rootLeft = root.getBoundingClientRect().left;
-            const appLeft = app?.getBoundingClientRect().left ?? stageLeft;
-            const readingGutterLeft = rootLeft - stageLeft - RAIL_WIDTH_PX;
-            const appBoundaryLeft = appLeft - stageLeft;
+            const stageRect = stage.getBoundingClientRect();
+            const appRect = stage.closest<HTMLElement>('.cui-root-app')?.getBoundingClientRect();
+            const contentLeft = root.getBoundingClientRect().left;
+            const availableHeight = Math.max(0, stageRect.height - VERTICAL_SAFE_AREA_PX * 2);
+            const capacity = Math.max(1, Math.floor(
+                (availableHeight + TICK_GAP_PX) / TICK_PITCH_PX,
+            ));
             const hasDesktopPointer = preciseHover.matches
                 || observedMouse
                 || navigator.maxTouchPoints === 0;
-            const next = desktop.matches && hasDesktopPointer
-                ? { left: Math.max(appBoundaryLeft, readingGutterLeft) }
+            const appLeft = appRect?.left ?? stageRect.left;
+            const railLeft = appLeft + APP_EDGE_INSET_PX;
+            const hasReadingGutter = contentLeft - railLeft >= RAIL_WIDTH_PX + CONTENT_CLEARANCE_PX;
+            const next = desktop.matches
+                && hasDesktopPointer
+                && hasReadingGutter
+                && availableHeight >= TICK_HEIGHT_PX
+                ? {
+                    capacity,
+                    left: railLeft - stageRect.left,
+                }
                 : null;
-            setPlacement(previous => (
-                previous?.left === next?.left ? previous : next
+            setLayout(previous => (
+                previous?.capacity === next?.capacity && previous?.left === next?.left
+                    ? previous
+                    : next
             ));
         };
         const observeMouse = (event: PointerEvent) => {
@@ -76,25 +99,25 @@ function useRailPlacement(root: HTMLDivElement | null): RailPlacement | null {
         };
     }, [root]);
 
-    return placement;
+    return layout;
 }
 
 function messageElement(root: HTMLElement, messageId: number): HTMLElement | null {
     return root.querySelector<HTMLElement>(`[data-cui-message-id="${messageId}"]`);
 }
 
-function useActiveFloor(root: HTMLDivElement | null, messageIds: readonly number[]): number {
+function useActiveTurn(root: HTMLDivElement | null, turns: readonly UserTurn[]): number {
     const [activeIndex, setActiveIndex] = useState(0);
 
     useEffect(() => {
-        if (!root || messageIds.length === 0) {
+        if (!root || turns.length === 0) {
             setActiveIndex(0);
             return;
         }
         let frame = 0;
         const update = () => {
             frame = 0;
-            const maxIndex = messageIds.length - 1;
+            const maxIndex = turns.length - 1;
             const bottomDistance = root.scrollHeight - root.scrollTop - root.clientHeight;
             if (bottomDistance < 4) {
                 setActiveIndex(previous => (previous === maxIndex ? previous : maxIndex));
@@ -112,7 +135,7 @@ function useActiveFloor(root: HTMLDivElement | null, messageIds: readonly number
             let nearest = 0;
             while (low <= high) {
                 const middle = Math.floor((low + high) / 2);
-                const element = messageElement(root, messageIds[middle]);
+                const element = messageElement(root, turns[middle].userMessageId);
                 if (!element) break;
                 if (element.getBoundingClientRect().top <= readingLine) {
                     nearest = middle;
@@ -134,65 +157,94 @@ function useActiveFloor(root: HTMLDivElement | null, messageIds: readonly number
             root.removeEventListener('scroll', schedule);
             if (frame) cancelAnimationFrame(frame);
         };
-    }, [messageIds, root]);
+    }, [root, turns]);
 
-    return clamp(activeIndex, 0, Math.max(0, messageIds.length - 1));
+    return clamp(activeIndex, 0, Math.max(0, turns.length - 1));
 }
 
-function FloorPreview({ messageId, floor }: { messageId: number; floor: number }): ComponentChild {
-    const message = useChatuiMessage(messageId);
-    if (!message) return null;
-    const name = message.name || (message.isUser ? '你' : message.isSystem ? '系统' : '角色');
-    const rawPreview = (message.displayText || message.text).replace(/\s+/g, ' ').trim();
-    const preview = rawPreview
+function messagePreview(
+    message: ReturnType<typeof useChatuiMessage>,
+    fallback: string,
+    stripReasoning = false,
+): string {
+    if (!message) return fallback;
+    let source = message.displayText || message.text;
+    if (stripReasoning) {
+        source = source
+            .replace(/^\s*<(thinking|think|analysis)>[\s\S]*?<\/\1>\s*/i, '')
+            .replace(/^\s*<(?:thinking|think|analysis)>[\s\S]*$/i, '');
+        const content = source.match(/<content>([\s\S]*?)<\/content>/i);
+        if (content) source = content[1];
+        source = source
+            .replace(/<!--[\s\S]*?-->/g, ' ')
+            .replace(/<[^>]+>/g, ' ');
+    }
+    return source.replace(/\s+/g, ' ').trim()
         || message.attachments.files[0]?.name
-        || (message.attachments.media.length > 0 ? '媒体消息' : '空白消息');
+        || (message.attachments.media.length > 0 ? '媒体消息' : fallback);
+}
+
+function TurnPreview({ turn }: { turn: UserTurn }): ComponentChild {
+    const userMessage = useChatuiMessage(turn.userMessageId);
+    const responseMessage = useChatuiMessage(turn.responseMessageId ?? -1);
+    const title = messagePreview(userMessage, '空白消息');
+    const response = messagePreview(responseMessage, '等待回复……', true);
 
     return (
         <div className="cui-root-floor-popover" aria-hidden="true">
-            <span className="cui-root-floor-popover-meta">第 {floor} 楼 · {name}</span>
-            <span className="cui-root-floor-popover-preview">{preview}</span>
+            <span className="cui-root-floor-popover-title">{title}</span>
+            <span className="cui-root-floor-popover-preview">{response}</span>
         </div>
     );
 }
 
 export function MessageFloorRail({
     root,
-    messageIds,
+    turns,
 }: {
     root: HTMLDivElement | null;
-    messageIds: readonly number[];
+    turns: readonly UserTurn[];
 }): ComponentChild {
-    const placement = useRailPlacement(root);
-    const activeIndex = useActiveFloor(root, messageIds);
-    const [hovered, setHovered] = useState<HoveredFloor | null>(null);
+    const layout = useRailLayout(root);
+    const activeIndex = useActiveTurn(root, turns);
+    const [windowStart, setWindowStart] = useState(0);
+    const [hovered, setHovered] = useState<HoveredTurn | null>(null);
     const [focused, setFocused] = useState(false);
     const railRef = useRef<HTMLDivElement | null>(null);
     const hoverFrameRef = useRef(0);
-    const pendingHoverRef = useRef<HoveredFloor | null>(null);
+    const pendingHoverRef = useRef<HoveredTurn | null>(null);
+    const wheelDeltaRef = useRef(0);
 
-    const markers = useMemo(() => {
-        const count = Math.min(MAX_VISIBLE_TICKS, messageIds.length);
-        if (count < 2) return [];
-        return Array.from({ length: count }, (_, index) => (
-            Math.round(index * (messageIds.length - 1) / (count - 1))
-        ));
-    }, [messageIds.length]);
+    const capacity = Math.min(layout?.capacity ?? 0, turns.length);
+    const maxWindowStart = Math.max(0, turns.length - capacity);
+    const visibleTurns = useMemo(
+        () => turns.slice(windowStart, windowStart + capacity),
+        [capacity, turns, windowStart],
+    );
+    const railHeight = visibleTurns.length > 0
+        ? visibleTurns.length * TICK_HEIGHT_PX + (visibleTurns.length - 1) * TICK_GAP_PX
+        : 0;
+
+    useEffect(() => {
+        const centeredStart = activeIndex - Math.floor((capacity - 1) / 2);
+        setWindowStart(clamp(centeredStart, 0, maxWindowStart));
+    }, [activeIndex, capacity, maxWindowStart]);
 
     useEffect(() => () => {
         if (hoverFrameRef.current) cancelAnimationFrame(hoverFrameRef.current);
     }, []);
 
-    const floorFromClientY = useCallback((clientY: number, element: HTMLElement): HoveredFloor => {
+    const turnFromClientY = useCallback((clientY: number, element: HTMLElement): HoveredTurn => {
         const bounds = element.getBoundingClientRect();
-        const ratio = clamp((clientY - bounds.top) / Math.max(1, bounds.height), 0, 1);
-        return {
-            index: Math.round(ratio * (messageIds.length - 1)),
-            ratio,
-        };
-    }, [messageIds.length]);
+        const slot = clamp(
+            Math.round((clientY - bounds.top - TICK_HEIGHT_PX / 2) / TICK_PITCH_PX),
+            0,
+            Math.max(0, visibleTurns.length - 1),
+        );
+        return { slot };
+    }, [visibleTurns.length]);
 
-    const scheduleHoveredFloor = useCallback((next: HoveredFloor) => {
+    const scheduleHoveredTurn = useCallback((next: HoveredTurn) => {
         pendingHoverRef.current = next;
         if (hoverFrameRef.current) return;
         hoverFrameRef.current = requestAnimationFrame(() => {
@@ -201,7 +253,7 @@ export function MessageFloorRail({
         });
     }, []);
 
-    const clearHoveredFloor = useCallback(() => {
+    const clearHoveredTurn = useCallback(() => {
         pendingHoverRef.current = null;
         if (hoverFrameRef.current) cancelAnimationFrame(hoverFrameRef.current);
         hoverFrameRef.current = 0;
@@ -212,72 +264,69 @@ export function MessageFloorRail({
         if (!hovered) return;
         const clearWhenPointerIsOutside = (event: PointerEvent) => {
             const target = event.target;
-            if (target instanceof Node && !railRef.current?.contains(target)) {
-                clearHoveredFloor();
-            }
+            if (target instanceof Node && !railRef.current?.contains(target)) clearHoveredTurn();
         };
         const embeddedFrames = root
             ? Array.from(root.querySelectorAll<HTMLIFrameElement>('iframe'))
             : [];
         window.addEventListener('pointermove', clearWhenPointerIsOutside, true);
-        embeddedFrames.forEach(frame => frame.addEventListener('pointerenter', clearHoveredFloor));
+        embeddedFrames.forEach(frame => frame.addEventListener('pointerenter', clearHoveredTurn));
         return () => {
             window.removeEventListener('pointermove', clearWhenPointerIsOutside, true);
-            embeddedFrames.forEach(frame => frame.removeEventListener('pointerenter', clearHoveredFloor));
+            embeddedFrames.forEach(frame => frame.removeEventListener('pointerenter', clearHoveredTurn));
         };
-    }, [clearHoveredFloor, hovered, root]);
+    }, [clearHoveredTurn, hovered, root]);
 
-    const jumpToIndex = useCallback((index: number) => {
-        if (!root || messageIds.length === 0) return;
-        const targetIndex = clamp(index, 0, messageIds.length - 1);
-        const target = messageElement(root, messageIds[targetIndex]);
+    const jumpToTurn = useCallback((index: number) => {
+        if (!root || turns.length === 0) return;
+        const targetIndex = clamp(index, 0, turns.length - 1);
+        const target = messageElement(root, turns[targetIndex].userMessageId);
         if (!target) return;
         const rootRect = root.getBoundingClientRect();
         const targetRect = target.getBoundingClientRect();
         const top = root.scrollTop + targetRect.top - rootRect.top - 12;
         const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         root.scrollTo({ top, behavior: reduceMotion ? 'auto' : 'smooth' });
-    }, [messageIds, root]);
+    }, [root, turns]);
 
-    if (!root || !placement || markers.length < 2) return null;
+    if (!root || !layout || visibleTurns.length === 0) return null;
 
-    const focusFloor: HoveredFloor = {
-        index: activeIndex,
-        ratio: activeIndex / Math.max(1, messageIds.length - 1),
-    };
-    const previewFloor = hovered || (focused ? focusFloor : null);
-    const activeMarker = markers.reduce((nearest, messageIndex, markerIndex) => (
-        Math.abs(messageIndex - activeIndex) < Math.abs(markers[nearest] - activeIndex)
-            ? markerIndex
-            : nearest
-    ), 0);
-    const popoverRatio = previewFloor ? clamp(previewFloor.ratio, 0.12, 0.88) : 0.5;
+    const previewIndex = hovered ? windowStart + hovered.slot : (focused ? activeIndex : null);
+    const previewTurn = previewIndex === null ? null : turns[previewIndex];
+    const previewSlot = previewIndex === null
+        ? 0
+        : clamp(previewIndex - windowStart, 0, visibleTurns.length - 1);
+    const rawPopoverTop = previewSlot * TICK_PITCH_PX + TICK_HEIGHT_PX / 2;
+    const popoverTop = railHeight <= POPOVER_EDGE_GUARD_PX * 2
+        ? railHeight / 2
+        : clamp(rawPopoverTop, POPOVER_EDGE_GUARD_PX, railHeight - POPOVER_EDGE_GUARD_PX);
 
     return (
         <div
             ref={railRef}
-            className={`cui-root-floor-rail${previewFloor ? ' is-inspecting' : ''}`}
-            style={{ left: `${placement.left}px` }}
+            className={`cui-root-floor-rail${previewTurn ? ' is-inspecting' : ''}`}
+            style={{ left: `${layout.left}px`, height: `${railHeight}px` }}
             role="slider"
             tabIndex={0}
-            aria-label="快速跳转消息楼层"
+            aria-label="快速跳转用户回合"
             aria-orientation="vertical"
             aria-valuemin={1}
-            aria-valuemax={messageIds.length}
+            aria-valuemax={turns.length}
             aria-valuenow={activeIndex + 1}
-            aria-valuetext={`第 ${activeIndex + 1} 楼`}
-            title="快速跳转消息楼层"
+            aria-valuetext={`第 ${activeIndex + 1} 个用户回合`}
+            title="快速跳转用户回合"
             onPointerMove={event => {
-                scheduleHoveredFloor(floorFromClientY(event.clientY, event.currentTarget));
+                scheduleHoveredTurn(turnFromClientY(event.clientY, event.currentTarget));
             }}
-            onPointerLeave={clearHoveredFloor}
+            onPointerLeave={clearHoveredTurn}
             onPointerOut={event => {
                 const nextTarget = event.relatedTarget;
                 if (nextTarget instanceof Node && event.currentTarget.contains(nextTarget)) return;
-                clearHoveredFloor();
+                clearHoveredTurn();
             }}
             onClick={event => {
-                jumpToIndex(floorFromClientY(event.clientY, event.currentTarget).index);
+                const target = turnFromClientY(event.clientY, event.currentTarget);
+                jumpToTurn(windowStart + target.slot);
             }}
             onFocus={() => setFocused(true)}
             onBlur={() => setFocused(false)}
@@ -285,44 +334,49 @@ export function MessageFloorRail({
                 let next = activeIndex;
                 if (event.key === 'ArrowUp') next -= 1;
                 else if (event.key === 'ArrowDown') next += 1;
-                else if (event.key === 'PageUp') next -= 5;
-                else if (event.key === 'PageDown') next += 5;
+                else if (event.key === 'PageUp') next -= Math.max(1, capacity);
+                else if (event.key === 'PageDown') next += Math.max(1, capacity);
                 else if (event.key === 'Home') next = 0;
-                else if (event.key === 'End') next = messageIds.length - 1;
+                else if (event.key === 'End') next = turns.length - 1;
                 else return;
                 event.preventDefault();
-                jumpToIndex(next);
+                jumpToTurn(next);
             }}
             onWheel={event => {
                 event.preventDefault();
-                root.scrollTop += event.deltaY;
+                if (maxWindowStart === 0) {
+                    root.scrollTop += event.deltaY;
+                    return;
+                }
+                wheelDeltaRef.current += event.deltaY;
+                const steps = Math.trunc(wheelDeltaRef.current / WHEEL_STEP_PX);
+                if (steps === 0) return;
+                wheelDeltaRef.current -= steps * WHEEL_STEP_PX;
+                setWindowStart(previous => clamp(previous + steps, 0, maxWindowStart));
             }}
         >
             <div className="cui-root-floor-ticks" aria-hidden="true">
-                {markers.map((messageIndex, markerIndex) => {
-                    const markerRatio = markerIndex / Math.max(1, markers.length - 1);
-                    const distance = previewFloor ? Math.abs(markerRatio - previewFloor.ratio) : 1;
-                    const wave = previewFloor ? Math.pow(Math.max(0, 1 - distance * 7.5), 1.7) : 0;
-                    const isCurrent = markerIndex === activeMarker;
-                    const width = 0.5 + wave * 1.1 + (isCurrent ? 0.25 : 0);
+                {visibleTurns.map((turn, slot) => {
+                    const index = windowStart + slot;
+                    const distance = previewIndex === null ? Number.POSITIVE_INFINITY : Math.abs(index - previewIndex);
+                    const wave = Math.pow(Math.max(0, 1 - distance / 5), 1.65);
+                    const isCurrent = index === activeIndex;
+                    const width = 8 + wave * 18 + (isCurrent ? 4 : 0);
                     return (
                         <span
-                            key={`${messageIndex}:${markerIndex}`}
+                            key={turn.userMessageId}
                             className={`cui-root-floor-tick${isCurrent ? ' is-current' : ''}`}
-                            style={{ width: `${width}rem` }}
+                            style={{ width: `${width}px` }}
                         />
                     );
                 })}
             </div>
-            {previewFloor && (
+            {previewTurn && (
                 <div
                     className="cui-root-floor-popover-anchor"
-                    style={{ top: `${popoverRatio * 100}%` }}
+                    style={{ top: `${popoverTop}px` }}
                 >
-                    <FloorPreview
-                        messageId={messageIds[previewFloor.index]}
-                        floor={previewFloor.index + 1}
-                    />
+                    <TurnPreview turn={previewTurn} />
                 </div>
             )}
         </div>

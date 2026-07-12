@@ -165,14 +165,16 @@ been replaced by the Codex-app-style two-pane model: `Sidebar | chat`, with
 settings as a mode swap that shows ChatUI-owned nav on the left and either
 ChatUI-native settings or a live ST drawer host on the right.
 
-Desktop long conversations now expose a left-spine floor navigator without
-changing message width: at most 48 hairline marks visualize the whole thread,
-while continuous pointer position still maps to every message. Hover produces a
-local wave and a three-line floor preview; click, wheel, and slider keyboard
-controls navigate the real message scroll surface. It activates only for precise
-hover pointers above the mobile breakpoint and when the manuscript gutter can
-hold it. Touch/mobile deliberately remains unchanged until a separate
-mis-touch-resistant interaction is designed.
+Desktop long conversations now expose a left-spine user-turn navigator beside a
+shared bounded reading column. One `2px` hairline represents one user message, with a
+fixed `6px` gap; short stacks are vertically centered and inset `16px` from the
+main edge. The shared reading column is capped at `54rem`; the rail mounts only
+when the resulting left gutter leaves at least `12px` after its wave, so it never
+overlays prose. Hover previews that user's words plus the next character reply.
+Overflow becomes a height-bounded tick window with `40px`
+top/bottom safety; it follows the active turn to the bottom and uses wheel input
+to browse hidden turns. Touch/mobile deliberately remains unchanged until a
+separate mis-touch-resistant interaction is designed.
 
 New-chat drafts now use per-conversation quarantine leases in localStorage instead
 of `chat_metadata.chatui_isNewChat` / message-count heuristics. A leased draft is
@@ -258,10 +260,11 @@ the architecture review:
   automation. Upstream debts are a request-scoped send/generation receipt, a
   conditional character-pointer write, async completion receipts for plugin
   clicks, and the actual sanitized target on non-active native rename events.
-- **Desktop floor navigator** — implemented and live-tested on a 21-floor
-  conversation, including wave/preview lifecycle, click and keyboard jumps,
-  embedded HTML-card exit, and the `768/769px` boundary. The mobile counterpart
-  is intentionally a later product-design task, not a missing hover fallback.
+- **Desktop user-turn navigator** — implemented and live-tested on a 21-message /
+  10-user-turn conversation, including centered fixed-pitch ticks, user→reply
+  preview, bounded-window wheel browsing, click/keyboard jumps, embedded
+  HTML-card exit, and the `768/769px` boundary. The mobile counterpart is
+  intentionally a later product-design task, not a missing hover fallback.
 - **2026-07-03 xhigh adversarial review** of the then-current
   JS→TS/Vite/TanStack-Query migration diff + WIP found 14 issues,
   including one critical build-breaking bug: the `ui/` → `src/ui/` directory
@@ -326,11 +329,13 @@ both succeeded, and the ordinary conversation list returned to its pre-test
 state without touching existing chats.
 
 **2026-07-12 desktop floor-navigation live-test**: a 21-message conversation
-showed the left-spine ticks only on desktop. Hover selected floor 10 with a
-speaker/excerpt popover; clicking the upper track jumped to floor 4; keyboard
-`End` reached the final message; leaving through ordinary content or a live HTML
-card removed the popover. At `768px` the rail and hit area were absent; at
-`769px` the desktop manuscript gutter remained intact.
+produced exactly 10 user-turn ticks. The normal stack was centered; a constrained
+height reduced it to a three-tick then one-tick window with ~40px safety margins,
+kept the active final turn at the bottom, and wheel-up exposed an older prompt.
+The popover paired user text with the next character reply and removed reasoning
+wrappers. Click/keyboard, HTML-card exit, and the `768/769px` boundary remain
+covered. At `1280px` the 30px rail retained 26px of clear space before prose;
+at `1000px`, where the centered column left no real gutter, the rail did not mount.
 
 Automated checks for the committed hardening baseline:
 

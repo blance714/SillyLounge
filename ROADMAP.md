@@ -76,14 +76,16 @@ Last updated: 2026-07-12
 
 ## 2026-07-12 桌面楼层导航
 
-- 阅读区左书脊新增桌面楼层刻度：当前楼层强调、hover 邻近刻度形成波形，浮层
-  显示楼层/说话者/三行摘录，点击可连续定位全部消息。
-- 长对话最多绘制 48 条视觉刻度，但 pointer Y 仍映射完整消息序列；滚轮继续滚动
-  阅读流，键盘支持逐楼、翻页、首楼与末楼。
-- 仅在 `>768px + hover + fine pointer + 足够书脊留白` 时启用；`390/768px`
-  保持完全隐藏。移动端中置标尺/拖拽方案因防误触尚未定稿，明确延期而非移植 hover。
-- 已用 21 楼真实长对话验证波形、摘录、点击与键盘跳转、HTML card 边界，以及
-  `768/769px` 断点。
+- 阅读区左书脊新增 Codex 式用户回合刻度：只索引用户消息，`2px` 线高 / `6px`
+  间距，距主区左缘 `16px`，短列表整体垂直居中。
+- 浮层标题是用户原话，正文是下一条角色回复（剔除 reasoning/包装标签，三行截断）；
+  点击和 slider 键盘操作跳到对应用户消息。
+- 超量时按阅读区高度动态限窗，上下保留 `40px`；当前阅读到末端时窗口也停在
+  末端，hover 后滚轮只翻刻度窗以浏览较早/较晚回合。
+- topbar / 阅读流 / composer 共用 `54rem` 限宽；只有左侧真实书脊留白能容纳
+  30px 波浪和正文间隔时才挂载，窄桌面不会覆盖内容。
+- 仅在 `>768px` 且存在桌面指针时启用；移动端中置标尺/拖拽方案因防误触尚未
+  定稿，明确延期而非移植 hover。
 
 ## 2026-07-10/11 已提交加固
 
@@ -141,7 +143,7 @@ Last updated: 2026-07-12
 |---|---|---|---|
 | **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂;**2026-07-10/11**:per-chat temp quarantine、stable-avatar 手动删除确认/分态、typed filename locator + rename migration、lifecycle mutation queue、composer revision/epoch + acceptance/completion、per-message O(1) streaming、Query dirty/requeue、typed snapshots、validated atomic runtime + 36 tests | host request-scoped send receipt、server-side conditional temp delete、剩余模拟点击写路径迁移(降级为架构债,不阻塞)、浏览器/手机回归脚本化 |
 | **①② 顶栏** | 🟢 ~72% | **M-B**:☰ 召唤侧栏、动态标题(绑 chatHeader)、选择框槽 A(人设)、顶栏右 ⋯(重命名/删除,群聊态自动禁用;操作目标已捕获防串 chat) | ★ 收藏、管理聊天文件/转群聊(均缺 adapter 导出)、手机【返回】 |
-| **③ 内容区** | 🟢 ~94% | 角色整宽/用户锈红页边、操作行、思考块换皮、内联编辑、媒体、swipe `‹n/m›`、代码复制、回到底部钮;**M-D 收尾**:身份标头 3 档可配(群/单各一套)、代码块语言名头、生成回复钮、用户消息平铺全显菜单;**2026-07-05**:HTML fenced card 挂载为同源 unsandboxed iframe(bootstrap 转发 TavernHelper/SillyTavern/Mvu),高度由 iframe 内部 ResizeObserver + postMessage 上报;unsandboxed 是明确兼容信任模型;**2026-07-12**:桌面楼层刻度、波形摘录与连续/键盘跳转 | 移动端防误触楼层导航待单独设计;代码块语言名头仅对声明围栏(自动检测不显,符合预期);TavernHelper 缺失提醒 toast 待做;当前契约下不把 sandbox/执行确认列为缺口 |
+| **③ 内容区** | 🟢 ~94% | 角色整宽/用户锈红页边、操作行、思考块换皮、内联编辑、媒体、swipe `‹n/m›`、代码复制、回到底部钮;**M-D 收尾**:身份标头 3 档可配(群/单各一套)、代码块语言名头、生成回复钮、用户消息平铺全显菜单;**2026-07-05**:HTML fenced card 挂载为同源 unsandboxed iframe(bootstrap 转发 TavernHelper/SillyTavern/Mvu),高度由 iframe 内部 ResizeObserver + postMessage 上报;unsandboxed 是明确兼容信任模型;**2026-07-12**:桌面用户回合刻度、user→reply 波形摘录、限窗滚轮与点击/键盘跳转 | 移动端防误触楼层导航待单独设计;代码块语言名头仅对声明围栏(自动检测不显,符合预期);TavernHelper 缺失提醒 toast 待做;当前契约下不把 sandbox/执行确认列为缺口 |
 | **④ 输入框** | 🟢 ~90% | ＋菜单(置顶磁贴 + 工具列表 + wand 动态)、textarea、选择框 B、发送/停止、附件 chips;**M-C**:QR 悬浮条(镜像 #qr--bar,含 popout)、单/多行切换;**M-F**:＋菜单**置顶磁贴编辑器**(配置面内,封顶 4) | ＋菜单**拖拽排序**编辑器、批量删除磁贴(待 ChatUI 自有多选 UI) |
 | **⑤ 侧栏导航中心** | 🟢 ~88% | **M-G**:Codex-app TWO-PANE `Sidebar | chat`;左栏为 ＋新对话 tab → 角色分组会话列表(单角色归属、每角色最多 5 条、末条预览、按角色最近会话排序)→ 设置;settings 是 two-pane mode swap(左 nav/返回 + ST drawers + ChatUI 区,右 live ST drawer/ChatUI 设置);新对话改 `tempChat` 草稿生命周期,替代旧 metadata/消息数启发式 | 群聊对话列表、手机适配、搜索 🔍、Mode B 更完整的全局视图 |
 | **配置系统**(§7 十项) | 🟢 ~68% | **薄地基**(M-E)+ 标头群/单两套(M-D)+ 单/多行(M-C);**M-F** 迁入四项 select + 首个 §7 编辑器(＋菜单置顶磁贴);**M-G** 退役第三列 ConfigPanel,改为 settings mode swap 并用 embed engine move-not-clone 托管 ST live drawer + precise restore | §7 剩余项、选择框槽位可配、＋菜单拖拽排序、其余编辑器 |
