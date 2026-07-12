@@ -16,3 +16,11 @@ correctness, and learning are.
 - If you catch yourself reaching for a quick mitigation, stop and name the root
   cause out loud first; only patch if the root fix is genuinely out of scope, and
   say so explicitly.
+
+## Project terminology
+
+- In Chinese project prose, use **亲节点** and **亲提交**. Do not use
+  “父节点” or “父提交”.
+- Preserve upstream identifiers and literal quotations such as `parent`, API
+  field names, command output, and external error messages when exact spelling
+  matters; explain them using the project terminology around the quotation.
