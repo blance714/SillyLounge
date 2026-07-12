@@ -1,10 +1,27 @@
-# SillyTavern ChatUI
+# SillyLounge 🍸
 
-ChatUI is a SillyTavern extension-hosted frontend experiment.
+A manuscript-inspired alternative chat interface for SillyTavern.
+
+> GitHub opens this repository on the installable `dist` branch. The authored
+> source and development history live on
+> [`main`](https://github.com/blance714/SillyLounge/tree/main).
+> Switch to `main` before making changes or opening a contribution.
+
+## Installation
+
+In SillyTavern, open **Extensions → Install Extension** and paste:
+
+```text
+https://github.com/blance714/SillyLounge
+```
+
+The default `dist` branch already contains the compiled extension; installation
+does not require Node.js, pnpm, or a local build.
 
 ## Branch Model
 
-- `dist`: default branch for SillyTavern Extension Installer. Contains only runtime files that SillyTavern can load directly.
+- `dist`: default branch for SillyTavern Extension Installer. Contains the
+  validated runtime files plus this README.
 - `main`: development branch. Contains TypeScript/TSX source, build scripts, docs, and local tooling.
 
 SillyTavern does not build extensions during installation, so the installable
@@ -66,17 +83,17 @@ runtime untouched. `pnpm run check:build` validates a newly assembled candidate
 without publishing it; `pnpm run check:runtime` validates the current live tree.
 
 For local development against a SillyTavern checkout, link SillyTavern's
-`public/scripts/extensions/third-party/SillyTavern-ChatUI` path to:
+`public/scripts/extensions/third-party/SillyLounge` path to:
 
 ```text
 .runtime/SillyTavern-ChatUI
 ```
 
-On this machine, the concrete symlink target is:
+For example:
 
 ```text
-/Users/blance/Developer/SillyTavern/public/scripts/extensions/third-party/SillyTavern-ChatUI
-  -> /Users/blance/Developer/SillyTavern-ChatUI/.runtime/SillyTavern-ChatUI
+<SillyTavern>/public/scripts/extensions/third-party/SillyLounge
+  -> <SillyLounge checkout>/.runtime/SillyTavern-ChatUI
 ```
 
 Then run:
@@ -98,10 +115,13 @@ module directories (including `chunks/vendor/`), and `dist/root-app.mjs`.
 
 Do not publish the development branch's generated `dist/` directory by itself:
 that directory intentionally lacks the manifest, stylesheet, and extension-root
-layout. Run `pnpm run verify` first, then `pnpm run runtime`, and take the
-installable payload from the resolved `.runtime/SillyTavern-ChatUI/` tree. There
-is currently no repository CI or automated branch publication; these commands
-are the local release gate.
+layout.
+
+Every push to `main` runs `.github/workflows/publish-dist.yml`. The workflow uses
+the locked pnpm toolchain, runs the complete verification gate, assembles and
+validates `.runtime/SillyTavern-ChatUI`, copies this README, and commits the exact
+installable tree to `dist`. Do not edit `dist` by hand; its ordinary linear Git
+history is maintained so existing SillyTavern installations can update normally.
 
 ## HTML card trust model
 

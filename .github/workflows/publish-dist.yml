@@ -1,0 +1,77 @@
+name: Publish installable branch
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-dist
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.12.0
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source and build contract
+        run: pnpm run verify
+
+      - name: Assemble validated runtime
+        run: node ./scripts/runtime.mjs --target "$RUNNER_TEMP/SillyLounge-runtime"
+
+      - name: Publish dist branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          runtime_dir="$(readlink -f "$RUNNER_TEMP/SillyLounge-runtime")"
+          payload_dir="$RUNNER_TEMP/SillyLounge-payload"
+          publish_dir="$RUNNER_TEMP/SillyLounge-dist"
+
+          mkdir -p "$payload_dir"
+          rsync -a --delete "$runtime_dir/" "$payload_dir/"
+          cp README.md "$payload_dir/README.md"
+          node ./scripts/check-runtime.mjs "$payload_dir"
+
+          if git ls-remote --exit-code --heads origin refs/heads/dist >/dev/null; then
+            git fetch origin refs/heads/dist:refs/remotes/origin/dist
+            git worktree add -B dist "$publish_dir" origin/dist
+          else
+            git worktree add --detach "$publish_dir" "$GITHUB_SHA"
+            git -C "$publish_dir" switch --orphan dist
+            git -C "$publish_dir" rm -rf --ignore-unmatch .
+          fi
+
+          rsync -a --delete --exclude=.git "$payload_dir/" "$publish_dir/"
+
+          git -C "$publish_dir" add --all
+          if git -C "$publish_dir" diff --cached --quiet; then
+            echo "Installable payload is unchanged."
+            exit 0
+          fi
+
+          git -C "$publish_dir" config user.name "github-actions[bot]"
+          git -C "$publish_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "$publish_dir" commit \
+            -m "build: publish ${GITHUB_SHA::12}" \
+            -m "Published from main@${GITHUB_SHA}."
+          git -C "$publish_dir" push origin HEAD:dist
