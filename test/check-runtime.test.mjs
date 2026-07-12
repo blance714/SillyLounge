@@ -23,7 +23,17 @@ async function writeFiles(rootDir, files) {
 
 async function makeRuntime(t, overrides = {}) {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'chatui-runtime-test-'));
-    const rootDir = path.join(tempDir, 'runtime');
+    // Match SillyTavern's real extension nesting. A shallow /tmp/runtime fixture
+    // lets sufficiently deep ../ imports clamp at the filesystem root, making
+    // allowlist behavior depend on whether the OS temp path is /tmp or /private/tmp.
+    const rootDir = path.join(
+        tempDir,
+        'public',
+        'scripts',
+        'extensions',
+        'third-party',
+        'SillyLounge',
+    );
     t.after(() => fs.rm(tempDir, { recursive: true, force: true }));
 
     await writeFiles(rootDir, {
