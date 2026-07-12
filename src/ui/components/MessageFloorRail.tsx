@@ -17,6 +17,7 @@ const TICK_HEIGHT_PX = 2;
 const TICK_GAP_PX = 6;
 const TICK_PITCH_PX = TICK_HEIGHT_PX + TICK_GAP_PX;
 const WHEEL_STEP_PX = 24;
+const RANGE_LABEL_IDLE_MS = 800;
 const POPOVER_EDGE_GUARD_PX = 56;
 
 type UserTurn = Readonly<{
@@ -210,12 +211,14 @@ export function MessageFloorRail({
     const [windowStart, setWindowStart] = useState(0);
     const [hovered, setHovered] = useState<HoveredTurn | null>(null);
     const [keyboardFocused, setKeyboardFocused] = useState(false);
+    const [rangeVisible, setRangeVisible] = useState(false);
     const railRef = useRef<HTMLDivElement | null>(null);
     const hoverFrameRef = useRef(0);
     const pendingHoverRef = useRef<HoveredTurn | null>(null);
     // Firefox may match :focus-visible for a pointer-focused custom slider, so
     // retain the actual focus origin instead of inferring it from CSS state.
     const pointerFocusRef = useRef(false);
+    const rangeHideTimerRef = useRef<number | null>(null);
     const wheelDeltaRef = useRef(0);
 
     const capacity = Math.min(layout?.capacity ?? 0, turns.length);
@@ -235,6 +238,16 @@ export function MessageFloorRail({
 
     useEffect(() => () => {
         if (hoverFrameRef.current) cancelAnimationFrame(hoverFrameRef.current);
+        if (rangeHideTimerRef.current !== null) window.clearTimeout(rangeHideTimerRef.current);
+    }, []);
+
+    const revealWindowRange = useCallback(() => {
+        setRangeVisible(true);
+        if (rangeHideTimerRef.current !== null) window.clearTimeout(rangeHideTimerRef.current);
+        rangeHideTimerRef.current = window.setTimeout(() => {
+            rangeHideTimerRef.current = null;
+            setRangeVisible(false);
+        }, RANGE_LABEL_IDLE_MS);
     }, []);
 
     const turnFromClientY = useCallback((clientY: number, element: HTMLElement): HoveredTurn => {
@@ -358,6 +371,7 @@ export function MessageFloorRail({
                 else return;
                 event.preventDefault();
                 setKeyboardFocused(true);
+                if (maxWindowStart > 0) revealWindowRange();
                 jumpToTurn(next);
             }}
             onWheel={event => {
@@ -366,6 +380,7 @@ export function MessageFloorRail({
                     root.scrollTop += event.deltaY;
                     return;
                 }
+                revealWindowRange();
                 wheelDeltaRef.current += event.deltaY;
                 const steps = Math.trunc(wheelDeltaRef.current / WHEEL_STEP_PX);
                 if (steps === 0) return;
@@ -389,6 +404,17 @@ export function MessageFloorRail({
                     );
                 })}
             </div>
+            {maxWindowStart > 0 && (
+                <div
+                    className={`cui-root-floor-range${rangeVisible ? ' is-visible' : ''}`}
+                    aria-hidden="true"
+                >
+                    <span className="cui-root-floor-range-label is-start">{windowStart + 1}</span>
+                    <span className="cui-root-floor-range-label is-end">
+                        {windowStart + visibleTurns.length}
+                    </span>
+                </div>
+            )}
             {previewTurn && (
                 <div
                     className="cui-root-floor-popover-anchor"

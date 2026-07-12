@@ -1171,6 +1171,44 @@ body.chatui-active .cui-root-floor-tick.is-current {
     opacity: 1;
 }
 
+body.chatui-active .cui-root-floor-range {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+body.chatui-active .cui-root-floor-range-label {
+    position: absolute;
+    left: 0;
+    width: 30px;
+    color: color-mix(in srgb, var(--cui-color-text) 72%, var(--cui-color-muted));
+    font-family: var(--cui-font-ui);
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    line-height: 1;
+    opacity: 0;
+    transition:
+        opacity 320ms ease,
+        transform 320ms ease;
+}
+
+body.chatui-active .cui-root-floor-range-label.is-start {
+    bottom: calc(100% + 0.55rem);
+    transform: translateY(0.18rem);
+}
+
+body.chatui-active .cui-root-floor-range-label.is-end {
+    top: calc(100% + 0.55rem);
+    transform: translateY(-0.18rem);
+}
+
+body.chatui-active .cui-root-floor-range.is-visible .cui-root-floor-range-label {
+    opacity: 0.62;
+    transform: translateY(0);
+}
+
 body.chatui-active .cui-root-floor-rail:focus-visible .cui-root-floor-tick.is-current {
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--cui-rule-accent) 28%, transparent);
 }
@@ -1795,6 +1833,10 @@ body.chatui-active .cui-root-generating-label {
     }
 
     body.chatui-active .cui-root-floor-tick {
+        transition: none;
+    }
+
+    body.chatui-active .cui-root-floor-range-label {
         transition: none;
     }
 }
