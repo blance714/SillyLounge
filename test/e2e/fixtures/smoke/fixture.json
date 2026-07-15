@@ -1,0 +1,35 @@
+{
+    "id": "smoke",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "user": {
+        "name": "Test User",
+        "avatar": "test-user.png",
+        "avatarColor": [54, 91, 96, 255]
+    },
+    "character": {
+        "fileName": "Lounge Test Character.png",
+        "card": "character-card.json",
+        "avatarColor": [132, 55, 61, 255]
+    },
+    "conversation": {
+        "fileName": "smoke",
+        "messages": [
+            {
+                "role": "user",
+                "text": "第一条测试消息。"
+            },
+            {
+                "role": "assistant",
+                "text": "第一条测试回复。"
+            },
+            {
+                "role": "user",
+                "text": "第二条测试消息。"
+            },
+            {
+                "role": "assistant",
+                "text": "第二条测试回复。"
+            }
+        ]
+    }
+}
