@@ -1,0 +1,32 @@
+{
+    "spec": "chara_card_v2",
+    "spec_version": "2.0",
+    "data": {
+        "name": "Lounge Performance Character",
+        "description": "用于 SillyLounge 长对话性能测试的固定角色。",
+        "personality": "稳定、简洁、可预测。",
+        "scenario": "这是一个不连接模型的本地性能测试场景。",
+        "first_mes": "性能测试角色已就绪。",
+        "mes_example": "<START>\nPerformance Test User: 测试消息\nLounge Performance Character: 测试回复",
+        "creator_notes": "Synthetic fixture. Contains no private user data.",
+        "system_prompt": "",
+        "post_history_instructions": "",
+        "alternate_greetings": [],
+        "tags": [
+            "sillylounge-test",
+            "performance"
+        ],
+        "creator": "SillyLounge",
+        "character_version": "1.0.0",
+        "extensions": {
+            "talkativeness": 0.5,
+            "fav": false,
+            "world": "",
+            "depth_prompt": {
+                "prompt": "",
+                "depth": 4,
+                "role": "system"
+            }
+        }
+    }
+}

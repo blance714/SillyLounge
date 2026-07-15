@@ -106,12 +106,33 @@ test('generated single-user settings select the fixture and enable SillyLounge',
     assert.equal(settings.user_avatar, 'test-user.png');
     assert.equal(settings.power_user.default_persona, 'test-user.png');
     assert.equal(settings.power_user.auto_load_chat, true);
+    assert.equal(settings.power_user.chat_truncation, 100);
     assert.equal(settings.power_user.personas['test-user.png'], 'Test User');
     assert.equal(settings.extension_settings.chatui_composer.enabled, true);
     assert.deepEqual(settings.extension_settings.disabledExtensions, [
         'other-extension',
         'third-party/ExistingGlobal',
     ]);
+});
+
+test('extension modes isolate native, bootstrap, and active performance baselines', async t => {
+    const disabled = await generate(t, 'disabled', { extensionMode: 'disabled' });
+    const disabledSettings = JSON.parse(await fs.readFile(disabled.paths.settings, 'utf8'));
+    assert.equal(disabled.manifest.extensionMode, 'disabled');
+    assert.equal(disabledSettings.extension_settings.chatui_composer.enabled, false);
+    assert.equal(
+        disabledSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge'),
+        true,
+    );
+
+    const bootstrap = await generate(t, 'bootstrap', { extensionMode: 'bootstrap' });
+    const bootstrapSettings = JSON.parse(await fs.readFile(bootstrap.paths.settings, 'utf8'));
+    assert.equal(bootstrap.manifest.extensionMode, 'bootstrap');
+    assert.equal(bootstrapSettings.extension_settings.chatui_composer.enabled, false);
+    assert.equal(
+        bootstrapSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge'),
+        false,
+    );
 });
 
 test('generated character card points at the existing smoke chat', async t => {
@@ -145,6 +166,28 @@ test('generated JSONL has the declared user turns and alternating roles', async 
         '第一条测试回复。',
         '第二条测试消息。',
         '第二条测试回复。',
+    ]);
+});
+
+test('long-plain generator materializes exactly 400 user floors and replies', async t => {
+    const fixturePath = path.join(import.meta.dirname, 'fixtures', 'long-plain', 'fixture.json');
+    const result = await generate(t, 'long-plain', { fixturePath });
+    const rows = (await fs.readFile(result.paths.chat, 'utf8'))
+        .trimEnd()
+        .split('\n')
+        .map(line => JSON.parse(line));
+    const messages = rows.slice(1);
+    assert.equal(result.manifest.fixture, 'long-plain');
+    assert.equal(result.manifest.conversation.messageCount, 800);
+    assert.equal(result.manifest.conversation.userTurns, 400);
+    assert.equal(messages.length, 800);
+    assert.deepEqual(messages.slice(0, 2).map(message => message.mes), [
+        '第 1 楼用户消息：用于测量长对话加载与跳转。',
+        '第 1 楼助手回复：固定、简短、无附件的 Markdown 文本。',
+    ]);
+    assert.deepEqual(messages.slice(-2).map(message => message.mes), [
+        '第 400 楼用户消息：用于测量长对话加载与跳转。',
+        '第 400 楼助手回复：固定、简短、无附件的 Markdown 文本。',
     ]);
 });
 

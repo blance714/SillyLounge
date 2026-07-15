@@ -13,6 +13,7 @@
         "runtime": "pnpm run build && node ./scripts/runtime.mjs",
         "test": "pnpm run build && node --test",
         "test:e2e": "pnpm run runtime && playwright test",
+        "test:perf": "pnpm run runtime && node ./scripts/e2e/measure-long-chat.mjs",
         "test:st": "pnpm run runtime && node ./scripts/e2e/smoke-st.mjs",
         "typecheck": "tsc --noEmit",
         "verify": "pnpm run typecheck && pnpm run test && pnpm run check:build",

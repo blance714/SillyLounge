@@ -16,6 +16,7 @@ const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const USER_HANDLE = 'default-user';
 const EXTENSION_FOLDER = 'SillyLounge';
 const FIXTURE_MANIFEST_FILE = '_sillylounge-fixture.json';
+const EXTENSION_MODES = new Set(['disabled', 'bootstrap', 'active']);
 
 function isPathInside(rootPath, candidatePath) {
     const relative = path.relative(rootPath, candidatePath);
@@ -149,7 +150,7 @@ function createCharacterPng(fixture, card) {
     ]);
 }
 
-function conversationRows(fixture, characterName) {
+function conversationRows(fixture, characterName, messages) {
     const rows = [{
         user_name: fixture.user.name,
         character_name: characterName,
@@ -157,7 +158,7 @@ function conversationRows(fixture, characterName) {
         chat_metadata: {},
     }];
     const epoch = Date.parse(fixture.createdAt);
-    fixture.conversation.messages.forEach((message, index) => {
+    messages.forEach((message, index) => {
         const isUser = message.role === 'user';
         rows.push({
             name: isUser ? fixture.user.name : characterName,
@@ -189,7 +190,7 @@ async function discoverGlobalExtensionNames(stRoot) {
     return discovered.sort((left, right) => left.localeCompare(right));
 }
 
-function patchSettings(baseSettings, fixture, stVersion, globalExtensions) {
+function patchSettings(baseSettings, fixture, stVersion, globalExtensions, extensionMode) {
     const settings = structuredClone(baseSettings);
     settings.firstRun = false;
     settings.currentVersion = stVersion;
@@ -203,6 +204,7 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions) {
         : {};
     settings.power_user.default_persona = fixture.user.avatar;
     settings.power_user.auto_load_chat = true;
+    settings.power_user.chat_truncation = 100;
     settings.power_user.personas = settings.power_user.personas && typeof settings.power_user.personas === 'object'
         ? settings.power_user.personas
         : {};
@@ -222,18 +224,42 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions) {
     const disabled = Array.isArray(settings.extension_settings.disabledExtensions)
         ? settings.extension_settings.disabledExtensions
         : [];
-    settings.extension_settings.disabledExtensions = Array.from(new Set([
+    const disabledExtensions = Array.from(new Set([
         ...disabled.filter(value => (
             typeof value !== 'string' || !value.toLowerCase().includes('sillylounge')
         )),
         ...globalExtensions.filter(value => value.toLowerCase() !== 'third-party/sillylounge'),
     ]));
+    if (extensionMode === 'disabled') disabledExtensions.push(`third-party/${EXTENSION_FOLDER}`);
+    settings.extension_settings.disabledExtensions = disabledExtensions;
     const existing = settings.extension_settings.chatui_composer;
     settings.extension_settings.chatui_composer = {
         ...(existing && typeof existing === 'object' ? existing : {}),
-        enabled: true,
+        enabled: extensionMode === 'active',
     };
     return settings;
+}
+
+function materializeConversationMessages(fixture) {
+    const source = fixture.conversation?.messages;
+    if (Array.isArray(source)) return structuredClone(source);
+    if (source?.kind !== 'alternating') {
+        throw new Error('fixture conversation must contain messages or an alternating message generator');
+    }
+    if (!Number.isInteger(source.userTurns) || source.userTurns <= 0 || source.userTurns > 10_000) {
+        throw new Error('alternating fixture userTurns must be an integer between 1 and 10000');
+    }
+    if (typeof source.userTemplate !== 'string' || typeof source.assistantTemplate !== 'string') {
+        throw new Error('alternating fixture templates must be strings');
+    }
+    const messages = [];
+    for (let floor = 1; floor <= source.userTurns; floor += 1) {
+        messages.push(
+            { role: 'user', text: source.userTemplate.replaceAll('{floor}', String(floor)) },
+            { role: 'assistant', text: source.assistantTemplate.replaceAll('{floor}', String(floor)) },
+        );
+    }
+    return messages;
 }
 
 function validateFixture(fixture) {
@@ -244,15 +270,15 @@ function validateFixture(fixture) {
     safeLeafName(fixture.character?.card, 'character card filename');
     safeLeafName(fixture.conversation?.fileName, 'conversation filename');
     if (!fixture.character.fileName.endsWith('.png')) throw new Error('character filename must end in .png');
-    if (!Array.isArray(fixture.conversation.messages) || fixture.conversation.messages.length === 0) {
-        throw new Error('fixture conversation must contain messages');
-    }
-    for (const [index, message] of fixture.conversation.messages.entries()) {
+    const messages = materializeConversationMessages(fixture);
+    if (messages.length === 0) throw new Error('fixture conversation must contain messages');
+    for (const [index, message] of messages.entries()) {
         if (!['user', 'assistant'].includes(message?.role) || typeof message?.text !== 'string') {
             throw new Error(`fixture message ${index} is invalid`);
         }
     }
     if (!Number.isFinite(Date.parse(fixture.createdAt))) throw new Error('fixture createdAt must be an ISO date');
+    return messages;
 }
 
 function validateCharacterCard(card) {
@@ -304,6 +330,7 @@ export async function generateStDataRoot({
     runtimeRoot = DEFAULT_RUNTIME_ROOT,
     fixturePath: sourceFixturePath = DEFAULT_FIXTURE_PATH,
     stPinPath = DEFAULT_ST_PIN_PATH,
+    extensionMode = 'active',
 }) {
     if (!targetRoot || !stRoot || !runtimeRoot) {
         throw new Error('targetRoot, stRoot, and runtimeRoot are required');
@@ -322,7 +349,10 @@ export async function generateStDataRoot({
     if (stPackage.version !== pin.version) {
         throw new Error(`SillyTavern version mismatch: expected ${pin.version}, got ${stPackage.version}`);
     }
-    validateFixture(fixture);
+    if (!EXTENSION_MODES.has(extensionMode)) {
+        throw new Error(`invalid extension mode: ${extensionMode}`);
+    }
+    const messages = validateFixture(fixture);
     const characterCardPath = path.join(path.dirname(sourceFixturePath), fixture.character.card);
     const characterCard = await readJson(characterCardPath);
     validateCharacterCard(characterCard);
@@ -342,7 +372,10 @@ export async function generateStDataRoot({
     );
     const extensionPath = fixturePath(userRoot, 'extensions', EXTENSION_FOLDER);
 
-    await writeJson(settingsPath, patchSettings(baseSettings, fixture, pin.version, globalExtensions));
+    await writeJson(
+        settingsPath,
+        patchSettings(baseSettings, fixture, pin.version, globalExtensions, extensionMode),
+    );
     await fs.mkdir(path.dirname(avatarPath), { recursive: true });
     await fs.writeFile(avatarPath, createSolidPng(128, 128, fixture.user.avatarColor));
     await fs.mkdir(path.dirname(characterPath), { recursive: true });
@@ -350,7 +383,7 @@ export async function generateStDataRoot({
     await fs.mkdir(path.dirname(chatPath), { recursive: true });
     await fs.writeFile(
         chatPath,
-        `${conversationRows(fixture, characterCard.data.name).map(row => JSON.stringify(row)).join('\n')}\n`,
+        `${conversationRows(fixture, characterCard.data.name, messages).map(row => JSON.stringify(row)).join('\n')}\n`,
         'utf8',
     );
     await fs.cp(resolvedRuntimeRoot, extensionPath, {
@@ -359,8 +392,8 @@ export async function generateStDataRoot({
         errorOnExist: true,
     });
 
-    const messageCount = fixture.conversation.messages.length;
-    const userTurns = fixture.conversation.messages.filter(message => message.role === 'user').length;
+    const messageCount = messages.length;
+    const userTurns = messages.filter(message => message.role === 'user').length;
     const manifest = {
         schemaVersion: pin.fixtureSchema,
         fixture: fixture.id,
@@ -385,6 +418,7 @@ export async function generateStDataRoot({
             userTurns,
         },
         extension: EXTENSION_FOLDER,
+        extensionMode,
     };
     const manifestPath = fixturePath(resolvedTarget, FIXTURE_MANIFEST_FILE);
     await writeJson(manifestPath, manifest);
@@ -417,6 +451,7 @@ async function main() {
         stRoot: values.st,
         runtimeRoot: values.runtime,
         fixturePath: values.fixture,
+        extensionMode: values.mode,
     });
     const digest = crypto.createHash('sha256')
         .update(JSON.stringify(result.manifest))

@@ -1,0 +1,23 @@
+{
+    "id": "long-plain",
+    "createdAt": "2026-01-02T00:00:00.000Z",
+    "user": {
+        "name": "Performance Test User",
+        "avatar": "performance-user.png",
+        "avatarColor": [54, 91, 96, 255]
+    },
+    "character": {
+        "fileName": "Lounge Performance Character.png",
+        "card": "character-card.json",
+        "avatarColor": [132, 55, 61, 255]
+    },
+    "conversation": {
+        "fileName": "long-plain",
+        "messages": {
+            "kind": "alternating",
+            "userTurns": 400,
+            "userTemplate": "第 {floor} 楼用户消息：用于测量长对话加载与跳转。",
+            "assistantTemplate": "第 {floor} 楼助手回复：固定、简短、无附件的 Markdown 文本。"
+        }
+    }
+}
