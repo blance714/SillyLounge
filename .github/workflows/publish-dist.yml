@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Check out source
         uses: actions/checkout@v6
@@ -34,6 +34,47 @@ jobs:
 
       - name: Verify source and build contract
         run: pnpm run verify
+
+      - name: Read pinned SillyTavern host
+        id: st-pin
+        shell: bash
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const pin = JSON.parse(fs.readFileSync("test/e2e/st-version.json", "utf8"));
+            process.stdout.write(`repository=${pin.repository}\ncommit=${pin.commit}\nversion=${pin.version}\n`);
+          ' >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned SillyTavern host
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.st-pin.outputs.repository }}
+          ref: ${{ steps.st-pin.outputs.commit }}
+          path: .test-host/SillyTavern
+          persist-credentials: false
+
+      - name: Install SillyTavern runtime dependencies
+        working-directory: .test-host/SillyTavern
+        run: npm ci --omit=dev
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify the real SillyTavern UI
+        env:
+          SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
+        run: pnpm run test:e2e
+
+      - name: Upload browser-test evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: sillylounge-playwright-${{ github.sha }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Assemble validated runtime
         run: node ./scripts/runtime.mjs --target "$RUNNER_TEMP/SillyLounge-runtime"

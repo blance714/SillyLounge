@@ -115,9 +115,11 @@ SillyTavern 的扩展安装器不会运行本仓库的构建工具，所以 `dis
 
 1. 使用锁定的 Node.js 与 pnpm 工具链安装依赖；
 2. 执行完整验证门；
-3. 组装并验证 `.runtime/SillyTavern-ChatUI`；
-4. 从 `main` 原样复制这份 README；
-5. 将精确的可安装文件树提交到 `dist`。
+3. 检出 `test/e2e/st-version.json` 固定的 SillyTavern 版本，并在 Chromium 中加载合成测试用户；
+4. 同时核对宿主状态、SillyLounge 可见 DOM 与楼层导航；保留截图、trace 和宿主日志；
+5. 组装并验证 `.runtime/SillyTavern-ChatUI`；
+6. 从 `main` 原样复制这份 README；
+7. 将精确的可安装文件树提交到 `dist`。
 
 不要手动修改 `dist`。自动发布会维护普通的线性 Git 历史，以便已经安装的
 SillyTavern 扩展可以正常更新。
