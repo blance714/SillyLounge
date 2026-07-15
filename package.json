@@ -12,6 +12,7 @@
         "dev": "node ./scripts/dev.mjs",
         "runtime": "pnpm run build && node ./scripts/runtime.mjs",
         "test": "pnpm run build && node --test",
+        "test:st": "pnpm run runtime && node ./scripts/e2e/smoke-st.mjs",
         "typecheck": "tsc --noEmit",
         "verify": "pnpm run typecheck && pnpm run test && pnpm run check:build",
         "watch": "node ./scripts/dev.mjs"
