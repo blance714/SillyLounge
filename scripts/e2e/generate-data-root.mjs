@@ -171,9 +171,28 @@ function conversationRows(fixture, characterName) {
     return rows;
 }
 
-function patchSettings(baseSettings, fixture) {
+async function discoverGlobalExtensionNames(stRoot) {
+    const extensionRoot = path.join(stRoot, 'public', 'scripts', 'extensions', 'third-party');
+    let entries;
+    try {
+        entries = await fs.readdir(extensionRoot, { withFileTypes: true });
+    } catch (error) {
+        if (error?.code === 'ENOENT') return [];
+        throw error;
+    }
+    const discovered = [];
+    for (const entry of entries) {
+        if (entry.name.startsWith('.')) continue;
+        const entryPath = path.join(extensionRoot, entry.name);
+        if ((await fs.stat(entryPath)).isDirectory()) discovered.push(`third-party/${entry.name}`);
+    }
+    return discovered.sort((left, right) => left.localeCompare(right));
+}
+
+function patchSettings(baseSettings, fixture, stVersion, globalExtensions) {
     const settings = structuredClone(baseSettings);
     settings.firstRun = false;
+    settings.currentVersion = stVersion;
     settings.username = fixture.user.name;
     settings.active_character = fixture.character.fileName;
     settings.active_group = null;
@@ -183,6 +202,7 @@ function patchSettings(baseSettings, fixture) {
         ? settings.power_user
         : {};
     settings.power_user.default_persona = fixture.user.avatar;
+    settings.power_user.auto_load_chat = true;
     settings.power_user.personas = settings.power_user.personas && typeof settings.power_user.personas === 'object'
         ? settings.power_user.personas
         : {};
@@ -202,9 +222,12 @@ function patchSettings(baseSettings, fixture) {
     const disabled = Array.isArray(settings.extension_settings.disabledExtensions)
         ? settings.extension_settings.disabledExtensions
         : [];
-    settings.extension_settings.disabledExtensions = disabled.filter(value => (
-        typeof value !== 'string' || !value.toLowerCase().includes('sillylounge')
-    ));
+    settings.extension_settings.disabledExtensions = Array.from(new Set([
+        ...disabled.filter(value => (
+            typeof value !== 'string' || !value.toLowerCase().includes('sillylounge')
+        )),
+        ...globalExtensions.filter(value => value.toLowerCase() !== 'third-party/sillylounge'),
+    ]));
     const existing = settings.extension_settings.chatui_composer;
     settings.extension_settings.chatui_composer = {
         ...(existing && typeof existing === 'object' ? existing : {}),
@@ -289,11 +312,12 @@ export async function generateStDataRoot({
     const resolvedTarget = path.resolve(targetRoot);
     const resolvedStRoot = path.resolve(stRoot);
     const resolvedRuntimeRoot = path.resolve(runtimeRoot);
-    const [pin, fixture, stPackage, baseSettings] = await Promise.all([
+    const [pin, fixture, stPackage, baseSettings, globalExtensions] = await Promise.all([
         readJson(stPinPath),
         readJson(sourceFixturePath),
         readJson(path.join(resolvedStRoot, 'package.json')),
         readJson(path.join(resolvedStRoot, 'default', 'content', 'settings.json')),
+        discoverGlobalExtensionNames(resolvedStRoot),
     ]);
     if (stPackage.version !== pin.version) {
         throw new Error(`SillyTavern version mismatch: expected ${pin.version}, got ${stPackage.version}`);
@@ -318,7 +342,7 @@ export async function generateStDataRoot({
     );
     const extensionPath = fixturePath(userRoot, 'extensions', EXTENSION_FOLDER);
 
-    await writeJson(settingsPath, patchSettings(baseSettings, fixture));
+    await writeJson(settingsPath, patchSettings(baseSettings, fixture, pin.version, globalExtensions));
     await fs.mkdir(path.dirname(avatarPath), { recursive: true });
     await fs.writeFile(avatarPath, createSolidPng(128, 128, fixture.user.avatarColor));
     await fs.mkdir(path.dirname(characterPath), { recursive: true });

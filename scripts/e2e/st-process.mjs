@@ -218,6 +218,15 @@ export async function startStServer({
     const stdoutPath = path.join(logRoot, 'sillytavern.stdout.log');
     const stderrPath = path.join(logRoot, 'sillytavern.stderr.log');
     await fs.mkdir(logRoot, { recursive: true });
+    const defaultConfig = await fs.readFile(path.join(checkout.stRoot, 'default', 'config.yaml'), 'utf8');
+    const offlineConfig = defaultConfig.replace(
+        /(^extensions:\n(?:^[ \t].*\n)*?^[ \t]+autoUpdate:\s*)true\s*$/m,
+        '$1false',
+    );
+    if (offlineConfig === defaultConfig) {
+        throw new Error('unable to disable SillyTavern extension auto-update in the test config');
+    }
+    await fs.writeFile(configPath, offlineConfig, 'utf8');
     const [stdoutHandle, stderrHandle] = await Promise.all([
         fs.open(stdoutPath, 'w'),
         fs.open(stderrPath, 'w'),

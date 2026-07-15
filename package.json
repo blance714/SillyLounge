@@ -12,6 +12,7 @@
         "dev": "node ./scripts/dev.mjs",
         "runtime": "pnpm run build && node ./scripts/runtime.mjs",
         "test": "pnpm run build && node --test",
+        "test:e2e": "pnpm run runtime && playwright test",
         "test:st": "pnpm run runtime && node ./scripts/e2e/smoke-st.mjs",
         "typecheck": "tsc --noEmit",
         "verify": "pnpm run typecheck && pnpm run test && pnpm run check:build",
@@ -23,6 +24,7 @@
         "zod": "^4.4.3"
     },
     "devDependencies": {
+        "@playwright/test": "^1.61.1",
         "typescript": "^5.9.3",
         "vite": "^7.2.7"
     },

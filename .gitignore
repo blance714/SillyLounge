@@ -1,4 +1,7 @@
 node_modules/
 .pnpm-store/
 .runtime/
+.test-host/
 dist/
+playwright-report/
+test-results/
