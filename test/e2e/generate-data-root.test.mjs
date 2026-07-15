@@ -39,6 +39,9 @@ async function makeInputs(t) {
         })}\n`,
         'utf8',
     );
+    await fs.mkdir(path.join(stRoot, 'public', 'scripts', 'extensions', 'third-party', 'ExistingGlobal'), {
+        recursive: true,
+    });
 
     // validateRuntimeTree checks the assembled build tree before it is copied
     // into ST's dataRoot; generateStDataRoot separately verifies that copy.
@@ -96,14 +99,19 @@ test('generated single-user settings select the fixture and enable SillyLounge',
     const settings = JSON.parse(await fs.readFile(result.paths.settings, 'utf8'));
     assert.equal(result.manifest.user.handle, 'default-user');
     assert.equal(settings.firstRun, false);
+    assert.equal(settings.currentVersion, ST_VERSION);
     assert.equal(settings.username, 'Test User');
     assert.equal(settings.active_character, 'Lounge Test Character.png');
     assert.equal(settings.active_group, null);
     assert.equal(settings.user_avatar, 'test-user.png');
     assert.equal(settings.power_user.default_persona, 'test-user.png');
+    assert.equal(settings.power_user.auto_load_chat, true);
     assert.equal(settings.power_user.personas['test-user.png'], 'Test User');
     assert.equal(settings.extension_settings.chatui_composer.enabled, true);
-    assert.deepEqual(settings.extension_settings.disabledExtensions, ['other-extension']);
+    assert.deepEqual(settings.extension_settings.disabledExtensions, [
+        'other-extension',
+        'third-party/ExistingGlobal',
+    ]);
 });
 
 test('generated character card points at the existing smoke chat', async t => {

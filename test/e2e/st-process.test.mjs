@@ -23,8 +23,8 @@ const value = name => process.argv.find(argument => argument.startsWith('--' + n
 const port = Number(value('port'));
 const dataRoot = value('dataRoot');
 const configPath = value('configPath');
-fs.writeFileSync(configPath, 'fixture: true\\n');
-fs.writeFileSync(path.join(dataRoot, 'fake-server-started.json'), JSON.stringify({ dataRoot, configPath, port }));
+const config = fs.readFileSync(configPath, 'utf8');
+fs.writeFileSync(path.join(dataRoot, 'fake-server-started.json'), JSON.stringify({ dataRoot, configPath, port, config }));
 setInterval(() => {}, 1_000);
 const stop = () => process.exit(0);
 process.on('SIGTERM', stop);
@@ -41,8 +41,10 @@ async function makeFakeCheckout(t) {
     t.after(() => fs.rm(root, { recursive: true, force: true }));
     await fs.writeFile(path.join(root, 'package.json'), `${JSON.stringify({ name: 'sillytavern', version: ST_VERSION })}\n`);
     await fs.writeFile(path.join(root, 'server.js'), FAKE_SERVER);
+    await fs.mkdir(path.join(root, 'default'), { recursive: true });
+    await fs.writeFile(path.join(root, 'default', 'config.yaml'), 'extensions:\n  enabled: true\n  autoUpdate: true\n');
     await git(root, 'init', '-q');
-    await git(root, 'add', 'package.json', 'server.js');
+    await git(root, 'add', 'package.json', 'server.js', 'default/config.yaml');
     await git(root, '-c', 'user.name=SillyLounge Test', '-c', 'user.email=test@sillylounge.invalid', 'commit', '-q', '-m', 'fixture');
     await fs.mkdir(path.join(root, 'node_modules'));
     const commit = await git(root, 'rev-parse', 'HEAD');
@@ -173,6 +175,7 @@ test('server lifecycle passes isolated paths, probes readiness, and releases the
     assert.equal(marker.dataRoot, server.fixture.dataRoot);
     assert.equal(marker.configPath, path.join(server.fixture.runRoot, 'config.yaml'));
     assert.equal(marker.port, server.port);
+    assert.match(marker.config, /autoUpdate: false/);
     assert.equal(server.paths.stdout.startsWith(server.fixture.runRoot), true);
     assert.equal(server.paths.stderr.startsWith(server.fixture.runRoot), true);
 
