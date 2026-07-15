@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-12
+Last updated: 2026-07-15
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
@@ -106,7 +106,10 @@ src/
                 MessageEditor MessageMedia MessageReasoning
   types/st-externals.d.ts SillyTavern host-module declarations
 scripts/                  build / dev / validated atomic-runtime tooling
-test/                     Node built-in state/runtime contract tests
+  e2e/                    dataRoot / host / Playwright / performance harnesses
+test/                     Node built-in state/runtime contract tests + fixtures
+  e2e/                    pinned ST version, synthetic users, smoke/400-floor data
+e2e/                      real-browser Playwright contracts (not Node auto-discovery)
 dist/                     generated browser output (gitignored)
 ```
 
@@ -339,11 +342,34 @@ wrappers. Click/keyboard, HTML-card exit, and the `768/769px` boundary remain
 covered. At `1280px` the 30px rail retained 26px of clear space before prose;
 at `1000px`, where the centered column left no real gutter, the rail did not mount.
 
+**2026-07-15 deterministic host/browser test**: the test harness now generates a
+disposable synthetic SillyTavern dataRoot with a V2/V3 JSON character card,
+persona, settings and chat; it rejects the wrong ST commit, tracked checkout
+drift, unsigned/out-of-run data roots and non-empty targets. The real Chromium
+smoke verifies the host's selected character/chat/four raw messages, the mounted
+SillyLounge projection, native-surface shield, composer and floor hover contract.
+Host-global third-party extensions are disabled for the synthetic user so a
+developer's installed plugins cannot make the test pass accidentally. The same
+smoke passed both the existing development checkout and a clean CI-style checkout.
+
+**2026-07-15 400-floor performance baseline**: `long-plain` deterministically
+generates 400 user turns + 400 replies and measures pure ST, extension bootstrap,
+and the active UI in fresh host/context pairs. Five rotated samples attribute the
+main increment to the eagerly formatted/mounted full message list (800 articles,
+3217 buttons, +12,167 DOM elements and +29.6 MiB median JS heap over bootstrap),
+not the bounded floor rail. Exact method, results and the proposed virtualized
+message-window direction are recorded in `PERFORMANCE.md`; timings remain
+report-only until stable cross-run budgets exist.
+
 Automated checks for the committed hardening baseline:
 
-- `CI=true pnpm run verify` (typecheck + 36 Node tests + build + assembled-tree contract)
+- `CI=true pnpm run verify` (typecheck + 53 Node tests + build + assembled-tree contract)
 - `CI=true pnpm run runtime` (build + validate candidate + atomic live publish)
 - `CI=true pnpm run check:runtime` (validate the current live runtime tree)
+- `SILLYTAVERN_TEST_ROOT=… pnpm run test:st` (pinned disposable host smoke)
+- `SILLYTAVERN_TEST_ROOT=… pnpm run test:e2e` (real Chromium host/DOM contract)
+- `SILLYTAVERN_TEST_ROOT=… pnpm run test:perf -- --warmups 1 --repetitions 5`
+  (400-floor three-mode report; no absolute CI timing threshold yet)
 - `git diff --check`
 - `node --check` on representative generated runtime modules and the UI bundle
 - 2026-07-03: a 31-agent xhigh adversarial review (10 finder angles + verify +
@@ -358,4 +384,5 @@ Escape — both worked, no console errors beyond the pre-existing
 "TavernHelper is not defined" from JS-Slash-Runner not being installed in the
 test environment). No longer owed.
 
-Still owed: the broader mobile/sidebar regression pass.
+Still owed: the broader mobile/sidebar regression pass and the bounded,
+variable-height message-window implementation diagnosed in `PERFORMANCE.md`.

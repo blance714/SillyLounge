@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Roadmap
 
-Last updated: 2026-07-12
+Last updated: 2026-07-15
 
 三份文档的分工:`DESIGN.md` = 产品北极星(目标形态)、`STATUS.md` = 当前实现快照、
 **本文 = 完整度地图 + 剩余工作的优先级排期**。架构记录见 `ARCHITECTURE.md`。
@@ -56,8 +56,11 @@ Last updated: 2026-07-12
 
 - 写手动 checklist:加载、切角色、切对话、新对话/tempChat、发送、编辑、
   删除、settings drawer、附件、QR、selector、手机侧栏/settings。
-- 已落 25 个 Node 内置 state/runtime-contract 测试并统一到 `pnpm run verify`;
-  产品行为 smoke test 仍保留人工清单,后续再做浏览器脚本化。
+- 已落 53 个 Node 内置 state/runtime/fixture/host-contract 测试并统一到
+  `pnpm run verify`。
+- 已固定 SillyTavern 版本并生成一次性合成用户/dataRoot；真实 Chromium smoke
+  同时断言宿主状态、SillyLounge DOM、shield/composer 与楼层 hover，现已进入
+  `main → dist` 发布门禁。广泛的手机/侧栏回归仍保留人工清单。
 
 ### 6. 产品缺口重启(2026-07-07)
 
@@ -87,6 +90,19 @@ Last updated: 2026-07-12
   30px 波浪和正文间隔时才挂载，窄桌面不会覆盖内容。
 - 仅在 `>768px` 且存在桌面指针时启用；移动端中置标尺/拖拽方案因防误触尚未
   定稿，明确延期而非移植 hover。
+
+## 2026-07-15 固定宿主测试与 400 楼基线
+
+- `test/e2e/st-version.json` 固定 SillyTavern `1.18.0` 的精确提交；生成器只写入
+  新建空 dataRoot，产出合成角色、用户、设置和对话，并隔离宿主全局第三方扩展。
+- Playwright smoke 在真实 Chromium 中执行宿主状态 + 可见 DOM 双重断言；失败时 CI
+  上传 screenshot、trace、HTML report 与 SillyTavern stdout/stderr，失败会阻断
+  `dist` 发布。
+- `long-plain` 用声明式规则生成 400 个用户楼层/800 条普通消息；测量器轮换比较
+  纯 ST、插件 bootstrap、完整 UI。五样本基线确认主要成本是全量 DTO/formatter/DOM，
+  不是楼层 rail；详见 `PERFORMANCE.md`。
+- 下一性能切片是“轻量全聊天索引 + 不定高虚拟消息窗口 + 稳定 DTO identity +
+  rail scrollToIndex”。绝对耗时暂不在共享 CI 设硬阈值，避免把机器噪声当回归。
 
 ## 2026-07-10/11 已提交加固
 
@@ -128,7 +144,8 @@ Last updated: 2026-07-12
   在 refetch 期间标 dirty 并只 requeue 一次;inactive first prefetch 等旧 promise 后直接
   `query.fetch()`,不被 React Query disabled filter 吞掉。
 - **发布契约**:Zod 收口到稳定 `chunks/vendor/zod.js`;runtime staging 验证后原子
-  发布;`verify` = typecheck + 36 Node tests + build + assembled-tree contract。
+  发布;`verify` = typecheck + 53 Node tests + build + assembled-tree contract；真实
+  Chromium smoke 通过后才允许更新 `dist`。
 - **HTML card 信任模型不变**:unsandboxed iframe 是 TavernHelper/MVU 兼容所需,
   等价于运行受信任聊天代码;本轮不加 sandbox 或执行确认。
 - **上游契约债**:ST 尚无 request-scoped textarea-send receipt;全局事件无法在真正
@@ -142,7 +159,7 @@ Last updated: 2026-07-12
 
 | 区域 | 状态 | 已落地 | 还缺 |
 |---|---|---|---|
-| **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂;**2026-07-10/11**:per-chat temp quarantine、stable-avatar 手动删除确认/分态、typed filename locator + rename migration、lifecycle mutation queue、composer revision/epoch + acceptance/completion、per-message O(1) streaming、Query dirty/requeue、typed snapshots、validated atomic runtime + 36 tests | host request-scoped send receipt、server-side conditional temp delete、剩余模拟点击写路径迁移(降级为架构债,不阻塞)、浏览器/手机回归脚本化 |
+| **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂;**2026-07-10/11**:per-chat temp quarantine、stable-avatar 手动删除确认/分态、typed filename locator + rename migration、lifecycle mutation queue、composer revision/epoch + acceptance/completion、per-message O(1) streaming、Query dirty/requeue、typed snapshots、validated atomic runtime;**2026-07-15**:53 个 Node 测试 + 固定 ST/真实 Chromium 发布门禁 + 400 楼基线 | host request-scoped send receipt、server-side conditional temp delete、剩余模拟点击写路径迁移(降级为架构债,不阻塞)、手机回归脚本化、长对话不定高虚拟消息窗口 |
 | **①② 顶栏** | 🟢 ~72% | **M-B**:☰ 召唤侧栏、动态标题(绑 chatHeader)、选择框槽 A(人设)、顶栏右 ⋯(重命名/删除,群聊态自动禁用;操作目标已捕获防串 chat) | ★ 收藏、管理聊天文件/转群聊(均缺 adapter 导出)、手机【返回】 |
 | **③ 内容区** | 🟢 ~94% | 角色整宽/用户锈红页边、操作行、思考块换皮、内联编辑、媒体、swipe `‹n/m›`、代码复制、回到底部钮;**M-D 收尾**:身份标头 3 档可配(群/单各一套)、代码块语言名头、生成回复钮、用户消息平铺全显菜单;**2026-07-05**:HTML fenced card 挂载为同源 unsandboxed iframe(bootstrap 转发 TavernHelper/SillyTavern/Mvu),高度由 iframe 内部 ResizeObserver + postMessage 上报;unsandboxed 是明确兼容信任模型;**2026-07-12**:桌面用户回合刻度、user→reply 波形摘录、限窗滚轮与点击/键盘跳转 | 移动端防误触楼层导航待单独设计;代码块语言名头仅对声明围栏(自动检测不显,符合预期);TavernHelper 缺失提醒 toast 待做;当前契约下不把 sandbox/执行确认列为缺口 |
 | **④ 输入框** | 🟢 ~90% | ＋菜单(置顶磁贴 + 工具列表 + wand 动态)、textarea、选择框 B、发送/停止、附件 chips;**M-C**:QR 悬浮条(镜像 #qr--bar,含 popout)、单/多行切换;**M-F**:＋菜单**置顶磁贴编辑器**(配置面内,封顶 4) | ＋菜单**拖拽排序**编辑器、批量删除磁贴(待 ChatUI 自有多选 UI) |
