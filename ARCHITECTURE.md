@@ -90,6 +90,19 @@ explicit ST external allowlist, and forbidden dependency/local paths, then
 atomically switches the live symlink to that validated release. `dev` uses the
 same candidate validation and publication path.
 
+Host-dependent tests use the exact SillyTavern revision declared in
+`test/e2e/st-version.json` and never touch a real user dataRoot:
+
+```sh
+SILLYTAVERN_TEST_ROOT=/path/to/SillyTavern pnpm run test:st
+SILLYTAVERN_TEST_ROOT=/path/to/SillyTavern pnpm run test:e2e
+```
+
+The first command proves the disposable host/process boundary. The second adds
+a real Chromium contract over both host state and the visible ChatUI projection.
+The 400-floor comparative harness and its current diagnosis live in
+`PERFORMANCE.md`; its absolute timings are report-only rather than CI budgets.
+
 The preferred repository layout is a single ChatUI repository with two branch
 roles:
 

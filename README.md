@@ -80,6 +80,19 @@ CI=true pnpm run runtime
 
 `node_modules`、`.pnpm`、未解析的裸导入和机器绝对路径都会阻止发布。
 
+真实宿主测试固定使用 `test/e2e/st-version.json` 声明的 SillyTavern。首次运行先安装
+Chromium，然后把环境变量指向该版本且已经安装依赖的检出：
+
+```sh
+pnpm exec playwright install chromium
+SILLYTAVERN_TEST_ROOT=/path/to/SillyTavern pnpm run test:st
+SILLYTAVERN_TEST_ROOT=/path/to/SillyTavern pnpm run test:e2e
+```
+
+`test:st` 验证一次性 dataRoot 与宿主进程边界；`test:e2e` 还会在真实 Chromium 中
+同时核对 SillyTavern 内部状态、SillyLounge 可见 DOM 和楼层导航。400 楼的可重复
+性能测量命令与当前基线见 `PERFORMANCE.md`。
+
 本地 live 路径是一个指向已验证发布代次的符号链接。替换指针是原子的，因此
 SillyTavern 只会看到完整旧版本或完整新版本；构建或验证失败不会破坏当前运行时。
 
