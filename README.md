@@ -136,6 +136,7 @@ SillyTavern 运行时集成。运行这类卡片，等同于让对话提供的�
 
 - `DESIGN.md`：产品视觉北星与可验证的 Manuscript Flow 设计契约。
 - `ARCHITECTURE.md`：架构、迁移策略与依赖关系说明。
+- `PERFORMANCE.md`：400 楼长对话基线、诊断与可重复测量方法。
 - `STATUS.md`：当前进度、重要边界与下一阶段状态。
 - `ROADMAP.md`：功能完整度和后续工作优先级。
 
