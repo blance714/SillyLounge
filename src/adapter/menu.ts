@@ -2,7 +2,7 @@
  * SillyTavern-ChatUI · menu adapter
  */
 
-import { _dispatchClick, buildLiveElementRegistry } from './internals.js';
+import { _dispatchClick, buildLiveElementRegistry, resolveLiveElement } from './internals.js';
 
 type WandItemDto = {
     id: string;
@@ -171,7 +171,7 @@ export function listWandItems() {
  * @returns {boolean}
  */
 export function triggerWandItem(id: any) {
-    const el = _wandItemMap.get(id);
+    const el = resolveLiveElement(_wandItemMap, id);
     if (!el) return false;
     triggerWandAction(el);
     return true;

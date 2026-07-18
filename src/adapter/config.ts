@@ -32,7 +32,13 @@ export function read() {
  * @returns {void}
  */
 export function write(config: any) {
-    const settings = getContext().extensionSettings;
+    const ctx = getContext();
+    // read() tolerates a missing extensionSettings namespace via `?.`; mirror
+    // that here instead of assuming some earlier boot step always created it.
+    if (!ctx.extensionSettings) {
+        ctx.extensionSettings = {};
+    }
+    const settings = ctx.extensionSettings;
     if (!settings[MODULE]) {
         settings[MODULE] = {};
     }

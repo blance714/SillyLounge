@@ -91,3 +91,12 @@ export {
     setComposerDraft as setChatuiComposerDraft,
     subscribeComposerDraftStore as subscribeChatuiComposerDraftStore,
 } from '../store/composer-draft-store.js';
+
+export {
+    clearMessageEditDraft as clearChatuiMessageEditDraft,
+    getMessageEditDraft as getChatuiMessageEditDraft,
+    getMessageEditDraftStoreSnapshot as getChatuiMessageEditDraftStoreSnapshot,
+    resetMessageEditDraftStore as resetChatuiMessageEditDraftStore,
+    setMessageEditDraft as setChatuiMessageEditDraft,
+    subscribeMessageEditDraftStore as subscribeChatuiMessageEditDraftStore,
+} from '../store/message-edit-draft-store.js';

@@ -87,13 +87,15 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
     await expect(root.locator('.cui-root-topbar-title')).toHaveText('smoke');
     await expect(root.getByRole('form', { name: 'ChatUI composer' })).toBeVisible();
 
-    const messages = root.locator('.cui-root-message-list > article.cui-root-message');
+    const messages = root.locator('.cui-root-message-list article.cui-root-message');
     await expect(messages).toHaveCount(EXPECTED_MESSAGES.length);
     for (const [index, expected] of EXPECTED_MESSAGES.entries()) {
         const message = messages.nth(index);
         await expect(message).toHaveAttribute('data-cui-message-id', expected.id);
         await expect(message).toHaveAttribute('data-cui-message-role', expected.role);
-        await expect(message.locator('.cui-root-message-body')).toHaveText(expected.text);
+        const body = message.locator('.cui-root-message-body');
+        await expect(body).toHaveClass(/\bmes_text\b/);
+        await expect(body).toHaveText(expected.text);
     }
 
     const rail = root.getByRole('slider', { name: '快速跳转用户回合' });
@@ -111,6 +113,20 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
     await expect(rail.locator('.cui-root-floor-popover-preview')).toHaveText('第一条测试回复。');
     await page.mouse.move(railBox.x + railBox.width + 80, railBox.y + railBox.height + 80);
     await expect(rail.locator('.cui-root-floor-popover')).toHaveCount(0);
+
+    const editedText = '第二条测试消息（已编辑）。';
+    const editableMessage = root.locator('[data-cui-message-id="2"]');
+    await editableMessage.hover();
+    await editableMessage.getByRole('button', { name: 'Edit' }).click();
+    const editor = editableMessage.locator('.cui-root-edit-textarea');
+    await expect(editor).toHaveValue('第二条测试消息。');
+    await editor.fill(editedText);
+    await editableMessage.getByRole('button', { name: 'Save edit' }).click();
+    await expect(editableMessage.locator('.cui-root-edit-textarea')).toHaveCount(0);
+    await expect(editableMessage.locator('.cui-root-message-body')).toHaveText(editedText);
+    await expect.poll(() => page.evaluate(() => (
+        globalThis.SillyTavern?.getContext?.().chat?.[2]?.mes
+    ))).toBe(editedText);
 
     const screenshot = await page.screenshot({ fullPage: true });
     await testInfo.attach('sillylounge-smoke', { body: screenshot, contentType: 'image/png' });

@@ -1266,7 +1266,7 @@ body.chatui-active .cui-root-floor-popover-preview {
 body.chatui-active .cui-root-message-list {
     display: flex;
     flex-direction: column;
-    gap: 1.3rem;
+    gap: 0;
     width: 100%;
     flex: 1 1 auto;
     min-height: 0;
@@ -1277,6 +1277,23 @@ body.chatui-active .cui-root-message-list {
     max-width: var(--cui-content-max-width);
     margin: 0 auto;
     padding: 0.25rem 0 0.5rem;
+}
+
+body.chatui-active .cui-root-virtual-message-space {
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+}
+
+body.chatui-active .cui-root-virtual-message-row {
+    position: absolute;
+    top: 0;
+    left: 0;
+    display: flex;
+    width: 100%;
+    box-sizing: border-box;
+    flex-direction: column;
+    padding-bottom: 1.3rem;
 }
 
 body.chatui-active .cui-root-message {
@@ -1760,8 +1777,8 @@ body.chatui-active .cui-root-menu-item:disabled:hover {
         opacity: 0.85;
     }
 
-    body.chatui-active .cui-root-message-list {
-        gap: 1rem;
+    body.chatui-active .cui-root-virtual-message-row {
+        padding-bottom: 1rem;
     }
 
     body.chatui-active .cui-root-message-body {

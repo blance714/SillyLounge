@@ -7,20 +7,24 @@
     },
     "scripts": {
         "build": "node ./scripts/build.mjs",
+        "check:boundaries": "node ./scripts/check-boundaries.mjs",
         "check:build": "node ./scripts/runtime.mjs --check-only",
+        "check:invariants": "node ./scripts/check-invariants.mjs",
         "check:runtime": "node ./scripts/check-runtime.mjs",
         "dev": "node ./scripts/dev.mjs",
         "runtime": "pnpm run build && node ./scripts/runtime.mjs",
         "test": "pnpm run build && node --test",
-        "test:e2e": "pnpm run runtime && playwright test",
+        "test:e2e": "pnpm run runtime && playwright test && node ./scripts/e2e/measure-chat-switch.mjs",
+        "test:e2e:switch": "pnpm run runtime && node ./scripts/e2e/measure-chat-switch.mjs",
         "test:perf": "pnpm run runtime && node ./scripts/e2e/measure-long-chat.mjs",
         "test:st": "pnpm run runtime && node ./scripts/e2e/smoke-st.mjs",
         "typecheck": "tsc --noEmit",
-        "verify": "pnpm run typecheck && pnpm run test && pnpm run check:build",
+        "verify": "pnpm run typecheck && pnpm run check:boundaries && pnpm run check:invariants && pnpm run test && pnpm run check:build",
         "watch": "node ./scripts/dev.mjs"
     },
     "dependencies": {
         "@tanstack/react-query": "^5.101.2",
+        "@tanstack/react-virtual": "^3.14.6",
         "preact": "^10.29.2",
         "zod": "^4.4.3"
     },

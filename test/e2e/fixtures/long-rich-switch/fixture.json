@@ -1,0 +1,65 @@
+{
+    "id": "long-rich-switch",
+    "createdAt": "2026-01-04T00:00:00.000Z",
+    "user": {
+        "name": "Synthetic Switch Test User",
+        "avatar": "synthetic-switch-user.png",
+        "avatarColor": [54, 91, 96, 255]
+    },
+    "character": {
+        "fileName": "Lounge Switch Performance Character.png",
+        "card": "character-card.json",
+        "avatarColor": [132, 55, 61, 255]
+    },
+    "conversation": {
+        "fileName": "long-rich-a",
+        "copies": [
+            {
+                "fileName": "long-rich-a",
+                "marker": "LONG-RICH-A"
+            },
+            {
+                "fileName": "long-rich-b",
+                "marker": "LONG-RICH-B"
+            }
+        ],
+        "messages": {
+            "kind": "profiled-rich",
+            "userTurns": 400,
+            "profile": {
+                "userChars": {
+                    "p50": 24,
+                    "p90": 73,
+                    "p95": 87,
+                    "max": 298
+                },
+                "assistantChars": {
+                    "p50": 6147,
+                    "p90": 8706,
+                    "p95": 9273,
+                    "p99": 11122,
+                    "max": 17761
+                },
+                "thinkingChars": {
+                    "p50": 2988,
+                    "p90": 4057,
+                    "p95": 4312,
+                    "max": 8247
+                },
+                "extraReasoningChars": {
+                    "p50": 3405,
+                    "p90": 4934,
+                    "p95": 6258,
+                    "max": 8610
+                },
+                "codeBlockRate": 0.462
+            }
+        }
+    },
+    "scopedRegexProfile": {
+        "replacementChars": {
+            "thinking": 3244,
+            "choice": 9054
+        }
+    }
+}

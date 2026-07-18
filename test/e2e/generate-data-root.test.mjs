@@ -191,6 +191,172 @@ test('long-plain generator materializes exactly 400 user floors and replies', as
     ]);
 });
 
+test('long-rich generator reproduces the anonymized structural profile', async t => {
+    const fixturePath = path.join(import.meta.dirname, 'fixtures', 'long-rich', 'fixture.json');
+    const result = await generate(t, 'long-rich', { fixturePath });
+    const chatSource = await fs.readFile(result.paths.chat, 'utf8');
+    const rows = chatSource
+        .trimEnd()
+        .split('\n')
+        .slice(1)
+        .map(line => JSON.parse(line));
+    const users = rows.filter(message => message.is_user);
+    const assistants = rows.filter(message => !message.is_user);
+    const quantile = (values, percentile) => {
+        const sorted = values.toSorted((left, right) => left - right);
+        return sorted[Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * percentile))];
+    };
+
+    assert.equal(result.manifest.fixture, 'long-rich');
+    assert.equal(result.manifest.conversation.kind, 'profiled-rich');
+    assert.equal(rows.length, 800);
+    assert.equal(users.length, 400);
+    assert.equal(assistants.length, 400);
+    assert.deepEqual(
+        [0.5, 0.9, 0.95, 1].map(percentile => quantile(users.map(message => message.mes.length), percentile)),
+        [24, 73, 87, 298],
+    );
+    assert.deepEqual(
+        [0.5, 0.9, 0.95, 0.99, 1].map(percentile => quantile(assistants.map(message => message.mes.length), percentile)),
+        [6147, 8706, 9273, 11122, 17761],
+    );
+    assert.equal(assistants.filter(message => message.mes.includes('<thinking>')).length, 316);
+    assert.equal(assistants.filter(message => message.extra?.reasoning).length, 79);
+    assert.equal(
+        assistants.filter(message => message.mes.includes('<thinking>') || message.extra?.reasoning).length,
+        391,
+    );
+    assert.equal(assistants.filter(message => message.mes.includes('```json')).length, 180);
+    assert.equal(assistants.filter(message => message.mes.includes('<branches>')).length, 400);
+    assert.ok(assistants.every(message => message.mes.indexOf('<branches>') > message.mes.indexOf('叙事继续沿着环境')));
+
+    const swipeCounts = assistants.map(message => message.swipes.length);
+    assert.equal(Number((swipeCounts.reduce((sum, value) => sum + value, 0) / swipeCounts.length).toFixed(2)), 1.88);
+    assert.equal(quantile(swipeCounts, 0.95), 6);
+    assert.equal(Math.max(...swipeCounts), 53);
+    assert.ok(Buffer.byteLength(chatSource) > 20 * 1024 * 1024);
+
+    const settings = JSON.parse(await fs.readFile(result.paths.settings, 'utf8'));
+    assert.deepEqual(settings.extension_settings.character_allowed_regex, [
+        'Lounge Rich Performance Character.png',
+    ]);
+    const metadata = readCharacterMetadata(await fs.readFile(result.paths.character));
+    const scripts = metadata.data.extensions.regex_scripts;
+    assert.equal(scripts.length, 2);
+    assert.deepEqual(
+        scripts.map(script => script.replaceString.length).toSorted((left, right) => left - right),
+        [3244, 9054],
+    );
+    assert.equal(scripts.every(script => script.markdownOnly && script.placement.includes(2)), true);
+    assert.deepEqual(scripts.map(script => script.maxDepth), [2, 5]);
+    assert.equal(scripts.filter(script => script.replaceString.includes('```html')).length, 1);
+    assert.equal(scripts.filter(script => script.replaceString.includes('data-synthetic-regex="thought"')).length, 1);
+    assert.equal(scripts.filter(script => script.replaceString.includes('document.createElement')).length, 1);
+});
+
+test('long-rich generator can disable scoped regex without changing the fixture messages or card', async t => {
+    const fixturePath = path.join(import.meta.dirname, 'fixtures', 'long-rich', 'fixture.json');
+    const active = await generate(t, 'long-rich-regex-active', { fixturePath });
+    const disabled = await generate(t, 'long-rich-regex-disabled', { fixturePath, regexMode: 'disabled' });
+    const activeSettings = JSON.parse(await fs.readFile(active.paths.settings, 'utf8'));
+    const disabledSettings = JSON.parse(await fs.readFile(disabled.paths.settings, 'utf8'));
+
+    assert.equal(active.manifest.regexMode, 'active');
+    assert.equal(disabled.manifest.regexMode, 'disabled');
+    assert.deepEqual(activeSettings.extension_settings.character_allowed_regex, [
+        'Lounge Rich Performance Character.png',
+    ]);
+    assert.deepEqual(disabledSettings.extension_settings.character_allowed_regex, []);
+    assert.equal(
+        activeSettings.accountStorage['AlertRegex_Lounge Rich Performance Character.png'],
+        undefined,
+    );
+    assert.equal(
+        disabledSettings.accountStorage['AlertRegex_Lounge Rich Performance Character.png'],
+        'true',
+    );
+    assert.equal(await fs.readFile(active.paths.chat, 'utf8'), await fs.readFile(disabled.paths.chat, 'utf8'));
+    assert.deepEqual(
+        readCharacterMetadata(await fs.readFile(active.paths.character)),
+        readCharacterMetadata(await fs.readFile(disabled.paths.character)),
+    );
+});
+
+test('long-rich switch fixture generates two isolated 400-floor conversations', async t => {
+    const fixturePath = path.join(import.meta.dirname, 'fixtures', 'long-rich-switch', 'fixture.json');
+    const result = await generate(t, 'long-rich-switch', { fixturePath });
+
+    assert.equal(result.manifest.conversation.fileName, 'long-rich-a');
+    assert.deepEqual(result.manifest.conversations, [
+        {
+            fileName: 'long-rich-a',
+            marker: 'LONG-RICH-A',
+            messageCount: 800,
+            userTurns: 400,
+            kind: 'profiled-rich',
+        },
+        {
+            fileName: 'long-rich-b',
+            marker: 'LONG-RICH-B',
+            messageCount: 800,
+            userTurns: 400,
+            kind: 'profiled-rich',
+        },
+    ]);
+    assert.deepEqual(result.paths.chats.map(chat => chat.fileName), ['long-rich-a', 'long-rich-b']);
+    const [firstSource, secondSource] = await Promise.all(
+        result.paths.chats.map(chat => fs.readFile(chat.path, 'utf8')),
+    );
+    assert.equal(firstSource.split('\n').length - 1, 801);
+    assert.equal(secondSource.split('\n').length - 1, 801);
+    assert.equal(firstSource.includes('会话标记：LONG-RICH-A'), true);
+    assert.equal(firstSource.includes('会话标记：LONG-RICH-B'), false);
+    assert.equal(secondSource.includes('会话标记：LONG-RICH-B'), true);
+    assert.equal(secondSource.includes('会话标记：LONG-RICH-A'), false);
+    const metadata = readCharacterMetadata(await fs.readFile(result.paths.character));
+    assert.equal(metadata.chat, 'long-rich-a');
+});
+
+test('long-rich 10-floor switch fixture preserves the rich profile for a small control pair', async t => {
+    const fixturePath = path.join(import.meta.dirname, 'fixtures', 'long-rich-switch-10', 'fixture.json');
+    const result = await generate(t, 'long-rich-switch-10', { fixturePath });
+
+    assert.equal(result.manifest.conversation.fileName, 'long-rich-10-a');
+    assert.deepEqual(result.manifest.conversations, [
+        {
+            fileName: 'long-rich-10-a',
+            marker: 'LONG-RICH-10-A',
+            messageCount: 20,
+            userTurns: 10,
+            kind: 'profiled-rich',
+        },
+        {
+            fileName: 'long-rich-10-b',
+            marker: 'LONG-RICH-10-B',
+            messageCount: 20,
+            userTurns: 10,
+            kind: 'profiled-rich',
+        },
+    ]);
+    const [firstSource, secondSource] = await Promise.all(
+        result.paths.chats.map(chat => fs.readFile(chat.path, 'utf8')),
+    );
+    const firstMessages = firstSource
+        .trimEnd()
+        .split('\n')
+        .slice(1)
+        .map(line => JSON.parse(line));
+    const firstAssistants = firstMessages.filter(message => !message.is_user);
+    assert.equal(firstMessages.length, 20);
+    assert.equal(firstAssistants.every(message => message.mes.includes('<branches>')), true);
+    assert.equal(firstAssistants.filter(message => message.mes.includes('<thinking>')).length, 8);
+    assert.equal(firstAssistants.filter(message => message.extra?.reasoning).length, 2);
+    assert.equal(firstSource.includes('会话标记：LONG-RICH-10-A'), true);
+    assert.equal(firstSource.includes('会话标记：LONG-RICH-10-B'), false);
+    assert.equal(secondSource.includes('会话标记：LONG-RICH-10-B'), true);
+    assert.equal(secondSource.includes('会话标记：LONG-RICH-10-A'), false);
+});
+
 test('generated extension is a complete copy of the validated runtime', async t => {
     const result = await generate(t);
     const sourceManifest = await fs.readFile(path.join(result.paths.extension, 'manifest.json'), 'utf8');

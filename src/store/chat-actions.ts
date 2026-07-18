@@ -25,6 +25,31 @@ class StaleChatOperationError extends Error {
     }
 }
 
+/**
+ * A fire-and-forget synthetic click into ST's own menu (adapter/menu.ts) has no
+ * ST-side acknowledgment. If ST silently drops it, GENERATION_STARTED never
+ * fires and the single global host-operation lane would otherwise wedge
+ * forever. GENERATION_START_TIMEOUT_MS bounds that wait; see
+ * enqueueGenerationOperation.
+ */
+export const GENERATION_START_TIMEOUT_MS = 10_000;
+
+/** Test-only: shrink the started-timeout so tests don't wait out the real 10s. Pass null to restore the default. */
+let _generationStartTimeoutMsOverride: number | null = null;
+export function __setGenerationStartTimeoutMsForTesting(ms: number | null): void {
+    _generationStartTimeoutMsOverride = ms;
+}
+function _generationStartTimeoutMs(): number {
+    return _generationStartTimeoutMsOverride ?? GENERATION_START_TIMEOUT_MS;
+}
+
+class GenerationDidNotStartError extends Error {
+    constructor() {
+        super('[ChatUI] Generation did not start in time');
+        this.name = 'GenerationDidNotStartError';
+    }
+}
+
 function enqueueChatBoundOperation(
     expectedChatKey: string,
     operation: () => Promise<void> | void,
@@ -37,8 +62,45 @@ function enqueueChatBoundOperation(
     }, { rejectOnCancelled: true }).then(() => undefined);
 }
 
+/** #option_regenerate / #option_continue / #option_impersonate — the three ST
+ * menu actions enqueueGenerationOperation can wait on. */
+type GenerationKind = 'regenerate' | 'continue' | 'impersonate';
+
+const CONTINUE_GENERATION_TYPES: ReadonlySet<string> = new Set(['continue']);
+const IMPERSONATE_GENERATION_TYPES: ReadonlySet<string> = new Set(['impersonate']);
+const SOLO_REGENERATE_GENERATION_TYPES: ReadonlySet<string> = new Set(['regenerate']);
+const GROUP_REGENERATE_GENERATION_TYPES: ReadonlySet<string> = new Set(['normal']);
+
+/**
+ * The ST generation `type` string(s) that count as *this* triggered action
+ * having actually started, confirmed against the pinned SillyTavern checkout
+ * (test/e2e/st-version.json, public/script.js):
+ *  - #option_continue / #option_impersonate call Generate('continue'/
+ *    'impersonate', ...) directly — solo or group (script.js ~11581-11599).
+ *  - #option_regenerate calls Generate('regenerate', ...) directly in a solo
+ *    chat, but in a group chat instead runs regenerateGroup(), which routes
+ *    through generateGroupWrapper() — that only special-cases 'swipe' /
+ *    'impersonate' / 'quiet' / 'continue' and falls through to
+ *    Generate('normal', ...) for a plain regenerate (group-chats.js
+ *    ~1008-1061). So the type ST actually reports for a group regenerate is
+ *    'normal', never 'regenerate'.
+ * A background/quiet probe (auto-summarize, WI activation checks, prompt
+ * previews, ...) always reports type 'quiet' and must never match here.
+ */
+function expectedGenerationTypes(kind: GenerationKind): ReadonlySet<string> {
+    switch (kind) {
+        case 'continue': return CONTINUE_GENERATION_TYPES;
+        case 'impersonate': return IMPERSONATE_GENERATION_TYPES;
+        case 'regenerate':
+            return chatuiAdapter.getIsGroupChat()
+                ? GROUP_REGENERATE_GENERATION_TYPES
+                : SOLO_REGENERATE_GENERATION_TYPES;
+    }
+}
+
 function enqueueGenerationOperation(
     expectedChatKey: string,
+    kind: GenerationKind,
     trigger: () => Promise<void> | void,
 ): Promise<void> {
     return enqueueHostTask(async () => {
@@ -49,11 +111,14 @@ function enqueueGenerationOperation(
             throw new Error('[ChatUI] Generation is already active');
         }
 
+        const acceptedTypes = expectedGenerationTypes(kind);
         let started = false;
         let resolveStarted: () => void = () => undefined;
+        let rejectStarted: (error: unknown) => void = () => undefined;
         let resolveFinished: () => void = () => undefined;
-        const startedPromise = new Promise<void>((resolve) => {
+        const startedPromise = new Promise<void>((resolve, reject) => {
             resolveStarted = resolve;
+            rejectStarted = reject;
         });
         const finishedPromise = new Promise<void>(resolve => {
             resolveFinished = resolve;
@@ -68,23 +133,65 @@ function enqueueGenerationOperation(
                 }
             }
         };
+        let startTimer: ReturnType<typeof setTimeout> | null = null;
+        const clearStartTimer = () => {
+            if (startTimer !== null) {
+                clearTimeout(startTimer);
+                startTimer = null;
+            }
+        };
 
         try {
-            unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GENERATION_STARTED, () => {
+            // ST emits GENERATION_STARTED for *every* Generate() call, including
+            // 'quiet' background prompts (e.g. an auto-summarize extension firing
+            // mid-stream) and dry runs (prompt previews / token-count probes).
+            // Only the type(s) this action's own trigger produces, for a
+            // non-dry-run, in the still-current chat, counts as "started".
+            unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GENERATION_STARTED, (
+                type: unknown,
+                _params: unknown,
+                isDryRun: unknown,
+            ) => {
+                if (started) return;
+                if (isDryRun === true) return;
+                if (!acceptedTypes.has(String(type))) return;
                 if (chatuiAdapter.getCurrentChatKey() !== expectedChatKey) return;
                 started = true;
+                clearStartTimer();
                 resolveStarted();
             }));
+            // GENERATION_STOPPED carries no arguments and GENERATION_ENDED only a
+            // message count — neither identifies which generation ended. A quiet
+            // probe's own start/end pair must not be mistaken for this trigger's
+            // completion, so require isGenerating() to have actually gone false
+            // (cross-checked live through the adapter, not from event args).
             const finish = () => {
-                if (started) resolveFinished();
+                if (!started) return;
+                if (chatuiAdapter.getCurrentChatKey() !== expectedChatKey) return;
+                if (chatuiAdapter.getGenerationState().isGenerating) return;
+                resolveFinished();
             };
             unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GENERATION_STOPPED, finish));
             unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GENERATION_ENDED, finish));
+            if (kind === 'regenerate') {
+                // Group-only completion signal: generateGroupWrapper() keeps
+                // isGenerating() true across every activated member's own
+                // GENERATION_ENDED, only clearing it in its `finally` — right
+                // before emitting this event. In a solo chat it never fires, so
+                // subscribing unconditionally is harmless.
+                unsubscribers.push(chatuiAdapter.subscribe(stEventKeys.GROUP_WRAPPER_FINISHED, finish));
+            }
+
+            startTimer = setTimeout(() => {
+                startTimer = null;
+                rejectStarted(new GenerationDidNotStartError());
+            }, _generationStartTimeoutMs());
 
             await trigger();
             await startedPromise;
             await finishedPromise;
         } finally {
+            clearStartTimer();
             cleanup();
         }
     }, { rejectOnCancelled: true }).then(() => undefined);
@@ -93,10 +200,10 @@ function enqueueGenerationOperation(
 function reportChatBoundFailure(label: string, error: unknown): void {
     if (error instanceof HostOperationCancelledError) return;
     console.error(`[ChatUI] ${label} failed`, error);
-    notifyChatui(
-        'error',
-        error instanceof StaleChatOperationError ? '对话已切换，操作已取消' : '操作失败',
-    );
+    let toastText = '操作失败';
+    if (error instanceof StaleChatOperationError) toastText = '对话已切换，操作已取消';
+    else if (error instanceof GenerationDidNotStartError) toastText = '生成未能开始，请重试';
+    notifyChatui('error', toastText);
 }
 
 export function isChatuiLifecycleCancellation(error: unknown): boolean {
@@ -116,6 +223,7 @@ export function triggerChatuiMessageAction(
     const operation = action === 'regen'
         ? enqueueGenerationOperation(
             expectedChatKey,
+            'regenerate',
             () => chatuiAdapter.messageActions.triggerMessageActionById(messageId, action),
         )
         : enqueueChatBoundOperation(
@@ -264,6 +372,7 @@ export function swipeChatuiMessage(
 export function continueChatuiGeneration(expectedChatKey: string): void {
     void enqueueGenerationOperation(
         expectedChatKey,
+        'continue',
         () => chatuiAdapter.menuActions.continueMessage(),
     ).catch((error: unknown) => reportChatBoundFailure('continue generation', error));
 }
@@ -275,6 +384,7 @@ export function continueChatuiGeneration(expectedChatKey: string): void {
 export function impersonateChatui(expectedChatKey: string): void {
     void enqueueGenerationOperation(
         expectedChatKey,
+        'impersonate',
         () => chatuiAdapter.menuActions.impersonateMessage(),
     ).catch((error: unknown) => reportChatBoundFailure('impersonate', error));
 }
@@ -286,6 +396,7 @@ export function impersonateChatui(expectedChatKey: string): void {
 export function regenerateChatuiLast(expectedChatKey: string): void {
     void enqueueGenerationOperation(
         expectedChatKey,
+        'regenerate',
         () => chatuiAdapter.menuActions.regenerateFromPlusMenu(),
     ).catch((error: unknown) => reportChatBoundFailure('regenerate', error));
 }
