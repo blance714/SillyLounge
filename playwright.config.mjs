@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test';
 
+import { DESKTOP_VIEWPORT, REDUCED_MOTION } from './scripts/e2e/browser-baseline.mjs';
+
 export default defineConfig({
     testDir: './e2e',
     outputDir: './test-results/playwright',
@@ -16,8 +18,8 @@ export default defineConfig({
         ['html', { outputFolder: 'playwright-report', open: 'never' }],
     ],
     use: {
-        viewport: { width: 1440, height: 900 },
-        reducedMotion: 'reduce',
+        viewport: DESKTOP_VIEWPORT,
+        reducedMotion: REDUCED_MOTION,
         trace: 'retain-on-failure',
         screenshot: 'only-on-failure',
         video: 'off',
@@ -27,7 +29,7 @@ export default defineConfig({
         use: {
             ...devices['Desktop Chrome'],
             browserName: 'chromium',
-            viewport: { width: 1440, height: 900 },
+            viewport: DESKTOP_VIEWPORT,
         },
     }],
 });

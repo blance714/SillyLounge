@@ -9,8 +9,9 @@
 import {
     getCurrentChatKey,
     getCurrentMessageCount,
+    getCurrentMessageIndexSnapshotById,
+    getCurrentMessageIndexSnapshots,
     getCurrentMessageSnapshotById,
-    getCurrentMessageSnapshots,
     getGenerationState,
     getIsGroupChat,
     formatMessageHtmlById,
@@ -95,7 +96,8 @@ export const chatuiAdapter = Object.freeze({
     subscribeFirst,
     subscribeLast,
     messageQueries: Object.freeze({
-        readAll: getCurrentMessageSnapshots,
+        readIndex: getCurrentMessageIndexSnapshots,
+        readIndexById: getCurrentMessageIndexSnapshotById,
         readById: getCurrentMessageSnapshotById,
         getCount: getCurrentMessageCount,
         formatHtmlById: formatMessageHtmlById,

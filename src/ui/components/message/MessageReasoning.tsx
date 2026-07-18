@@ -15,7 +15,7 @@ export function MessageReasoning({ message }: { message: ChatuiMessage }): Compo
                 {duration && <span className="cui-root-reasoning-duration">{duration}</span>}
             </summary>
             <div
-                className="cui-root-reasoning-body"
+                className="cui-root-reasoning-body mes_text"
                 dangerouslySetInnerHTML={{ __html: message.extra.reasoningHtml }}
             />
         </details>

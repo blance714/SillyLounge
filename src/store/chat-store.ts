@@ -12,7 +12,10 @@ import {
     createConversationLocator,
     createGroupChatKey,
 } from '../adapter/chat-key.js';
-import type { MessageSnapshotDto } from '../adapter/schema.js';
+import type {
+    MessageIndexSnapshotDto,
+    MessageSnapshotDto,
+} from '../adapter/schema.js';
 import { createStore } from './create-store.js';
 import {
     clearTempChat,
@@ -101,7 +104,7 @@ export type ChatuiUserTurn = {
 
 export type ChatuiStoreState = {
     chat: {
-        /** Visible message ids; message DTOs live in a granular per-id store. */
+        /** Visible message ids; full DTOs are materialized lazily per virtual row. */
         messageIds: number[];
         /** User-authored turns paired with their immediately following character reply. */
         userTurns: ChatuiUserTurn[];
@@ -142,7 +145,11 @@ const _store = createStore<ChatuiStoreState>(_initialState);
 const _storeUnsubscribers = new Set<() => void>();
 const _messageSubscribers = new Map<number, Set<() => void>>();
 const _messageChangeSubscribers = new Set<() => void>();
+const MESSAGE_DTO_CACHE_LIMIT = 96;
+const FORMAT_HTML_CACHE_LIMIT = 1024;
+let _messageIndexes: ReadonlyArray<MessageIndexSnapshotDto> = [];
 let _messageDtos = new Map<number, ChatuiMessageDto>();
+let _messageDtoBuildCount = 0;
 
 let _unsubscribers: Array<() => void> = [];
 let _isInitializing = false;
@@ -178,6 +185,16 @@ function _prepareFormatCache(chatKey: string): void {
     _formatCacheChatKey = chatKey;
 }
 
+function _setFormatCacheEntry(cacheKey: string, entry: FormatHtmlCacheEntry): void {
+    _formatHtmlCache.delete(cacheKey);
+    _formatHtmlCache.set(cacheKey, entry);
+    while (_formatHtmlCache.size > FORMAT_HTML_CACHE_LIMIT) {
+        const oldestKey = _formatHtmlCache.keys().next().value;
+        if (oldestKey === undefined) break;
+        _formatHtmlCache.delete(oldestKey);
+    }
+}
+
 /**
  * ST's formatter stays behind the adapter and reads the live message by id.
  * The store only compares normalized snapshot fields to decide whether that
@@ -203,11 +220,13 @@ function _formatMessageHtmlCached(
         && cached.isUser === isUser
         && cached.usesSystemUi === usesSystemUi
     ) {
+        _formatHtmlCache.delete(cacheKey);
+        _formatHtmlCache.set(cacheKey, cached);
         return cached.html;
     }
 
     const html = chatuiAdapter.messageQueries.formatHtmlById(message.id, isReasoning);
-    _formatHtmlCache.set(cacheKey, { text, name, isSystem, isUser, usesSystemUi, html });
+    _setFormatCacheEntry(cacheKey, { text, name, isSystem, isUser, usesSystemUi, html });
     return html;
 }
 
@@ -282,35 +301,31 @@ function _projectChatuiMessage(
 }
 
 /**
- * @param snapshots Parsed adapter-boundary messages.
- * @param chatKey Active chat namespace for formatter memoization.
+ * Build all-history navigation metadata without reading or formatting message
+ * bodies. Full ChatuiMessageDto instances are loaded separately on demand.
  */
-function _buildMessageDtos(snapshots: ReadonlyArray<MessageSnapshotDto>, chatKey: string): {
-    messagesById: Map<number, ChatuiMessageDto>;
+function _buildMessageIndex(snapshots: ReadonlyArray<MessageIndexSnapshotDto>): {
     visibleMessageIds: number[];
     userTurns: ChatuiUserTurn[];
     lastMessageId: number | null;
     lastMessageNeedsGenerate: boolean;
 } {
     const lastMessageId = snapshots.length ? snapshots.length - 1 : null;
-    const messagesById = new Map<number, ChatuiMessageDto>();
     const visibleMessageIds: number[] = [];
     for (const message of snapshots) {
-        const dto = _projectChatuiMessage(message, lastMessageId ?? -1, chatKey);
-        messagesById.set(dto.id, dto);
-        if (!dto.extra.isSmallSys && !dto.extra.isToolCall) visibleMessageIds.push(dto.id);
+        if (!message.isSmallSys && !message.isToolCall) visibleMessageIds.push(message.id);
     }
     const userTurns: ChatuiUserTurn[] = [];
     let pendingTurnIndex: number | null = null;
     for (const messageId of visibleMessageIds) {
-        const message = messagesById.get(messageId);
+        const message = snapshots[messageId];
         if (!message) continue;
         if (message.isUser) {
             userTurns.push({ userMessageId: messageId, responseMessageId: null });
             pendingTurnIndex = userTurns.length - 1;
             continue;
         }
-        if (message.isChar && pendingTurnIndex !== null) {
+        if (!message.isUser && !message.isSystem && pendingTurnIndex !== null) {
             userTurns[pendingTurnIndex] = {
                 ...userTurns[pendingTurnIndex],
                 responseMessageId: messageId,
@@ -318,15 +333,59 @@ function _buildMessageDtos(snapshots: ReadonlyArray<MessageSnapshotDto>, chatKey
             pendingTurnIndex = null;
         }
     }
-    const lastDto = lastMessageId === null ? null : messagesById.get(lastMessageId);
+    const lastMessage = lastMessageId === null ? null : snapshots[lastMessageId];
 
     return {
-        messagesById,
         visibleMessageIds,
         userTurns,
         lastMessageId,
-        lastMessageNeedsGenerate: lastDto?.ui.needsGenerate ?? false,
+        lastMessageNeedsGenerate: lastMessage?.isUser ?? false,
     };
+}
+
+function _pruneMessageDtoCache(): void {
+    while (_messageDtos.size > MESSAGE_DTO_CACHE_LIMIT) {
+        let removed = false;
+        for (const messageId of _messageDtos.keys()) {
+            if ((_messageSubscribers.get(messageId)?.size ?? 0) > 0) continue;
+            _messageDtos.delete(messageId);
+            removed = true;
+            break;
+        }
+        if (!removed) break;
+    }
+}
+
+function _cacheMessageDto(message: ChatuiMessageDto): ChatuiMessageDto {
+    _messageDtos.delete(message.id);
+    _messageDtos.set(message.id, message);
+    _pruneMessageDtoCache();
+    return message;
+}
+
+function _materializeMessageDto(messageId: number): ChatuiMessageDto | null {
+    const cached = _messageDtos.get(messageId);
+    if (cached) return _cacheMessageDto(cached);
+
+    const state = getChatuiState();
+    if (
+        messageId < 0
+        || messageId >= _messageIndexes.length
+        || messageId >= state.chat.messageCount
+        || state.chat.chatKey !== chatuiAdapter.getCurrentChatKey()
+    ) {
+        return null;
+    }
+
+    const message = chatuiAdapter.messageQueries.readById(messageId);
+    if (!message) return null;
+    _prepareFormatCache(state.chat.chatKey);
+    _messageDtoBuildCount += 1;
+    return _cacheMessageDto(_projectChatuiMessage(
+        message,
+        state.chat.lastMessageId ?? -1,
+        state.chat.chatKey,
+    ));
 }
 
 /**
@@ -344,7 +403,7 @@ export function getChatuiCurrentChatIdentity() {
  * @returns {Array<ChatuiMessageDto>}
  */
 export function getMessageDtos() {
-    return Array.from(_messageDtos.values());
+    return Array.from(_messageDtos.values()).sort((left, right) => left.id - right.id);
 }
 
 /**
@@ -353,7 +412,18 @@ export function getMessageDtos() {
  */
 export function getMessageDtoById(messageId: number | string) {
     const id = Number(messageId);
-    return Number.isInteger(id) && id >= 0 ? _messageDtos.get(id) ?? null : null;
+    return Number.isInteger(id) && id >= 0 ? _materializeMessageDto(id) : null;
+}
+
+export function getChatuiMessageCacheStats() {
+    return Object.freeze({
+        indexedMessages: _messageIndexes.length,
+        materializedMessages: _messageDtos.size,
+        materializationsSinceRefresh: _messageDtoBuildCount,
+        formattedEntries: _formatHtmlCache.size,
+        messageLimit: MESSAGE_DTO_CACHE_LIMIT,
+        formatLimit: FORMAT_HTML_CACHE_LIMIT,
+    });
 }
 
 /**
@@ -390,6 +460,7 @@ export function subscribeChatuiMessage(messageId: number, onStoreChange: () => v
     return () => {
         subscribers?.delete(onStoreChange);
         if (subscribers?.size === 0) _messageSubscribers.delete(messageId);
+        _pruneMessageDtoCache();
     };
 }
 
@@ -415,12 +486,14 @@ function _notifyAllMessages(): void {
  * @returns {void}
  */
 export function refreshChatuiStore() {
-    const snapshot = chatuiAdapter.messageQueries.readAll();
+    const snapshot = chatuiAdapter.messageQueries.readIndex();
     _prepareFormatCache(snapshot.chatKey);
-    const messageState = _buildMessageDtos(snapshot.messages, snapshot.chatKey);
+    const messageState = _buildMessageIndex(snapshot.messages);
     const state = getChatuiState();
     const isGroup = chatuiAdapter.getIsGroupChat();
-    _messageDtos = messageState.messagesById;
+    _messageIndexes = snapshot.messages;
+    _messageDtos = new Map();
+    _messageDtoBuildCount = 0;
 
     _store.setState({
         ...state,
@@ -467,25 +540,28 @@ export function refreshChatuiMessage(messageId: number | string) {
         return;
     }
 
-    const message = chatuiAdapter.messageQueries.readById(id);
-    if (!message) {
+    const index = chatuiAdapter.messageQueries.readIndexById(id);
+    const previousIndex = _messageIndexes[id];
+    if (!index || !previousIndex) {
         refreshChatuiStore();
         return;
     }
 
-    _prepareFormatCache(chatKey);
+    if (
+        index.isUser !== previousIndex.isUser
+        || index.isSystem !== previousIndex.isSystem
+        || index.isSmallSys !== previousIndex.isSmallSys
+        || index.isToolCall !== previousIndex.isToolCall
+    ) {
+        refreshChatuiStore();
+        return;
+    }
+
+    _messageDtos.delete(id);
     const lastMessageId = messageCount - 1;
-    const dto = _projectChatuiMessage(message, lastMessageId, chatKey);
-    const previous = _messageDtos.get(id);
-    const wasVisible = !!previous && !previous.extra.isSmallSys && !previous.extra.isToolCall;
-    const isVisible = !dto.extra.isSmallSys && !dto.extra.isToolCall;
-    if (wasVisible !== isVisible) {
-        refreshChatuiStore();
-        return;
-    }
-
-    _messageDtos.set(id, dto);
-    const lastMessageNeedsGenerate = _messageDtos.get(lastMessageId)?.ui.needsGenerate ?? false;
+    const lastMessageNeedsGenerate = id === lastMessageId
+        ? index.isUser
+        : state.chat.lastMessageNeedsGenerate;
     if (lastMessageNeedsGenerate !== state.chat.lastMessageNeedsGenerate) {
         _store.setState({
             ...state,
@@ -779,7 +855,9 @@ export function teardownChatuiStore() {
 
     _messageSubscribers.clear();
     _messageChangeSubscribers.clear();
+    _messageIndexes = [];
     _messageDtos = new Map();
+    _messageDtoBuildCount = 0;
 
     _formatHtmlCache.clear();
     _formatCacheChatKey = '';

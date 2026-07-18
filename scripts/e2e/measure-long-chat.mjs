@@ -7,13 +7,14 @@ import { fileURLToPath } from 'node:url';
 
 import { chromium } from '@playwright/test';
 
+import { DESKTOP_VIEWPORT, REDUCED_MOTION } from './browser-baseline.mjs';
 import { generateStDataRoot } from './generate-data-root.mjs';
 import { inspectStCheckout, startStServer } from './st-process.mjs';
 
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '../..');
 const RUNTIME_ROOT = path.join(PROJECT_ROOT, '.runtime', 'SillyTavern-ChatUI');
-const FIXTURE_PATH = path.join(PROJECT_ROOT, 'test', 'e2e', 'fixtures', 'long-plain', 'fixture.json');
-const DEFAULT_OUTPUT = path.join(PROJECT_ROOT, 'test-results', 'performance', 'long-chat.json');
+const FIXTURE_ROOT = path.join(PROJECT_ROOT, 'test', 'e2e', 'fixtures');
+const DEFAULT_FIXTURE = 'long-plain';
 const MODES = Object.freeze(['disabled', 'bootstrap', 'active']);
 const DURATION_METRICS = Object.freeze([
     'TaskDuration',
@@ -25,7 +26,7 @@ const DURATION_METRICS = Object.freeze([
 ]);
 
 function parseArgs(argv) {
-    const values = { repetitions: 1, warmups: 0 };
+    const values = { repetitions: 1, warmups: 0, fixture: DEFAULT_FIXTURE, regex: 'active' };
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--') continue;
@@ -43,7 +44,22 @@ function parseArgs(argv) {
         }
         values[key] = numeric;
     }
+    if (!/^[a-z0-9-]+$/i.test(values.fixture)) {
+        throw new Error('fixture must be one safe directory name');
+    }
+    if (!['active', 'disabled'].includes(values.regex)) {
+        throw new Error('regex must be active or disabled');
+    }
     return values;
+}
+
+function fixturePath(fixture) {
+    return path.join(FIXTURE_ROOT, fixture, 'fixture.json');
+}
+
+function defaultOutput(fixture, regexMode) {
+    const suffix = regexMode === 'active' ? '' : '-regex-disabled';
+    return path.join(PROJECT_ROOT, 'test-results', 'performance', `${fixture}${suffix}.json`);
 }
 
 function metricMap(response) {
@@ -91,27 +107,34 @@ function modeOrder(iteration) {
     return [...MODES.slice(offset), ...MODES.slice(0, offset)];
 }
 
-async function waitForMeasuredPage(page, mode) {
-    await page.waitForFunction(selectedMode => {
+async function waitForMeasuredPage(page, mode, expected) {
+    await page.waitForFunction(({ selectedMode, expected }) => {
         const context = globalThis.SillyTavern?.getContext?.();
-        if (!context || context.chatId !== 'long-plain' || context.chat?.length !== 800) return false;
+        if (!context || context.chatId !== expected.chatId || context.chat?.length !== expected.messageCount) return false;
         const nativeMessages = document.querySelectorAll('#chat .mes');
         const nativeLast = nativeMessages[nativeMessages.length - 1];
-        if (nativeMessages.length !== 100 || nativeLast?.getAttribute('mesid') !== '799') return false;
+        if (
+            nativeMessages.length !== Math.min(100, expected.messageCount)
+            || nativeLast?.getAttribute('mesid') !== String(expected.messageCount - 1)
+        ) return false;
         if (selectedMode !== 'active') {
             return !document.body.classList.contains('chatui-active');
         }
         const root = document.querySelector('#chatui-root[data-cui-root-mounted="1"]');
-        const latest = root?.querySelector('[data-cui-message-id="799"]');
+        const list = root?.querySelector('.cui-root-message-list');
+        const latest = root?.querySelector(`[data-cui-message-id="${expected.messageCount - 1}"]`);
         const rail = root?.querySelector('[role="slider"][aria-label="快速跳转用户回合"]');
+        const mountedMessages = list?.querySelectorAll('article.cui-root-message').length ?? 0;
         return Boolean(
             root
             && latest
-            && root.querySelectorAll('.cui-root-message-list > article').length === 800
+            && list?.getAttribute('data-cui-virtual-count') === String(expected.messageCount)
+            && mountedMessages > 0
+            && mountedMessages < expected.messageCount
             && root.querySelector('[aria-label="ChatUI composer"]')
-            && rail?.getAttribute('aria-valuemax') === '400'
+            && rail?.getAttribute('aria-valuemax') === String(expected.userTurns)
         );
-    }, mode, { timeout: 120_000 });
+    }, { selectedMode: mode, expected }, { timeout: 120_000 });
     await page.waitForFunction(() => (
         performance.now() - (globalThis.__sillyLoungePerf?.lastMutation ?? 0) >= 120
     ), null, { timeout: 30_000 });
@@ -120,14 +143,37 @@ async function waitForMeasuredPage(page, mode) {
     }));
 }
 
-async function exerciseFloorRail(page) {
+async function exerciseFloorRail(page, expected) {
     const rail = page.locator('[role="slider"][aria-label="快速跳转用户回合"]');
     const list = page.locator('.cui-root-message-list');
     const rangeStart = rail.locator('.cui-root-floor-range-label.is-start');
+    // The initial scroll anchor depends on message height and late iframe
+    // sizing. Establish the same bottom precondition for every fixture before
+    // measuring the rail's independent wheel window.
+    await rail.press('End');
+    await page.waitForFunction(userTurns => {
+        const activeTurn = document.querySelector('[aria-label="快速跳转用户回合"]')?.getAttribute('aria-valuenow');
+        const firstVisibleTurn = Number(
+            document.querySelector('.cui-root-floor-range-label.is-start')?.textContent,
+        );
+        return activeTurn === String(userTurns) && firstVisibleTurn > 1;
+    }, expected.userTurns);
+    await list.evaluate(element => new Promise(resolve => {
+        let previous = element.scrollTop;
+        let stableFrames = 0;
+        const observe = () => {
+            const current = element.scrollTop;
+            stableFrames = Math.abs(current - previous) < 0.5 ? stableFrames + 1 : 0;
+            previous = current;
+            if (stableFrames >= 4) resolve(undefined);
+            else requestAnimationFrame(observe);
+        };
+        requestAnimationFrame(observe);
+    }));
     const scrollBeforeWheel = await list.evaluate(element => element.scrollTop);
     const rangeBeforeWheel = Number(await rangeStart.textContent());
     const box = await rail.boundingBox();
-    if (!box) throw new Error('400-floor rail has no bounding box');
+    if (!box) throw new Error(`${expected.userTurns}-floor rail has no bounding box`);
 
     await page.evaluate(() => {
         const sample = { active: true, gaps: [], previous: performance.now() };
@@ -139,7 +185,7 @@ async function exerciseFloorRail(page) {
         };
         requestAnimationFrame(tick);
     });
-    await page.mouse.move(box.x + 4, box.y + box.height / 2);
+    await rail.hover({ position: { x: 4, y: box.height / 2 } });
     await page.mouse.wheel(0, -120);
     await page.waitForFunction(previous => (
         Number(document.querySelector('.cui-root-floor-range-label.is-start')?.textContent) < previous
@@ -157,16 +203,17 @@ async function exerciseFloorRail(page) {
     ));
     const title = (await rail.locator('.cui-root-floor-popover-title').textContent())?.trim();
     const preview = (await rail.locator('.cui-root-floor-popover-preview').textContent())?.trim();
-    if (title !== '第 1 楼用户消息：用于测量长对话加载与跳转。') {
-        throw new Error(`unexpected first-floor title: ${title}`);
+    if (!title || !preview) {
+        throw new Error(`empty first-floor preview: ${JSON.stringify({ title, preview })}`);
     }
-    if (preview !== '第 1 楼助手回复：固定、简短、无附件的 Markdown 文本。') {
-        throw new Error(`unexpected first-floor preview: ${preview}`);
+    if (expected.firstFloor) {
+        if (title !== expected.firstFloor.title) throw new Error(`unexpected first-floor title: ${title}`);
+        if (preview !== expected.firstFloor.preview) throw new Error(`unexpected first-floor preview: ${preview}`);
     }
     await rail.press('End');
-    await page.waitForFunction(() => (
-        document.querySelector('[aria-label="快速跳转用户回合"]')?.getAttribute('aria-valuenow') === '400'
-    ));
+    await page.waitForFunction(userTurns => (
+        document.querySelector('[aria-label="快速跳转用户回合"]')?.getAttribute('aria-valuenow') === String(userTurns)
+    ), expected.userTurns);
     await page.waitForTimeout(150);
     const gaps = await page.evaluate(() => {
         globalThis.__sillyLoungeRafSample.active = false;
@@ -195,7 +242,7 @@ async function copyIfPresent(source, destination) {
     }
 }
 
-async function runScenario({ browser, stRoot, mode, iteration, warmup, outputRoot }) {
+async function runScenario({ browser, stRoot, fixture, regexMode, mode, iteration, warmup, outputRoot }) {
     const runRoot = await fs.mkdtemp(path.join(os.tmpdir(), `sillylounge-perf-${mode}-`));
     const dataRoot = path.join(runRoot, 'data');
     const label = `${warmup ? 'warmup' : `run-${iteration + 1}`}-${mode}`;
@@ -211,13 +258,14 @@ async function runScenario({ browser, stRoot, mode, iteration, warmup, outputRoo
             targetRoot: dataRoot,
             stRoot,
             runtimeRoot: RUNTIME_ROOT,
-            fixturePath: FIXTURE_PATH,
+            fixturePath: fixturePath(fixture),
             extensionMode: mode,
+            regexMode,
         });
         server = await startStServer({ stRoot, runRoot, dataRoot, readyTimeoutMs: 120_000 });
         context = await browser.newContext({
-            viewport: { width: 1440, height: 900 },
-            reducedMotion: 'reduce',
+            viewport: DESKTOP_VIEWPORT,
+            reducedMotion: REDUCED_MOTION,
         });
         const page = await context.newPage();
         page.on('pageerror', error => pageErrors.push(error.stack ?? error.message));
@@ -262,7 +310,16 @@ async function runScenario({ browser, stRoot, mode, iteration, warmup, outputRoo
         const cdpBefore = metricMap(await cdp.send('Performance.getMetrics'));
         const navigationStarted = nodePerformance.now();
         await page.goto(server.url, { waitUntil: 'domcontentloaded', timeout: 120_000 });
-        await waitForMeasuredPage(page, mode);
+        const expected = {
+            chatId: generated.manifest.conversation.fileName,
+            messageCount: generated.manifest.conversation.messageCount,
+            userTurns: generated.manifest.conversation.userTurns,
+            firstFloor: generated.manifest.fixture === 'long-plain' ? {
+                title: '第 1 楼用户消息：用于测量长对话加载与跳转。',
+                preview: '第 1 楼助手回复：固定、简短、无附件的 Markdown 文本。',
+            } : null,
+        };
+        await waitForMeasuredPage(page, mode, expected);
         const navigationToReadyMs = nodePerformance.now() - navigationStarted;
         const cdpAfter = metricMap(await cdp.send('Performance.getMetrics'));
         const browserState = await page.evaluate(() => {
@@ -280,14 +337,17 @@ async function runScenario({ browser, stRoot, mode, iteration, warmup, outputRoo
                 dom: {
                     totalElements: document.querySelectorAll('*').length,
                     nativeMessages: document.querySelectorAll('#chat .mes').length,
-                    rootArticles: document.querySelectorAll('.cui-root-message-list > article').length,
+                    rootArticles: document.querySelectorAll('.cui-root-message-list article.cui-root-message').length,
                     rootButtons: document.querySelectorAll('#chatui-root button').length,
                     iframes: document.querySelectorAll('iframe').length,
+                    rootThoughts: document.querySelectorAll('#chatui-root [data-synthetic-regex="thought"]').length,
+                    rootCardFrames: document.querySelectorAll('#chatui-root iframe.cui-embed-frame').length,
+                    rootStyleTags: document.querySelectorAll('#chatui-root style').length,
                     floorMaximum: Number(document.querySelector('[aria-label="快速跳转用户回合"]')?.getAttribute('aria-valuemax')) || 0,
                 },
             };
         });
-        const rail = mode === 'active' ? await exerciseFloorRail(page) : null;
+        const rail = mode === 'active' ? await exerciseFloorRail(page, expected) : null;
         await fs.mkdir(evidenceRoot, { recursive: true });
         if (mode === 'active' && !warmup) {
             await page.screenshot({ path: path.join(evidenceRoot, 'long-chat.png'), fullPage: true });
@@ -340,6 +400,10 @@ function aggregateResults(results) {
             totalElements: median(samples.map(sample => sample.dom.totalElements)),
             rootArticles: median(samples.map(sample => sample.dom.rootArticles)),
             rootButtons: median(samples.map(sample => sample.dom.rootButtons)),
+            iframes: median(samples.map(sample => sample.dom.iframes)),
+            rootThoughts: median(samples.map(sample => sample.dom.rootThoughts)),
+            rootCardFrames: median(samples.map(sample => sample.dom.rootCardFrames)),
+            rootStyleTags: median(samples.map(sample => sample.dom.rootStyleTags)),
         }];
     }));
 }
@@ -353,9 +417,18 @@ function delta(left, right) {
     return result;
 }
 
-export async function measureLongChat({ stRoot, repetitions = 1, warmups = 0, output = DEFAULT_OUTPUT }) {
+export async function measureLongChat({
+    stRoot,
+    fixture = DEFAULT_FIXTURE,
+    regexMode = 'active',
+    repetitions = 1,
+    warmups = 0,
+    output,
+}) {
     if (!stRoot) throw new Error('stRoot is required (pass --st or SILLYTAVERN_TEST_ROOT)');
-    const resolvedOutput = path.resolve(output);
+    if (!/^[a-z0-9-]+$/i.test(fixture)) throw new Error('fixture must be one safe directory name');
+    if (!['active', 'disabled'].includes(regexMode)) throw new Error('regexMode must be active or disabled');
+    const resolvedOutput = path.resolve(output ?? defaultOutput(fixture, regexMode));
     const outputRoot = path.dirname(resolvedOutput);
     const evidenceRoot = path.join(outputRoot, 'runs');
     await fs.mkdir(outputRoot, { recursive: true });
@@ -368,7 +441,16 @@ export async function measureLongChat({ stRoot, repetitions = 1, warmups = 0, ou
         for (let warmup = 0; warmup < warmups; warmup += 1) {
             for (const mode of modeOrder(warmup)) {
                 console.log(`[SillyLounge perf] warmup ${warmup + 1}/${warmups}: ${mode}`);
-                await runScenario({ browser, stRoot, mode, iteration: warmup, warmup: true, outputRoot: evidenceRoot });
+                await runScenario({
+                    browser,
+                    stRoot,
+                    fixture,
+                    regexMode,
+                    mode,
+                    iteration: warmup,
+                    warmup: true,
+                    outputRoot: evidenceRoot,
+                });
             }
         }
         for (let iteration = 0; iteration < repetitions; iteration += 1) {
@@ -377,6 +459,8 @@ export async function measureLongChat({ stRoot, repetitions = 1, warmups = 0, ou
                 results.push(await runScenario({
                     browser,
                     stRoot,
+                    fixture,
+                    regexMode,
                     mode,
                     iteration,
                     warmup: false,
@@ -393,10 +477,15 @@ export async function measureLongChat({ stRoot, repetitions = 1, warmups = 0, ou
         recordedAt: new Date().toISOString(),
         st: (await inspectStCheckout({ stRoot })).pin,
         browser: 'chromium',
-        viewport: { width: 1440, height: 900 },
+        viewport: DESKTOP_VIEWPORT,
         repetitions,
         warmups,
-        fixture: { userTurns: 400, messages: 800, nativeTruncation: 100 },
+        fixture: {
+            id: fixture,
+            regexMode,
+            ...results[0]?.fixture,
+            nativeTruncation: Math.min(100, results[0]?.fixture?.messageCount ?? 0),
+        },
         summary,
         deltas: {
             bootstrapMinusNative: delta(summary.disabled, summary.bootstrap),
@@ -412,6 +501,8 @@ async function main() {
     const args = parseArgs(process.argv.slice(2));
     const result = await measureLongChat({
         stRoot: args.st ?? process.env.SILLYTAVERN_TEST_ROOT,
+        fixture: args.fixture,
+        regexMode: args.regex,
         repetitions: args.repetitions,
         warmups: args.warmups,
         output: args.output,
@@ -422,6 +513,7 @@ async function main() {
         elements: Math.round(summary.totalElements),
         rootArticles: Math.round(summary.rootArticles),
         rootButtons: Math.round(summary.rootButtons),
+        iframes: Math.round(summary.iframes),
     }])));
     console.log(`[SillyLounge perf] report: ${result.output}`);
 }

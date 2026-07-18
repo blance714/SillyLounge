@@ -5,10 +5,12 @@
  * UI reads Store DTOs and action facades only; ST runtime details stay in adapter.
  */
 
-import React, { Component, useCallback, useEffect, useState } from 'preact/compat';
+import React, { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { createRoot } from 'preact/compat/client';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
+import type { Range as VirtualRange } from '@tanstack/react-virtual';
 import { ensureChatuiRoot } from '../shield/st-dom-shield.js';
 import { Composer, GeneratingIndicator } from './components/Composer.js';
 import { QRBar } from './components/QRBar.js';
@@ -22,11 +24,14 @@ import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
 import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings } from './hooks.js';
-import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, resetChatuiComposerDraftStore } from './actions.js';
+import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, resetChatuiComposerDraftStore, resetChatuiMessageEditDraftStore } from './actions.js';
 import { teardownCardEmbedRuntime } from './card-embed.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
+
+const VIRTUAL_MESSAGE_ESTIMATE_PX = 320;
+const VIRTUAL_MESSAGE_OVERSCAN = 5;
 
 let isSetup = false;
 let rootEl: HTMLElement | null = null;
@@ -97,11 +102,60 @@ function ChatuiApp(): ComponentChild {
     const chatHeader = sidebarBasics.header;
     const isTempChatActive = useIsTempChatActive();
     const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
+    const initializedVirtualChatKeyRef = useRef<string | null>(null);
     const [editingMessage, setEditingMessage] = useState<EditingMessageTarget | null>(null);
     const headerMode: MessageHeaderMode = state.chat.isGroup ? config.headerGroup : config.headerSolo;
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const { settingsOpen } = useSettings();
     const messageIds = state.chat.messageIds;
+    const messageIndexById = useMemo(
+        () => new Map(messageIds.map((messageId, index) => [messageId, index])),
+        [messageIds],
+    );
+    const getVirtualMessageKey = useCallback(
+        (index: number) => `${state.chat.chatKey}:${messageIds[index] ?? index}`,
+        [messageIds, state.chat.chatKey],
+    );
+    // The row under edit holds uncommitted MessageEditor state (see
+    // message-edit-draft-store.ts's module doc): if the default range
+    // extractor lets it scroll out of the overscan window, the virtualizer
+    // unmounts it like any other offscreen row. Union the editing row's
+    // index into the extracted range so it is always kept mounted, however
+    // far it drifts from the viewport.
+    const editingMessageIndex = editingMessage?.chatKey === state.chat.chatKey
+        ? messageIndexById.get(editingMessage.id) ?? null
+        : null;
+    const keepEditingRowMountedRangeExtractor = useCallback(
+        (range: VirtualRange) => {
+            const extracted = defaultRangeExtractor(range);
+            if (editingMessageIndex === null || extracted.includes(editingMessageIndex)) return extracted;
+            return [...extracted, editingMessageIndex].sort((a, b) => a - b);
+        },
+        [editingMessageIndex],
+    );
+    const messageVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+        count: messageIds.length,
+        getScrollElement: () => listNode,
+        estimateSize: () => VIRTUAL_MESSAGE_ESTIMATE_PX,
+        getItemKey: getVirtualMessageKey,
+        overscan: VIRTUAL_MESSAGE_OVERSCAN,
+        rangeExtractor: keepEditingRowMountedRangeExtractor,
+        scrollPaddingStart: 12,
+        anchorTo: 'end',
+        followOnAppend: false,
+        scrollEndThreshold: 80,
+        useAnimationFrameWithResizeObserver: true,
+    });
+    const virtualMessages = messageVirtualizer.getVirtualItems();
+    const messageNavigation = useMemo(() => ({
+        messageIds,
+        indexAtOffset: (offset: number) => messageVirtualizer.getVirtualItemForOffset(offset)?.index ?? null,
+        scrollToMessage: (messageId: number, behavior: ScrollBehavior) => {
+            const index = messageIndexById.get(messageId);
+            if (index === undefined) return;
+            messageVirtualizer.scrollToIndex(index, { align: 'start', behavior });
+        },
+    }), [messageIds, messageIndexById, messageVirtualizer]);
     const conversationTitle = chatHeader.sessionName || chatHeader.characterName || 'ChatUI';
     const conversationEyebrow = chatHeader.characterName && chatHeader.characterName !== conversationTitle
         ? chatHeader.characterName
@@ -109,6 +163,14 @@ function ChatuiApp(): ComponentChild {
     const listRef = useCallback((node: HTMLDivElement | null) => {
         setListNode(node);
     }, []);
+
+    useLayoutEffect(() => {
+        if (!listNode || messageIds.length === 0) return;
+        if (initializedVirtualChatKeyRef.current === state.chat.chatKey) return;
+        initializedVirtualChatKeyRef.current = state.chat.chatKey;
+        messageVirtualizer.measure();
+        messageVirtualizer.scrollToEnd({ behavior: 'auto' });
+    }, [listNode, messageIds.length, messageVirtualizer, state.chat.chatKey]);
 
     useEffect(() => {
         if (editingMessage === null) return;
@@ -165,25 +227,50 @@ function ChatuiApp(): ComponentChild {
                           </div>
                       </header>
                       <div className="cui-root-message-stage">
-                          <MessageFloorRail root={listNode} turns={state.chat.userTurns} />
+                          <MessageFloorRail
+                              root={listNode}
+                              turns={state.chat.userTurns}
+                              navigation={messageNavigation}
+                          />
                           <div
                               ref={listRef}
                               className="cui-root-message-list"
                               role="log"
                               aria-live="polite"
                               aria-relevant="additions text"
+                              data-cui-virtual-count={String(messageIds.length)}
+                              data-cui-virtual-start={String(virtualMessages[0]?.index ?? -1)}
+                              data-cui-virtual-end={String(
+                                  virtualMessages[virtualMessages.length - 1]?.index ?? -1,
+                              )}
                           >
-                              {messageIds.map(messageId => (
-                                  <ChatuiMessageRow
-                                      key={`${state.chat.chatKey}:${messageId}`}
-                                      messageId={messageId}
-                                      headerMode={headerMode}
-                                      isGenerating={state.chat.isGenerating}
-                                      isEditing={editingMessage?.chatKey === state.chat.chatKey && editingMessage.id === messageId}
-                                      onStartEdit={() => setEditingMessage({ chatKey: state.chat.chatKey, id: messageId })}
-                                      onFinishEdit={() => setEditingMessage(null)}
-                                  />
-                              ))}
+                              <div
+                                  className="cui-root-virtual-message-space"
+                                  style={{ height: `${messageVirtualizer.getTotalSize()}px` }}
+                              >
+                                  {virtualMessages.map(virtualMessage => {
+                                      const messageId = messageIds[virtualMessage.index];
+                                      if (messageId === undefined) return null;
+                                      return (
+                                          <div
+                                              key={virtualMessage.key}
+                                              ref={messageVirtualizer.measureElement}
+                                              className="cui-root-virtual-message-row"
+                                              data-index={virtualMessage.index}
+                                              style={{ transform: `translateY(${virtualMessage.start}px)` }}
+                                          >
+                                              <ChatuiMessageRow
+                                                  messageId={messageId}
+                                                  headerMode={headerMode}
+                                                  isGenerating={state.chat.isGenerating}
+                                                  isEditing={editingMessage?.chatKey === state.chat.chatKey && editingMessage.id === messageId}
+                                                  onStartEdit={() => setEditingMessage({ chatKey: state.chat.chatKey, id: messageId })}
+                                                  onFinishEdit={() => setEditingMessage(null)}
+                                              />
+                                          </div>
+                                      );
+                                  })}
+                              </div>
                               {state.chat.isGenerating && <GeneratingIndicator />}
                           </div>
                           <div className="cui-root-empty" hidden={messageIds.length > 0}>
@@ -258,6 +345,7 @@ export function teardownChatuiRoot(): void {
         closeChatuiSettings,
         clearChatuiToasts,
         resetChatuiComposerDraftStore,
+        resetChatuiMessageEditDraftStore,
         () => rootApi?.unmount(),
         resetChatuiQueryClient,
         teardownCardEmbedRuntime,

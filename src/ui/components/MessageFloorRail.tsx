@@ -8,6 +8,7 @@ import React, {
 } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { useChatuiMessage } from '../hooks.js';
+import { centerWindowStart } from '../floor-rail-math.js';
 
 const APP_EDGE_INSET_PX = 16;
 const RAIL_WIDTH_PX = 30;
@@ -26,6 +27,12 @@ type UserTurn = Readonly<{
 }>;
 type RailLayout = Readonly<{ capacity: number; left: number }>;
 type HoveredTurn = Readonly<{ slot: number }>;
+
+export type MessageFloorNavigation = Readonly<{
+    messageIds: readonly number[];
+    indexAtOffset: (offset: number) => number | null;
+    scrollToMessage: (messageId: number, behavior: ScrollBehavior) => void;
+}>;
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
@@ -103,12 +110,16 @@ function useRailLayout(root: HTMLDivElement | null): RailLayout | null {
     return layout;
 }
 
-function messageElement(root: HTMLElement, messageId: number): HTMLElement | null {
-    return root.querySelector<HTMLElement>(`[data-cui-message-id="${messageId}"]`);
-}
-
-function useActiveTurn(root: HTMLDivElement | null, turns: readonly UserTurn[]): number {
+function useActiveTurn(
+    root: HTMLDivElement | null,
+    turns: readonly UserTurn[],
+    navigation: MessageFloorNavigation,
+): number {
     const [activeIndex, setActiveIndex] = useState(0);
+    const turnMessageIndexes = useMemo(() => {
+        const indexesById = new Map(navigation.messageIds.map((messageId, index) => [messageId, index]));
+        return turns.map(turn => indexesById.get(turn.userMessageId) ?? 0);
+    }, [navigation.messageIds, turns]);
 
     useEffect(() => {
         if (!root || turns.length === 0) {
@@ -129,16 +140,14 @@ function useActiveTurn(root: HTMLDivElement | null, turns: readonly UserTurn[]):
                 return;
             }
 
-            const rootRect = root.getBoundingClientRect();
-            const readingLine = rootRect.top + root.clientHeight * 0.26;
+            const readingOffset = root.scrollTop + root.clientHeight * 0.26;
+            const readingMessageIndex = navigation.indexAtOffset(readingOffset) ?? 0;
             let low = 0;
             let high = maxIndex;
             let nearest = 0;
             while (low <= high) {
                 const middle = Math.floor((low + high) / 2);
-                const element = messageElement(root, turns[middle].userMessageId);
-                if (!element) break;
-                if (element.getBoundingClientRect().top <= readingLine) {
+                if ((turnMessageIndexes[middle] ?? 0) <= readingMessageIndex) {
                     nearest = middle;
                     low = middle + 1;
                 } else {
@@ -158,7 +167,7 @@ function useActiveTurn(root: HTMLDivElement | null, turns: readonly UserTurn[]):
             root.removeEventListener('scroll', schedule);
             if (frame) cancelAnimationFrame(frame);
         };
-    }, [root, turns]);
+    }, [navigation, root, turnMessageIndexes, turns]);
 
     return clamp(activeIndex, 0, Math.max(0, turns.length - 1));
 }
@@ -202,12 +211,14 @@ function TurnPreview({ turn }: { turn: UserTurn }): ComponentChild {
 export function MessageFloorRail({
     root,
     turns,
+    navigation,
 }: {
     root: HTMLDivElement | null;
     turns: readonly UserTurn[];
+    navigation: MessageFloorNavigation;
 }): ComponentChild {
     const layout = useRailLayout(root);
-    const activeIndex = useActiveTurn(root, turns);
+    const activeIndex = useActiveTurn(root, turns, navigation);
     const [windowStart, setWindowStart] = useState(0);
     const [hovered, setHovered] = useState<HoveredTurn | null>(null);
     const [keyboardFocused, setKeyboardFocused] = useState(false);
@@ -232,8 +243,7 @@ export function MessageFloorRail({
         : 0;
 
     useEffect(() => {
-        const centeredStart = activeIndex - Math.floor((capacity - 1) / 2);
-        setWindowStart(clamp(centeredStart, 0, maxWindowStart));
+        setWindowStart(centerWindowStart(activeIndex, capacity, maxWindowStart));
     }, [activeIndex, capacity, maxWindowStart]);
 
     useEffect(() => () => {
@@ -296,14 +306,12 @@ export function MessageFloorRail({
     const jumpToTurn = useCallback((index: number) => {
         if (!root || turns.length === 0) return;
         const targetIndex = clamp(index, 0, turns.length - 1);
-        const target = messageElement(root, turns[targetIndex].userMessageId);
-        if (!target) return;
-        const rootRect = root.getBoundingClientRect();
-        const targetRect = target.getBoundingClientRect();
-        const top = root.scrollTop + targetRect.top - rootRect.top - 12;
         const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        root.scrollTo({ top, behavior: reduceMotion ? 'auto' : 'smooth' });
-    }, [root, turns]);
+        navigation.scrollToMessage(
+            turns[targetIndex].userMessageId,
+            reduceMotion ? 'auto' : 'smooth',
+        );
+    }, [navigation, root, turns]);
 
     if (!root || !layout || visibleTurns.length === 0) return null;
 

@@ -8,7 +8,7 @@
  * expander that opens a sub-menu of linked sets). Only primary click is proxied.
  */
 
-import { _dispatchClick, buildLiveElementRegistry } from './internals.js';
+import { _dispatchClick, buildLiveElementRegistry, resolveLiveElement } from './internals.js';
 
 type QuickReplyDto = {
     id: string;
@@ -75,7 +75,7 @@ export function listQuickReplies() {
  * @returns {boolean} true if the element was found and clicked
  */
 export function triggerQuickReply(id: any) {
-    const el = _qrItemMap.get(id);
+    const el = resolveLiveElement(_qrItemMap, id);
     if (!el) return false;
     _dispatchClick(el);
     return true;

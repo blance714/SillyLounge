@@ -89,9 +89,11 @@ SILLYTAVERN_TEST_ROOT=/path/to/SillyTavern pnpm run test:st
 SILLYTAVERN_TEST_ROOT=/path/to/SillyTavern pnpm run test:e2e
 ```
 
-`test:st` 验证一次性 dataRoot 与宿主进程边界；`test:e2e` 还会在真实 Chromium 中
-同时核对 SillyTavern 内部状态、SillyLounge 可见 DOM 和楼层导航。400 楼的可重复
-性能测量命令与当前基线见 `PERFORMANCE.md`。
+`test:st` 验证一次性 dataRoot 与宿主进程边界；`test:e2e` 会在 1920×1080 的真实
+Chromium 中核对 SillyTavern 内部状态、SillyLounge 可见 DOM 和楼层导航，并执行两个
+400 楼富文本会话的侧栏往返切换。该测试还会确认虚拟列表没有挂载全部 800 条消息，
+并以即时与平滑两种方式完成未挂载首末楼的跳转。400 楼的可重复性能测量命令与当前基线见
+`PERFORMANCE.md`；只重跑切换场景可使用 `pnpm run test:e2e:switch`。
 
 本地 live 路径是一个指向已验证发布代次的符号链接。替换指针是原子的，因此
 SillyTavern 只会看到完整旧版本或完整新版本；构建或验证失败不会破坏当前运行时。

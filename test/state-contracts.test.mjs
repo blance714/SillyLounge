@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { projectMessageSnapshot } from '../dist/runtime/adapter/schema.js';
+import {
+    projectMessageIndexSnapshot,
+    projectMessageSnapshot,
+} from '../dist/runtime/adapter/schema.js';
 import {
     createCharacterChatKey,
     createConversationLocator,
@@ -55,6 +58,41 @@ import {
 import { createBoundedWorkCoordinator } from '../dist/runtime/store/bounded-work-coordinator.js';
 
 const flushTasks = () => new Promise(resolve => setImmediate(resolve));
+
+test('message index projection ignores expensive content fields', () => {
+    const raw = {
+        is_user: true,
+        is_system: false,
+        extra: {
+            isSmallSys: false,
+            tool_invocations: [],
+        },
+    };
+    for (const field of ['mes', 'swipes', 'name', 'send_date']) {
+        Object.defineProperty(raw, field, {
+            enumerable: true,
+            get() {
+                throw new Error(`message index read expensive field: ${field}`);
+            },
+        });
+    }
+    Object.defineProperty(raw.extra, 'reasoning', {
+        enumerable: true,
+        get() {
+            throw new Error('message index read expensive field: reasoning');
+        },
+    });
+
+    const snapshot = projectMessageIndexSnapshot(raw, 12);
+    assert.deepEqual(snapshot, {
+        id: 12,
+        isSystem: false,
+        isUser: true,
+        isSmallSys: false,
+        isToolCall: true,
+    });
+    assert.equal(Object.isFrozen(snapshot), true);
+});
 
 test('raw messages are normalized into an immutable adapter-boundary DTO', () => {
     const snapshot = projectMessageSnapshot({

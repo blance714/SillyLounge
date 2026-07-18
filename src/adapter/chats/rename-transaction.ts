@@ -23,6 +23,7 @@ import {
     stripChatExt,
 } from './state.js';
 import {
+    RECONCILIATION_RETRY_BUDGET,
     listRawCharacterChatNames,
     persistCharacterChatSelection,
     readCharacterChatSelection,
@@ -96,7 +97,7 @@ async function renameCharacterChatFile(
 
     const before = new Set(beforeNames);
     let loggedReadFailure = false;
-    for (;;) {
+    for (let attempt = 1; ; attempt++) {
         try {
             const afterNames = await listRawCharacterChatNames(avatar);
             const oldExists = afterNames.includes(oldFileName);
@@ -124,7 +125,11 @@ async function renameCharacterChatFile(
         if (!resolveUnknown) return { status: 'unknown' };
         // A current-chat rename must never release the host lane while the file
         // may already have moved and the live pointer still names the old file.
-        // Raw readback is side-effect-free, so retry until the state is known.
+        // Raw readback is side-effect-free, so retry until the state is known —
+        // but a sustained outage must eventually surrender the lane too; past
+        // the shared wall-clock budget, report 'unknown' honestly instead of
+        // retrying forever.
+        if (attempt >= RECONCILIATION_RETRY_BUDGET.maxAttempts) return { status: 'unknown' };
         await waitForRetry();
     }
 }
@@ -173,7 +178,13 @@ export async function renameCharacterChat(
     const forward = await renameCharacterChatFile(avatar, oldBare, next, names, renamingCurrent);
     if (forward.status === 'not-renamed') return invalid;
     if (forward.status === 'unknown') {
-        return renameResult(avatar, oldBare, next, false, false, true);
+        // resolveUnknown above was `renamingCurrent`: a non-current rename
+        // gives up on the very first ambiguous read (no live buffer at risk,
+        // so no reload needed). A current-chat rename only reaches 'unknown'
+        // after exhausting the wall-clock retry budget — the file may have
+        // already moved while the live buffer still names oldBare, so force
+        // a reload rather than leave that divergence live.
+        return renameResult(avatar, oldBare, next, false, false, true, renamingCurrent);
     }
     const actualName = forward.fileName;
     let fileConflict = forward.status === 'conflict';
@@ -241,7 +252,10 @@ export async function renameCharacterChat(
             );
             if (rollback.status === 'renamed' && rollback.fileName === oldBare) return invalid;
             if (rollback.status === 'unknown') {
-                return renameResult(avatar, oldBare, actualName, true, false, true);
+                // Same resolveUnknown === renamingCurrent reasoning as the
+                // forward-rename 'unknown' branch above: only force a reload
+                // when the live buffer is actually the one at risk.
+                return renameResult(avatar, oldBare, actualName, true, false, true, renamingCurrent);
             }
             if (rollback.status === 'conflict') fileConflict = true;
             reconciled = false;
@@ -293,8 +307,15 @@ async function reconcileCurrentRenameSafety(
     oldFileName: string,
     renamedFileName: string,
 ): Promise<Readonly<{ reconciled: boolean; reloadRequired: boolean; fileName: string }>> {
+    // A sustained outage must not wedge the lane forever. Every giveUp() site
+    // below reports the same honest outcome this function already uses when
+    // the durable winner's chat differs from the live buffer: unreconciled,
+    // and a reload is required because only a full reload can safely
+    // determine and apply the correct pointer/buffer pairing once the host
+    // is reachable again.
+    const giveUp = () => ({ reconciled: false, reloadRequired: true, fileName: '' });
     let loggedReadFailure = false;
-    for (;;) {
+    for (let attempt = 1; ; attempt++) {
         let names: string[];
         let durablePointer: string;
         try {
@@ -307,6 +328,7 @@ async function reconcileCurrentRenameSafety(
                 loggedReadFailure = true;
                 console.error('[ChatUI] current rename safety readback failed', error);
             }
+            if (attempt >= RECONCILIATION_RETRY_BUDGET.maxAttempts) return giveUp();
             await waitForRetry();
             continue;
         }
@@ -338,6 +360,7 @@ async function reconcileCurrentRenameSafety(
                     fileName: align.fileName,
                 };
             }
+            if (attempt >= RECONCILIATION_RETRY_BUDGET.maxAttempts) return giveUp();
             await waitForRetry();
             continue;
         }
@@ -363,6 +386,7 @@ async function reconcileCurrentRenameSafety(
         if (!recoveryFile) {
             // Neither side of the rename exists. Do not let a later save invent
             // a new empty file under the stale live name.
+            if (attempt >= RECONCILIATION_RETRY_BUDGET.maxAttempts) return giveUp();
             await waitForRetry();
             continue;
         }
@@ -388,6 +412,7 @@ async function reconcileCurrentRenameSafety(
                 fileName: align.fileName,
             };
         }
+        if (attempt >= RECONCILIATION_RETRY_BUDGET.maxAttempts) return giveUp();
         await waitForRetry();
     }
 }

@@ -17,6 +17,7 @@ const USER_HANDLE = 'default-user';
 const EXTENSION_FOLDER = 'SillyLounge';
 const FIXTURE_MANIFEST_FILE = '_sillylounge-fixture.json';
 const EXTENSION_MODES = new Set(['disabled', 'bootstrap', 'active']);
+const REGEX_MODES = new Set(['active', 'disabled']);
 
 function isPathInside(rootPath, candidatePath) {
     const relative = path.relative(rootPath, candidatePath);
@@ -160,14 +161,20 @@ function conversationRows(fixture, characterName, messages) {
     const epoch = Date.parse(fixture.createdAt);
     messages.forEach((message, index) => {
         const isUser = message.role === 'user';
-        rows.push({
+        const row = {
             name: isUser ? fixture.user.name : characterName,
             is_user: isUser,
             is_name: true,
             send_date: new Date(epoch + (index + 1) * 1000).toISOString(),
             mes: message.text,
-            extra: {},
-        });
+            extra: structuredClone(message.extra ?? {}),
+        };
+        if (Array.isArray(message.swipes)) {
+            row.swipes = structuredClone(message.swipes);
+            row.swipe_id = Number.isInteger(message.swipeId) ? message.swipeId : 0;
+            row.swipe_info = structuredClone(message.swipeInfo ?? []);
+        }
+        rows.push(row);
     });
     return rows;
 }
@@ -190,7 +197,7 @@ async function discoverGlobalExtensionNames(stRoot) {
     return discovered.sort((left, right) => left.localeCompare(right));
 }
 
-function patchSettings(baseSettings, fixture, stVersion, globalExtensions, extensionMode) {
+function patchSettings(baseSettings, fixture, stVersion, globalExtensions, extensionMode, regexMode) {
     const settings = structuredClone(baseSettings);
     settings.firstRun = false;
     settings.currentVersion = stVersion;
@@ -237,12 +244,145 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions, exten
         ...(existing && typeof existing === 'object' ? existing : {}),
         enabled: extensionMode === 'active',
     };
+    settings.extension_settings.character_allowed_regex = fixture.scopedRegexProfile && regexMode === 'active'
+        ? [fixture.character.fileName]
+        : [];
+    settings.accountStorage = settings.accountStorage && typeof settings.accountStorage === 'object'
+        ? settings.accountStorage
+        : {};
+    const scopedRegexAlertKey = `AlertRegex_${fixture.character.fileName}`;
+    if (fixture.scopedRegexProfile && regexMode === 'disabled') {
+        // Match a user who deliberately declined the embedded scripts: keep
+        // them disallowed without ST's one-time consent dialog covering the
+        // page and contaminating the performance baseline.
+        settings.accountStorage[scopedRegexAlertKey] = 'true';
+    } else {
+        delete settings.accountStorage[scopedRegexAlertKey];
+    }
     return settings;
 }
 
-function materializeConversationMessages(fixture) {
-    const source = fixture.conversation?.messages;
+const SYNTHETIC_USER_FILLER = '补充场景、动作与预期。';
+const SYNTHETIC_ASSISTANT_FILLER = '叙事继续沿着环境、人物动作、感官细节与前后因果展开；这段文字完全由测试生成器合成，只用于稳定模拟较长回复的排版、格式化与滚动成本。';
+const SYNTHETIC_REASONING_FILLER = '检查上下文约束，比较可选路径，记录人物状态、空间关系、时间连续性与下一步响应计划；这里只保留合成的推理结构，不包含任何真实对话。';
+
+function profileLength(profile, floor, total) {
+    if (floor === total) return profile.max;
+    const percentile = ((floor * 137) % total) / total;
+    if (percentile >= 0.99 && Number.isInteger(profile.p99)) return profile.p99;
+    if (percentile >= 0.95) return profile.p95;
+    if (percentile >= 0.90) return profile.p90;
+    return profile.p50;
+}
+
+function paddedSyntheticText(prefix, filler, suffix, targetLength) {
+    if (!Number.isInteger(targetLength) || targetLength < prefix.length + suffix.length) {
+        throw new Error('synthetic target length is too short for its required structure');
+    }
+    const remaining = targetLength - prefix.length - suffix.length;
+    const repeated = `${filler}\n\n`.repeat(Math.ceil(remaining / (filler.length + 2)) + 1);
+    return `${prefix}${repeated.slice(0, remaining)}${suffix}`;
+}
+
+function makeCodeBlock(floor) {
+    const rows = Array.from({ length: 12 }, (_, index) => (
+        `  { floor: ${floor}, step: ${index + 1}, state: "synthetic-${(floor + index) % 9}" },`
+    )).join('\n');
+    return `\n\n\`\`\`json\n[\n${rows}\n]\n\`\`\``;
+}
+
+function makeChoiceBlock(floor) {
+    const choices = Array.from({ length: 6 }, (_, index) => (
+        `${String.fromCharCode(65 + index)}. 第 ${floor} 楼的合成路径 ${index + 1}：继续验证状态、动作与上下文连续性。`
+    )).join('\n');
+    return `\n\n<branches>\n<details>\n<summary>synthetic paths</summary>\n${choices}\n</details>\n</branches>`;
+}
+
+function swipeCountForFloor(floor, total) {
+    if (floor === total) return 53;
+    const percentile = ((floor * 137) % total) / total;
+    if (percentile >= 0.95) return 6;
+    if (percentile >= 0.45) return 2;
+    return 1;
+}
+
+function materializeProfiledRichMessages(source) {
+    const { profile, userTurns } = source;
+    if (!profile || typeof profile !== 'object') {
+        throw new Error('profiled-rich fixture must declare a profile');
+    }
+    const messages = [];
+    for (let floor = 1; floor <= userTurns; floor += 1) {
+        const userLength = profileLength(profile.userChars, floor, userTurns);
+        const userPrefix = `第${floor}楼：`;
+        const userText = paddedSyntheticText(userPrefix, SYNTHETIC_USER_FILLER, '。', userLength);
+        messages.push({ role: 'user', text: userText });
+
+        const assistantLength = profileLength(profile.assistantChars, floor, userTurns);
+        const noThinking = floor % 41 === 0;
+        const bothThinkingForms = floor % 100 === 0;
+        const extraReasoning = !noThinking && floor % 5 === 0;
+        const embeddedThinking = !noThinking && (!extraReasoning || bothThinkingForms);
+        const embeddedReasoningLength = profileLength(profile.thinkingChars, floor, userTurns);
+        const separateReasoningLength = profileLength(profile.extraReasoningChars, floor, userTurns);
+        const embeddedReasoning = embeddedThinking
+            ? paddedSyntheticText('', SYNTHETIC_REASONING_FILLER, '', embeddedReasoningLength)
+            : '';
+        const separateReasoning = extraReasoning
+            ? paddedSyntheticText('', SYNTHETIC_REASONING_FILLER, '', separateReasoningLength)
+            : '';
+        const thinkingPrefix = embeddedReasoning
+            ? `<thinking>\n${embeddedReasoning}\n</thinking>\n\n`
+            : '';
+        const hasCodeBlock = ((floor * 37) % 1000) < Math.round(profile.codeBlockRate * 1000);
+        const codeBlock = hasCodeBlock ? makeCodeBlock(floor) : '';
+        const bodyPrefix = `## 合成长回复 · 第 ${floor} 楼\n\n`;
+        const bodySuffix = `${codeBlock}${makeChoiceBlock(floor)}`;
+        const bodyLength = assistantLength - thinkingPrefix.length;
+        const body = paddedSyntheticText(
+            bodyPrefix,
+            SYNTHETIC_ASSISTANT_FILLER,
+            bodySuffix,
+            bodyLength,
+        );
+        const text = `${thinkingPrefix}${body}`;
+        const extra = {
+            reasoning_duration: Number((4 + (floor % 37) * 0.7).toFixed(1)),
+            token_count: Math.ceil((text.length + separateReasoning.length) / 3),
+        };
+        if (separateReasoning) extra.reasoning = separateReasoning;
+
+        const swipeCount = swipeCountForFloor(floor, userTurns);
+        const swipes = Array.from({ length: swipeCount }, (_, index) => (
+            index === 0 ? text : `${text}\n\n<!-- synthetic swipe ${index + 1} -->`
+        ));
+        const swipeInfo = swipes.map((_, index) => ({
+            send_date: new Date(Date.parse('2026-01-03T00:00:00.000Z') + (floor * 100 + index) * 1000).toISOString(),
+            extra: index > 0 && index % 4 === 0
+                ? { reasoning: separateReasoning || embeddedReasoning }
+                : {},
+        }));
+        messages.push({
+            role: 'assistant',
+            text,
+            extra,
+            swipes,
+            swipeId: 0,
+            swipeInfo,
+        });
+    }
+    return messages;
+}
+
+function materializeConversationMessages(conversation) {
+    const source = conversation?.messages;
     if (Array.isArray(source)) return structuredClone(source);
+    if (source?.kind === 'profiled-rich') {
+        if (!Number.isInteger(source.userTurns) || source.userTurns <= 0 || source.userTurns > 10_000) {
+            throw new Error('profiled-rich fixture userTurns must be an integer between 1 and 10000');
+        }
+        return materializeProfiledRichMessages(source);
+    }
     if (source?.kind !== 'alternating') {
         throw new Error('fixture conversation must contain messages or an alternating message generator');
     }
@@ -262,6 +402,179 @@ function materializeConversationMessages(fixture) {
     return messages;
 }
 
+function materializeConversationCopies(conversation) {
+    const configured = conversation?.copies;
+    if (configured === undefined) {
+        return [{ fileName: conversation?.fileName, marker: null }];
+    }
+    if (!Array.isArray(configured) || configured.length === 0) {
+        throw new Error('conversation copies must be a non-empty array');
+    }
+    const copies = configured.map((copy, index) => {
+        safeLeafName(copy?.fileName, `conversation copy ${index} filename`);
+        if (typeof copy?.marker !== 'string' || copy.marker.length === 0 || copy.marker.length > 128) {
+            throw new Error(`conversation copy ${index} marker must be a non-empty string up to 128 characters`);
+        }
+        return { fileName: copy.fileName, marker: copy.marker };
+    });
+    if (copies[0].fileName !== conversation.fileName) {
+        throw new Error('first conversation copy must match the primary conversation filename');
+    }
+    if (new Set(copies.map(copy => copy.fileName)).size !== copies.length) {
+        throw new Error('conversation copy filenames must be unique');
+    }
+    if (new Set(copies.map(copy => copy.marker)).size !== copies.length) {
+        throw new Error('conversation copy markers must be unique');
+    }
+    return copies;
+}
+
+function applyConversationMarker(sourceMessages, marker) {
+    if (!marker) return sourceMessages;
+    const messages = structuredClone(sourceMessages);
+    const label = `会话标记：${marker}`;
+    messages[0].text = `${label}\n\n${messages[0].text}`;
+    const last = messages.at(-1);
+    last.text = `${last.text}\n\n${label}`;
+    if (Array.isArray(last.swipes)) {
+        last.swipes = last.swipes.map(swipe => `${swipe}\n\n${label}`);
+    }
+    return messages;
+}
+
+function syntheticChoiceReplacement(targetLength) {
+    const open = `\`\`\`html
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Synthetic paths</title>
+  <style>
+    :root{color-scheme:dark;font-family:ui-serif,Georgia,serif;background:#17201f;color:#edf3ea}
+    *{box-sizing:border-box}body{margin:0;padding:18px;background:radial-gradient(circle at top right,#36534c 0,transparent 48%),#17201f}
+    .card{overflow:hidden;border:1px solid #78978c;border-radius:16px;background:rgba(20,31,30,.94);box-shadow:0 16px 45px rgba(0,0,0,.35)}
+    header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:20px 22px;border-bottom:1px solid rgba(237,243,234,.16)}
+    h1{margin:0;font-size:21px;letter-spacing:.08em}header p{margin:.35rem 0 0;color:#b9cbc4}.seal{width:36px;height:36px;border:1px solid #b76f61;border-radius:50%;display:grid;place-items:center;color:#e7a492}
+    .grid{display:grid;gap:8px;padding:16px}.metric{display:grid;grid-template-columns:34px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px;border:1px solid rgba(237,243,234,.1);border-radius:10px;background:rgba(255,255,255,.035)}
+    .metric small{display:block;margin-top:3px;color:#9eb3ab}.metric output{font-family:ui-monospace,monospace;color:#c6e0d6}.index{color:#d59684;font-variant-numeric:tabular-nums}
+    details{margin:0 16px 16px;padding:12px 14px;border:1px solid rgba(237,243,234,.12);border-radius:10px}summary{cursor:pointer}button{padding:9px 14px;border:1px solid #78978c;border-radius:999px;background:#29433e;color:#edf3ea;cursor:pointer}.metric.is-selected{border-color:#d59684;transform:translateX(6px)}
+  </style>
+</head>
+<body>
+  <main class="card" data-synthetic-regex="choice">
+    <header><div><h1>Synthetic paths</h1><p>Full-document regex replacement</p></div><button class="theme" type="button">D/N</button></header>
+    <details open><summary>Choose a deterministic continuation</summary><section class="grid"></section></details>
+    <div class="raw-options" hidden>$1$2</div>
+  </main>
+  <script>
+    (function () {
+      const root = document.querySelector('.grid');
+      const raw = document.querySelector('.raw-options');
+      const theme = document.querySelector('.theme');
+      const themeKey = 'sl_fixture_choice_theme';
+      const applyTheme = function () { document.body.dataset.theme = localStorage.getItem(themeKey) || 'day'; };
+      applyTheme();
+      window.addEventListener('sl-fixture-theme-sync', applyTheme);
+      window.addEventListener('storage', function (event) { if (event.key === themeKey) applyTheme(); });
+      theme.addEventListener('click', function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        localStorage.setItem(themeKey, localStorage.getItem(themeKey) === 'night' ? 'day' : 'night');
+        window.dispatchEvent(new Event('sl-fixture-theme-sync'));
+      });
+      raw.textContent.trim().split(/\\r?\\n/).filter(function (line) { return line.trim(); }).forEach(function (line, index) {
+        const text = line.trim().replace(/^[A-Z]\\.\\s*/i, '');
+        if (!text) return;
+        const item = document.createElement('article');
+        item.className = 'metric';
+        item.dataset.action = text;
+        item.innerHTML = '<span class="index">' + String(index + 1).padStart(2, '0') + '</span><div><strong>synthetic path</strong><small>' + text + '</small></div>';
+        item.addEventListener('click', function () {
+          root.querySelectorAll('.metric').forEach(function (candidate) { candidate.classList.remove('is-selected'); });
+          item.classList.add('is-selected');
+          document.body.dataset.selectedPath = item.dataset.action;
+        });
+        root.appendChild(item);
+      });
+    })();
+  </script>
+`;
+    const close = '\n</body>\n</html>\n```';
+    const commentShellLength = '<!---->'.length;
+    const paddingLength = targetLength - open.length - close.length - commentShellLength;
+    if (paddingLength < 0) throw new Error('synthetic choice replacement exceeds target length');
+    const paddingSeed = 'synthetic-choice-document-padding ';
+    const padding = paddingSeed.repeat(Math.ceil(paddingLength / paddingSeed.length) + 1).slice(0, paddingLength);
+    return `${open}<!--${padding}-->${close}`;
+}
+
+function syntheticThinkingReplacement(targetLength) {
+    const open = `<style>
+.sl-thought-wrapper{--accent:#b87361;--muted:#9e9387;--rule:rgba(184,115,97,.28);margin:15px 0;position:relative;white-space:normal}
+.sl-thought-theme{display:none}.sl-thought-wrapper:has(.sl-thought-theme:checked){--accent:#82a99c;--muted:#a8bbb4;--rule:rgba(130,169,156,.3)}
+.sl-thought-toggle{position:absolute;top:0;right:10px;color:var(--muted);font-family:ui-serif,Georgia,serif;font-size:11px;cursor:pointer;letter-spacing:1px;opacity:.3;transition:opacity .3s,color .3s;user-select:none;z-index:10}.sl-thought-wrapper:hover .sl-thought-toggle{opacity:1}
+.sl-thought-wrapper details{border-left:2px solid var(--accent);padding-left:15px;transition:border-color .3s}.sl-thought-wrapper summary{list-style:none;cursor:pointer;font-family:ui-serif,Georgia,serif;font-size:.8rem;color:var(--muted);letter-spacing:2px;opacity:.6;transition:opacity .2s,color .3s;user-select:none}.sl-thought-wrapper summary::-webkit-details-marker{display:none}.sl-thought-wrapper summary:hover{opacity:1}
+.sl-thought-content{margin-top:10px;font-family:ui-serif,Georgia,serif;font-size:.7rem;color:var(--muted);line-height:1.8;opacity:.85;max-height:50vh;overflow-y:auto;padding-right:10px;white-space:pre-wrap;transition:color .3s}.sl-thought-content::-webkit-scrollbar{width:4px}.sl-thought-content::-webkit-scrollbar-track{background:transparent}.sl-thought-content::-webkit-scrollbar-thumb{background:var(--rule);border-radius:4px}
+</style><div class="sl-thought-wrapper" data-synthetic-regex="thought"><label class="sl-thought-toggle" title="Toggle theme"><input type="checkbox" class="sl-thought-theme">D/N</label><details><summary>SYNTHETIC NOTES...</summary><div class="sl-thought-content">$1</div></details>`;
+    const close = '</div>';
+    const commentShellLength = '<!---->'.length;
+    const paddingLength = targetLength - open.length - close.length - commentShellLength;
+    if (paddingLength < 0) throw new Error('synthetic thinking replacement exceeds target length');
+    return `${open}<!--${'reasoning-padding '.repeat(Math.ceil(paddingLength / 18) + 1).slice(0, paddingLength)}-->${close}`;
+}
+
+function syntheticRegexScript(id, scriptName, findRegex, replaceString, overrides = {}) {
+    return {
+        id,
+        scriptName,
+        findRegex,
+        replaceString,
+        trimStrings: overrides.trimStrings ?? [],
+        placement: [2],
+        disabled: false,
+        markdownOnly: true,
+        promptOnly: false,
+        runOnEdit: true,
+        substituteRegex: 0,
+        minDepth: null,
+        maxDepth: overrides.maxDepth ?? null,
+    };
+}
+
+function createSyntheticRegexScripts(profile) {
+    const targets = profile.replacementChars;
+    return [
+        syntheticRegexScript(
+            '00000000-0000-4000-8000-000000000001',
+            'Synthetic path document',
+            '/(?:<branches>\\s+(?:<details>[\\s\\S]*?<summary>[\\s\\S]*?<\\/summary>\\s*)?([\\s\\S]+?)(?:<\\/details>\\s*)?<\\/branches>)|(?:\\[paths\\]\\n((?:[A-Z]\\..+$\\n?)+))/gm',
+            syntheticChoiceReplacement(targets.choice),
+            { maxDepth: 2 },
+        ),
+        syntheticRegexScript(
+            '00000000-0000-4000-8000-000000000002',
+            'Synthetic thought disclosure',
+            '/<thinking>\\s*(.*)\\s*<\\/thinking>/si',
+            syntheticThinkingReplacement(targets.thinking),
+            {
+                maxDepth: 5,
+                trimStrings: ['</', '<', '>', '[', ']', '{', '}', '~'],
+            },
+        ),
+    ];
+}
+
+function materializeCharacterCard(fixture, sourceCard) {
+    const card = structuredClone(sourceCard);
+    if (!fixture.scopedRegexProfile) return card;
+    card.data.extensions = card.data.extensions && typeof card.data.extensions === 'object'
+        ? card.data.extensions
+        : {};
+    card.data.extensions.regex_scripts = createSyntheticRegexScripts(fixture.scopedRegexProfile);
+    return card;
+}
+
 function validateFixture(fixture) {
     if (!fixture || typeof fixture !== 'object') throw new Error('fixture must be an object');
     safeLeafName(fixture.id, 'fixture id');
@@ -270,7 +583,8 @@ function validateFixture(fixture) {
     safeLeafName(fixture.character?.card, 'character card filename');
     safeLeafName(fixture.conversation?.fileName, 'conversation filename');
     if (!fixture.character.fileName.endsWith('.png')) throw new Error('character filename must end in .png');
-    const messages = materializeConversationMessages(fixture);
+    const copies = materializeConversationCopies(fixture.conversation);
+    const messages = materializeConversationMessages(fixture.conversation);
     if (messages.length === 0) throw new Error('fixture conversation must contain messages');
     for (const [index, message] of messages.entries()) {
         if (!['user', 'assistant'].includes(message?.role) || typeof message?.text !== 'string') {
@@ -278,7 +592,7 @@ function validateFixture(fixture) {
         }
     }
     if (!Number.isFinite(Date.parse(fixture.createdAt))) throw new Error('fixture createdAt must be an ISO date');
-    return messages;
+    return { copies, messages };
 }
 
 function validateCharacterCard(card) {
@@ -331,6 +645,7 @@ export async function generateStDataRoot({
     fixturePath: sourceFixturePath = DEFAULT_FIXTURE_PATH,
     stPinPath = DEFAULT_ST_PIN_PATH,
     extensionMode = 'active',
+    regexMode = 'active',
 }) {
     if (!targetRoot || !stRoot || !runtimeRoot) {
         throw new Error('targetRoot, stRoot, and runtimeRoot are required');
@@ -352,9 +667,12 @@ export async function generateStDataRoot({
     if (!EXTENSION_MODES.has(extensionMode)) {
         throw new Error(`invalid extension mode: ${extensionMode}`);
     }
-    const messages = validateFixture(fixture);
+    if (!REGEX_MODES.has(regexMode)) {
+        throw new Error(`invalid regex mode: ${regexMode}`);
+    }
+    const validatedFixture = validateFixture(fixture);
     const characterCardPath = path.join(path.dirname(sourceFixturePath), fixture.character.card);
-    const characterCard = await readJson(characterCardPath);
+    const characterCard = materializeCharacterCard(fixture, await readJson(characterCardPath));
     validateCharacterCard(characterCard);
     await validateRuntimeTree(resolvedRuntimeRoot);
     await assertEmptyTarget(resolvedTarget);
@@ -364,36 +682,43 @@ export async function generateStDataRoot({
     const settingsPath = fixturePath(userRoot, 'settings.json');
     const avatarPath = fixturePath(userRoot, 'User Avatars', fixture.user.avatar);
     const characterPath = fixturePath(userRoot, 'characters', fixture.character.fileName);
-    const chatPath = fixturePath(
-        userRoot,
-        'chats',
-        characterDirName,
-        `${fixture.conversation.fileName}.jsonl`,
-    );
+    const chatRoot = fixturePath(userRoot, 'chats', characterDirName);
     const extensionPath = fixturePath(userRoot, 'extensions', EXTENSION_FOLDER);
 
     await writeJson(
         settingsPath,
-        patchSettings(baseSettings, fixture, pin.version, globalExtensions, extensionMode),
+        patchSettings(baseSettings, fixture, pin.version, globalExtensions, extensionMode, regexMode),
     );
     await fs.mkdir(path.dirname(avatarPath), { recursive: true });
     await fs.writeFile(avatarPath, createSolidPng(128, 128, fixture.user.avatarColor));
     await fs.mkdir(path.dirname(characterPath), { recursive: true });
     await fs.writeFile(characterPath, createCharacterPng(fixture, characterCard));
-    await fs.mkdir(path.dirname(chatPath), { recursive: true });
-    await fs.writeFile(
-        chatPath,
-        `${conversationRows(fixture, characterCard.data.name, messages).map(row => JSON.stringify(row)).join('\n')}\n`,
-        'utf8',
-    );
+    await fs.mkdir(chatRoot, { recursive: true });
+    const generatedConversations = [];
+    for (const copy of validatedFixture.copies) {
+        const messages = applyConversationMarker(validatedFixture.messages, copy.marker);
+        const chatPath = fixturePath(chatRoot, `${copy.fileName}.jsonl`);
+        await fs.writeFile(
+            chatPath,
+            `${conversationRows(fixture, characterCard.data.name, messages).map(row => JSON.stringify(row)).join('\n')}\n`,
+            'utf8',
+        );
+        generatedConversations.push({
+            fileName: copy.fileName,
+            marker: copy.marker,
+            messageCount: messages.length,
+            userTurns: messages.filter(message => message.role === 'user').length,
+            kind: fixture.conversation.messages?.kind ?? 'literal',
+            path: chatPath,
+        });
+    }
     await fs.cp(resolvedRuntimeRoot, extensionPath, {
         recursive: true,
         dereference: true,
         errorOnExist: true,
     });
 
-    const messageCount = messages.length;
-    const userTurns = messages.filter(message => message.role === 'user').length;
+    const primaryConversation = generatedConversations[0];
     const manifest = {
         schemaVersion: pin.fixtureSchema,
         fixture: fixture.id,
@@ -413,12 +738,15 @@ export async function generateStDataRoot({
             source: fixture.character.card,
         },
         conversation: {
-            fileName: fixture.conversation.fileName,
-            messageCount,
-            userTurns,
+            fileName: primaryConversation.fileName,
+            messageCount: primaryConversation.messageCount,
+            userTurns: primaryConversation.userTurns,
+            kind: primaryConversation.kind,
         },
+        conversations: generatedConversations.map(({ path: _path, ...conversation }) => conversation),
         extension: EXTENSION_FOLDER,
         extensionMode,
+        regexMode,
     };
     const manifestPath = fixturePath(resolvedTarget, FIXTURE_MANIFEST_FILE);
     await writeJson(manifestPath, manifest);
@@ -430,7 +758,11 @@ export async function generateStDataRoot({
             settings: settingsPath,
             avatar: avatarPath,
             character: characterPath,
-            chat: chatPath,
+            chat: primaryConversation.path,
+            chats: Object.freeze(generatedConversations.map(conversation => Object.freeze({
+                fileName: conversation.fileName,
+                path: conversation.path,
+            }))),
             extension: extensionPath,
             manifest: manifestPath,
         }),
@@ -452,6 +784,7 @@ async function main() {
         runtimeRoot: values.runtime,
         fixturePath: values.fixture,
         extensionMode: values.mode,
+        regexMode: values.regex,
     });
     const digest = crypto.createHash('sha256')
         .update(JSON.stringify(result.manifest))

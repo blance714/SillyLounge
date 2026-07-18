@@ -1,0 +1,33 @@
+{
+    "spec": "chara_card_v2",
+    "spec_version": "2.0",
+    "data": {
+        "name": "Lounge Switch Performance Character",
+        "description": "用于 SillyLounge 双长对话切换测试的完全合成角色。",
+        "personality": "稳定、结构化、可重复。",
+        "scenario": "这是一个不连接模型、不含真实用户内容的本地压力测试场景。",
+        "first_mes": "双长对话切换测试角色已就绪。",
+        "mes_example": "<START>\nSynthetic Switch Test User: 合成测试消息\nLounge Switch Performance Character: 合成长回复",
+        "creator_notes": "Synthetic fixture derived from anonymous aggregate statistics. Contains no private user data.",
+        "system_prompt": "",
+        "post_history_instructions": "",
+        "alternate_greetings": [],
+        "tags": [
+            "sillylounge-test",
+            "performance",
+            "switching"
+        ],
+        "creator": "SillyLounge",
+        "character_version": "1.0.0",
+        "extensions": {
+            "talkativeness": 0.5,
+            "fav": false,
+            "world": "",
+            "depth_prompt": {
+                "prompt": "",
+                "depth": 4,
+                "role": "system"
+            }
+        }
+    }
+}

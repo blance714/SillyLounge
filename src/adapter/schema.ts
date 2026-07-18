@@ -53,6 +53,41 @@ export const StMessageSchema = z.catchall(z.object({
 }), z.unknown());
 export type StMessageRecord = z.infer<typeof StMessageSchema>;
 
+const StMessageIndexExtraSchema = z.catch(z.object({
+    isSmallSys: BooleanFieldSchema,
+    tool_invocations: z.unknown(),
+}), () => ({
+    isSmallSys: false,
+    tool_invocations: undefined,
+}));
+
+const StMessageIndexSchema = z.catch(z.object({
+    is_system: BooleanFieldSchema,
+    is_user: BooleanFieldSchema,
+    extra: StMessageIndexExtraSchema,
+}), () => ({
+    is_system: false,
+    is_user: false,
+    extra: {
+        isSmallSys: false,
+        tool_invocations: undefined,
+    },
+}));
+
+/**
+ * Minimal all-history projection used to build list identity and floor pairs.
+ * It deliberately ignores message text, swipes, reasoning, and attachments so
+ * changing chats does not parse expensive content that is outside the virtual
+ * window.
+ */
+export type MessageIndexSnapshotDto = Readonly<{
+    id: number;
+    isSystem: boolean;
+    isUser: boolean;
+    isSmallSys: boolean;
+    isToolCall: boolean;
+}>;
+
 /**
  * Immutable, fully-normalized view of one live ST message. Raw host records
  * stop at the adapter boundary; store/UI code can consume this shape without
@@ -121,6 +156,17 @@ export function parseChatRows(value: unknown): StChatRow[] {
 export function parseMessageRecord(value: unknown): StMessageRecord | null {
     const parsed = StMessageSchema.safeParse(value);
     return parsed.success ? parsed.data : null;
+}
+
+export function projectMessageIndexSnapshot(value: unknown, id: number): MessageIndexSnapshotDto {
+    const message = StMessageIndexSchema.parse(value);
+    return Object.freeze({
+        id,
+        isSystem: message.is_system,
+        isUser: message.is_user,
+        isSmallSys: message.extra.isSmallSys,
+        isToolCall: Array.isArray(message.extra.tool_invocations),
+    });
 }
 
 function stringOrNumberOrNull(value: unknown): string | number | null {

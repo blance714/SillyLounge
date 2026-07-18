@@ -252,10 +252,13 @@ the architecture review:
   covers update/delete/swipe. The extracted bounded coordinator marks an active
   query dirty and requeues exactly one follow-up; inactive first-prefetch work
   awaits the old promise then calls `query.fetch()` directly;
-- runtime publication is staging-first and atomic. The current 36-test Node
-  suite covers typed filename locators and rename migration, message snapshots,
-  temp/composer CAS, host queue/reload semantics, bounded dirty/requeue behavior,
-  manifest/import/path contracts, vendor drift, and release switching.
+- runtime publication is staging-first and atomic. The Node suite's coverage is
+  inventoried invariant-by-invariant in INVARIANTS.md (bidirectionally validated
+  by `pnpm run check:invariants`, so counts are never hand-written here): typed
+  filename locators and rename migration, message snapshots, temp/composer CAS,
+  host queue/reload semantics, chat rename/delete transactions, generation-lane
+  guards, lazy DTO caching, manifest/import/path contracts, and release
+  switching.
 
 `ROADMAP.md` is the authoritative priority backlog. Current top items:
 
@@ -363,7 +366,7 @@ report-only until stable cross-run budgets exist.
 
 Automated checks for the committed hardening baseline:
 
-- `CI=true pnpm run verify` (typecheck + 53 Node tests + build + assembled-tree contract)
+- `CI=true pnpm run verify` (typecheck + layer boundaries + Node tests + invariant map + build + assembled-tree contract; see INVARIANTS.md for the test-by-test inventory)
 - `CI=true pnpm run runtime` (build + validate candidate + atomic live publish)
 - `CI=true pnpm run check:runtime` (validate the current live runtime tree)
 - `SILLYTAVERN_TEST_ROOT=… pnpm run test:st` (pinned disposable host smoke)

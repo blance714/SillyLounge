@@ -12,6 +12,21 @@ export function waitForRetry(delayMs = 250): Promise<void> {
     return new Promise(resolve => window.setTimeout(resolve, delayMs));
 }
 
+/**
+ * Wall-clock budget shared by every reconciliation retry loop in this module
+ * and in rename-transaction.ts / delete-transaction.ts. Those loops must
+ * never release the single serialized host-operation lane while durable
+ * state is ambiguous, but a sustained network/host outage must not wedge
+ * that lane forever either — each loop retries every waitForRetry() interval
+ * (250ms by default) for up to `maxAttempts` attempts, then gives up and
+ * reports the honest ambiguous/uncertain outcome its surrounding contract
+ * already models. ~120 attempts * 250ms ≈ 30s of wall-clock retrying.
+ * A mutable object (not a primitive constant) so tests can shrink
+ * `maxAttempts` to exercise expiry deterministically without spinning
+ * hundreds of fake-timer ticks; production code never mutates it.
+ */
+export const RECONCILIATION_RETRY_BUDGET = { maxAttempts: 120 };
+
 async function writeCharacterChatSelection(
     avatar: string,
     fileName: string,
@@ -60,7 +75,7 @@ export async function persistCharacterChatSelection(
     let hadAmbiguousWrite = writeState === 'ambiguous';
     let loggedReadFailure = false;
 
-    for (;;) {
+    for (let attempt = 1; ; attempt++) {
         try {
             const persisted = await readCharacterChatSelection(avatar);
             if (persisted === target) return { status: 'persisted', fileName: target };
@@ -81,6 +96,11 @@ export async function persistCharacterChatSelection(
             }
             if (!hadAmbiguousWrite && writeState === 'rejected') return { status: 'rejected' };
         }
+
+        // A sustained outage must not wedge the lane forever: past the shared
+        // wall-clock budget, admit the outcome could not be determined rather
+        // than fabricate one.
+        if (attempt >= RECONCILIATION_RETRY_BUDGET.maxAttempts) return { status: 'unknown' };
 
         await waitForRetry();
         if (!hadAmbiguousWrite && writeState === 'accepted') {

@@ -70,7 +70,7 @@ function MessageItemComponent({
                     <MessageReasoning message={message} />
                     {shouldShowBody && (
                         <div
-                            className="cui-root-message-body"
+                            className="cui-root-message-body mes_text"
                             dangerouslySetInnerHTML={{ __html: message.html }}
                         />
                     )}

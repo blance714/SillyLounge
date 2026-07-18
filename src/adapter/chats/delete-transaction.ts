@@ -19,6 +19,7 @@ import {
     stripChatExt,
 } from './state.js';
 import {
+    RECONCILIATION_RETRY_BUDGET,
     listRawCharacterChatNames,
     persistCharacterChatSelection,
     waitForRetry,
@@ -164,7 +165,8 @@ export async function deleteCharacterChat(
     }
     let deleted = false;
     let loggedDeleteReadFailure = false;
-    for (;;) {
+    let deletionUncertain = false;
+    for (let attempt = 1; ; attempt++) {
         try {
             const afterNames = await listRawCharacterChatNames(avatar);
             deleted = !afterNames.includes(bareName);
@@ -177,8 +179,28 @@ export async function deleteCharacterChat(
             // DELETE may already have committed. Releasing the lane would either
             // miss cleanup or let the stale current buffer recreate the file.
             // Resolve from raw state before deciding rollback/reload.
+            if (attempt >= RECONCILIATION_RETRY_BUDGET.maxAttempts) {
+                deletionUncertain = true;
+                break;
+            }
             await waitForRetry();
         }
+    }
+
+    if (deletionUncertain) {
+        // A sustained outage leaves DELETE's outcome permanently ambiguous.
+        // Attempting the usual rollback below would be actively wrong if the
+        // delete actually committed: it would durably repoint the character
+        // card at a file that no longer exists. Leave any already-moved
+        // pointer exactly where it is (it was moved to a real replacement
+        // file before DELETE was even sent, so it stays valid either way) and
+        // report the honest uncertain outcome instead of guessing.
+        return {
+            deleted: false,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: deletingCurrent,
+        };
     }
 
     if (!deleted) {
