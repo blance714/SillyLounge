@@ -18,6 +18,7 @@ declare module '@st/script' {
     export const createOrEditCharacter: any;
     export const doNewChat: any;
     export const getCurrentChatDetails: any;
+    export function ensureSwipes(message: any): boolean;
     export function extractMessageBias(message: string): string;
     export function getFirstDisplayedMessageId(): number;
     export const getPastCharacterChats: any;
@@ -36,15 +37,35 @@ declare module '@st/script' {
     export function sendTextareaMessage(): Promise<unknown>;
     export function setEditedMessageId(value: number | undefined): void;
     export function stopGeneration(): boolean;
+    export function substituteParams(content: string, options?: Record<string, unknown>): string;
     export const swipe: any;
     export const swipeState: string;
     export const syncSwipeToMes: any;
+    export const system_message_types: Record<string, string>;
     export function updateViewMessageIds(startIndex?: number | null): void;
     export function updateEditArrowClasses(): void;
 }
 
 declare module '@st/itemized-prompts' {
     export function deleteItemizedPromptForMessage(messageId: number): void;
+}
+
+declare module '@st/regex-engine' {
+    export function getRegexedString(rawString: string, placement: number, params?: {
+        characterOverride?: string;
+        isMarkdown?: boolean;
+        isPrompt?: boolean;
+        isEdit?: boolean;
+        depth?: number;
+    }): string;
+    export const regex_placement: {
+        MD_DISPLAY: number;
+        USER_INPUT: number;
+        AI_OUTPUT: number;
+        SLASH_COMMAND: number;
+        WORLD_INFO: number;
+        REASONING: number;
+    };
 }
 
 declare module '@st/slash-commands' {

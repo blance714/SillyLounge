@@ -1,14 +1,18 @@
 // test/messages.test.mjs
 //
-// dist/runtime/adapter/messages.js delete/swipe/hide/copy/branch/checkpoint
-// argument matrix. Source: src/adapter/messages.ts (getDeleteEligibility,
-// getConfirmMessageDeleteSetting, deleteMessageWithIntent, _deleteSwipeById,
-// swipeMessage, toggleHideMessage, copyMessage, createBranch,
-// createCheckpoint, triggerMessageActionById). These delegate to @st/script's
-// exported saveChatDebounced/setEditedMessageId/refreshSwipeButtons/
+// dist/runtime/adapter/messages.js delete/swipe/hide/copy/branch/checkpoint/
+// edit argument matrix. Source: src/adapter/messages.ts
+// (getDeleteEligibility, getConfirmMessageDeleteSetting,
+// deleteMessageWithIntent, _deleteSwipeById, swipeMessage,
+// toggleHideMessage, copyMessage, createBranch, createCheckpoint,
+// saveMessageEditById, triggerMessageActionById). These delegate to
+// @st/script's exported saveChatDebounced/refreshSwipeButtons/
 // updateEditArrowClasses/syncSwipeToMes/swipe/saveChatConditional/
-// eventSource, @st/itemized-prompts's deleteItemizedPromptForMessage,
-// @st/bookmarks's branchChat/createNewBookmark, @st/chats's
+// ensureSwipes/extractMessageBias/removeMacros/substituteParams/
+// system_message_types/eventSource, @st/regex-engine's exported
+// getRegexedString/regex_placement, @st/itemized-prompts's
+// deleteItemizedPromptForMessage, @st/bookmarks's
+// branchChat/createNewBookmark, @st/chats's
 // hideChatMessage/unhideChatMessage, and @st/utils's copyText — wrong
 // arguments here silently destroy the wrong swipe or the wrong message, so
 // every branch of ST's native .mes_edit_delete policy is pinned exactly, not
@@ -18,16 +22,16 @@
 // live `.mes` node and read nothing but `getContext().chat` (via
 // getMessageById), so a plain numeric id — no `.mes` element, real or fake —
 // drives every one of them, including through the shared
-// triggerMessageActionById dispatch entry point. edit and regen are
-// unchanged this tier: they still resolve `#chat .mes[mesid="X"]` via
-// getMessageElementById, a compound selector the fake DOM deliberately
-// doesn't support (see test/helpers/fake-st-host.mjs's module doc comment),
-// so those two remain a Chromium e2e concern, not a unit-test one.
+// triggerMessageActionById dispatch entry point. regen is unchanged this
+// tier: it still resolves `#chat .mes[mesid="X"]` via getMessageElementById,
+// a compound selector the fake DOM deliberately doesn't support (see
+// test/helpers/fake-st-host.mjs's module doc comment), so it remains a
+// Chromium e2e concern, not a unit-test one.
 //
 // DOM-DECOUPLING.md Tier 2 (2026-07-19): full-message delete is now a thin
 // fork too (_deleteFullMessageById, tested below via deleteMessageWithIntent)
 // — DOM-*tolerant*, not DOM-gated. `_deleteFullMessageById` still can't have
-// its own `mesEl?.remove()` step exercised here — like edit/regen above, that
+// its own `mesEl?.remove()` step exercised here — like regen above, that
 // depends on `getMessageElementById`'s compound selector, which the fake DOM
 // can't resolve, so it always finds nothing here (a real-browser-only
 // concern; see the repro HTML files cited in messages.ts's doc comments). The
@@ -46,6 +50,18 @@
 // store/chat-actions.ts's job now, covered by test/chat-actions.test.mjs and
 // test/confirm-store.test.mjs instead. triggerMessageActionById no longer
 // dispatches 'delete' at all (see its own test below).
+//
+// DOM-DECOUPLING.md Tier 3 (2026-07-19): edit-save is now a thin fork too
+// (saveMessageEditById, tested directly below) — fully DOM-free, unlike Tier
+// 1/2's synthetic-click implementation. Because it never touches
+// `getMessageElementById`'s compound selector at all, it is fully
+// unit-testable for the first time; the one still-gated branch
+// (_healRenderedMessageRow's "row is actually rendered" path) walks `#chat`
+// .children directly, same technique as `_renumberRenderedRowsAfterDelete`,
+// so a real (fake-DOM) `#chat` tree exercises it too, below. `edit` was also
+// removed from triggerMessageActionById's dispatch entirely this tier — see
+// its own test below — since nothing in the real UI ever routed through it
+// (entering edit mode has always been local Preact state).
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -259,7 +275,7 @@ test('deleteMessageWithIntent: "swipe" intent forwards mesId/swipeId straight to
     }
 });
 
-test('deleteMessageWithIntent: "message" intent (the full-message fork) reproduces the exact native post-gate sequence — splice, tainted, itemized-prompt invalidation, DOM-tolerant renumber, debounced save, this_edit_mes_id reset, refreshSwipeButtons, MESSAGE_DELETED payload — in ST\'s exact order, entirely without a rendered .mes node', async () => {
+test('deleteMessageWithIntent: "message" intent (the full-message fork) reproduces the exact native post-gate sequence — splice, tainted, itemized-prompt invalidation, DOM-tolerant renumber, debounced save, refreshSwipeButtons, MESSAGE_DELETED payload — in ST\'s exact order, entirely without a rendered .mes node', async () => {
     const host = await createFakeStHost();
     try {
         const messages = await host.importModule('adapter/messages.js');
@@ -271,13 +287,8 @@ test('deleteMessageWithIntent: "message" intent (the full-message fork) reproduc
         host.registry.deleteItemizedPromptForMessage = (id) => calls.push(['deleteItemizedPromptForMessage', id]);
         host.registry.updateEditArrowClasses = () => calls.push(['updateEditArrowClasses']);
         host.registry.saveChatDebounced = () => calls.push(['saveChatDebounced']);
-        host.registry.setEditedMessageId = (value) => calls.push(['setEditedMessageId', value]);
         host.registry.refreshSwipeButtons = () => calls.push(['refreshSwipeButtons']);
         host.eventSource.on(host.event_types.MESSAGE_DELETED, (chatLength) => calls.push(['MESSAGE_DELETED', chatLength]));
-
-        // A dangling shadow from a prior failed edit-save on this exact id —
-        // see _shadowEditedMessageId's doc comment in src/adapter/messages.ts.
-        messages.__setShadowEditedMessageIdForTesting(TARGET_ID);
 
         const beforeChatRef = host.context.chat;
         await messages.deleteMessageWithIntent(TARGET_ID, 'message');
@@ -295,7 +306,6 @@ test('deleteMessageWithIntent: "message" intent (the full-message fork) reproduc
             // `.mes` rows.
             ['updateEditArrowClasses'],
             ['saveChatDebounced'],
-            ['setEditedMessageId', undefined],
             ['refreshSwipeButtons'],
             ['MESSAGE_DELETED', 4],
         ], 'every observable side effect must fire, in exactly this order');
@@ -329,7 +339,6 @@ test('deleteMessageWithIntent: "message" intent — rendered-row renumber (mesid
         host.registry.deleteItemizedPromptForMessage = () => undefined;
         host.registry.updateEditArrowClasses = () => undefined;
         host.registry.saveChatDebounced = () => undefined;
-        host.registry.setEditedMessageId = () => undefined;
         host.registry.refreshSwipeButtons = () => undefined;
 
         const chatContainer = createChatContainer();
@@ -362,7 +371,6 @@ test('deleteMessageWithIntent: "message" intent — rendered-row renumber: rows 
         host.registry.deleteItemizedPromptForMessage = () => undefined;
         host.registry.updateEditArrowClasses = () => undefined;
         host.registry.saveChatDebounced = () => undefined;
-        host.registry.setEditedMessageId = () => undefined;
         host.registry.refreshSwipeButtons = () => undefined;
 
         const chatContainer = createChatContainer();
@@ -401,7 +409,6 @@ test('deleteMessageWithIntent: "message" intent — rendered-row renumber: delet
         const arrowCalls = [];
         host.registry.updateEditArrowClasses = () => arrowCalls.push(1);
         host.registry.saveChatDebounced = () => undefined;
-        host.registry.setEditedMessageId = () => undefined;
         host.registry.refreshSwipeButtons = () => undefined;
 
         // Only the last message (id 9 of 10) is rendered, and it is exactly
@@ -427,7 +434,6 @@ test('deleteMessageWithIntent: "message" intent — rendered-row renumber: delet
         host.registry.deleteItemizedPromptForMessage = () => undefined;
         host.registry.updateEditArrowClasses = () => undefined;
         host.registry.saveChatDebounced = () => undefined;
-        host.registry.setEditedMessageId = () => undefined;
         host.registry.refreshSwipeButtons = () => undefined;
 
         const chatContainer = createChatContainer();
@@ -446,33 +452,13 @@ test('deleteMessageWithIntent: "message" intent — rendered-row renumber: delet
     }
 });
 
-test('deleteMessageWithIntent: "message" intent resets the this_edit_mes_id shadow and calls setEditedMessageId(undefined) only when the shadow equals the deleted id, never for a different message', async () => {
-    const host = await createFakeStHost();
-    try {
-        const messages = await host.importModule('adapter/messages.js');
-        host.registry.deleteItemizedPromptForMessage = () => undefined;
-        host.registry.updateEditArrowClasses = () => undefined;
-        host.registry.saveChatDebounced = () => undefined;
-        host.registry.refreshSwipeButtons = () => undefined;
-
-        const setCalls = [];
-        host.registry.setEditedMessageId = (value) => setCalls.push(value);
-
-        // The shadow tracks a *different* message than the one being deleted.
-        host.context.chat = buildChat(2, 5, {});
-        messages.__setShadowEditedMessageIdForTesting(9);
-        await messages.deleteMessageWithIntent(2, 'message');
-        assert.deepEqual(setCalls, [], 'a shadow tracking a different id must be left untouched');
-
-        // The shadow tracks exactly the message now being deleted.
-        host.context.chat = buildChat(1, 5, {});
-        messages.__setShadowEditedMessageIdForTesting(1);
-        await messages.deleteMessageWithIntent(1, 'message');
-        assert.deepEqual(setCalls, [undefined], 'the shadow tracking the deleted id must be reset via setEditedMessageId(undefined)');
-    } finally {
-        await host.dispose();
-    }
-});
+// The this_edit_mes_id-shadow-reset test that used to live here was removed
+// along with the shadow mechanism itself (DOM-DECOUPLING.md Tier 3,
+// 2026-07-19) — see _deleteFullMessageById's doc comment in
+// src/adapter/messages.ts for why: saveMessageEditById() no longer opens a
+// native edit session at all, so it is no longer the "one ChatUI path that
+// sets the real this_edit_mes_id" the shadow existed to mirror, and nothing
+// else in this repo ever calls setEditedMessageId() anymore either.
 
 test('_deleteSwipeById: splices the deleted swipe out of the live chat entry, reassigns swipe_id, marks chat_metadata tainted, emits MESSAGE_SWIPE_DELETED, and resyncs mes via syncSwipeToMes when the deleted swipe was the message\'s active swipe', async () => {
     const host = await createFakeStHost();
@@ -924,17 +910,13 @@ test('triggerMessageActionById: "delete" is not dispatched here at all (Tier 2) 
     }
 });
 
-test('triggerMessageActionById: edit and regen still throw when no #chat .mes element is present (unchanged this tier)', async () => {
+test('triggerMessageActionById: "regen" still throws when no #chat .mes element is present (unchanged this tier — a generation-menu path, untouched by the edit fork)', async () => {
     const host = await createFakeStHost();
     try {
         const messages = await host.importModule('adapter/messages.js');
         const TARGET_ID = 6;
         host.context.chat = buildChat(TARGET_ID, TARGET_ID + 1, {});
 
-        await assert.rejects(
-            () => messages.triggerMessageActionById(TARGET_ID, 'edit'),
-            /Message element not found for edit/,
-        );
         await assert.rejects(
             () => messages.triggerMessageActionById(TARGET_ID, 'regen'),
             /Message element not found for regen/,
@@ -944,93 +926,382 @@ test('triggerMessageActionById: edit and regen still throw when no #chat .mes el
     }
 });
 
-// saveMessageEditById (src/adapter/messages.ts, editMessage-saving path) is
-// not drivable end-to-end through this harness: it needs
-// getMessageElementById() to resolve `#chat .mes[mesid="X"]`, a compound
-// selector the fake DOM deliberately doesn't support (see
-// test/helpers/fake-st-host.mjs's module doc comment) — so
-// getMessageElementById() always returns null here, the same gap noted above
-// for triggerMessageActionById('edit'|'regen', ...).
-//
-// _dispatchClickAndWait() (src/adapter/internals.ts) — the piece that changed
-// and the one that can wedge the shared host-operation queue forever with
-// zero diagnostics if it fails open — is exported standalone and needs
-// nothing but a fake jQuery, so it's driven directly here instead.
-function installFakeJQuery(host, resultForClick) {
-    host.window.$ = Object.assign(
-        () => ({
-            // Real jQuery's .trigger() runs the delegated handler chain
-            // synchronously and leaves its return value on event.result
-            // before returning, which is exactly what messages.ts relies on.
-            trigger(event) {
-                event.result = typeof resultForClick === 'function' ? resultForClick() : resultForClick;
-            },
-        }),
-        { Event: (type) => ({ type, result: undefined }) },
-    );
-}
-
-test('_dispatchClickAndWait rejects with a descriptive error instead of hanging forever when the delegated handler returns no awaitable result', async () => {
+test('triggerMessageActionById: "edit" is not dispatched here at all (Tier 3) — never reachable from the real UI to begin with (entering edit mode is local Preact state), a runtime "edit" string falls through to the same silent default no-op "delete" already uses', async () => {
     const host = await createFakeStHost();
     try {
-        const internals = await host.importModule('adapter/internals.js');
-        installFakeJQuery(host, 'not-a-promise');
+        const messages = await host.importModule('adapter/messages.js');
+        const TARGET_ID = 6;
+        host.context.chat = buildChat(TARGET_ID, TARGET_ID + 1, { is_user: false, is_system: false, extra: {} });
+        const beforeMes = host.context.chat[TARGET_ID].mes;
 
-        const button = document.createElement('button');
-        button.id = 'mes_edit_done';
+        host.registry.saveChatConditional = () => {
+            throw new Error('the edit-save fork must never run for an "edit" action dispatched through triggerMessageActionById');
+        };
 
-        await assert.rejects(internals._dispatchClickAndWait(button), (error) => {
-            assert.match(error.message, /did not return an awaitable result/);
-            return true;
+        // Not a TypeScript-representable call (MessageAction no longer
+        // includes 'edit'), but nothing stops a raw string reaching this
+        // compiled JS function at runtime.
+        await messages.triggerMessageActionById(TARGET_ID, 'edit');
+
+        assert.equal(host.context.chat[TARGET_ID].mes, beforeMes, 'no message may be edited by this call');
+    } finally {
+        await host.dispose();
+    }
+});
+
+// saveMessageEditById (src/adapter/messages.ts) — DOM-DECOUPLING.md Tier 3
+// (2026-07-19) contract-test list: fixed inputs + tagged registry stubs for
+// every pure function (getRegexedString/substituteParams/extractMessageBias/
+// removeMacros/ensureSwipes) so composition ORDER is directly observable in
+// the final string, not just "was called". Unlike Tier 1/2's edit path, this
+// one is now fully DOM-free — no `#chat .mes[mesid="X"]` dependency anywhere
+// — so it is unit-testable end to end for the first time.
+
+test('saveMessageEditById: regexPlacement selection matches ST\'s own 3-branch is_user / narrator-type switch exactly (regex_placement.USER_INPUT=1, SLASH_COMMAND=3, AI_OUTPUT=2 — public/scripts/extensions/regex/engine.js)', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        const placements = [];
+        host.registry.getRegexedString = (text, placement) => { placements.push(placement); return text; };
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
+
+        host.context.chat = [
+            { mes: 'x', swipes: ['x'], is_user: true, is_system: false, extra: {} },
+            { mes: 'x', swipes: ['x'], is_user: false, is_system: false, extra: { type: 'narrator' } },
+            { mes: 'x', swipes: ['x'], is_user: false, is_system: false, extra: {} },
+        ];
+
+        await messages.saveMessageEditById(0, 'text'); // is_user -> USER_INPUT
+        await messages.saveMessageEditById(1, 'text'); // narrator -> SLASH_COMMAND
+        await messages.saveMessageEditById(2, 'text'); // else -> AI_OUTPUT
+
+        assert.deepEqual(placements, [1, 3, 2]);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: characterOverride passed to getRegexedString is each message\'s own name field (the correct per-member override in group chats, not a shared default), and is explicitly undefined for narrator-typed messages regardless of their own name', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        const overrides = [];
+        host.registry.getRegexedString = (text, _placement, opts) => { overrides.push(opts.characterOverride); return text; };
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
+
+        // Two different group members' own messages in the same chat array —
+        // each edit must read *that* record's own `.name`, never some
+        // shared group-wide default.
+        host.context.chat = [
+            { mes: 'x', swipes: ['x'], is_user: false, is_system: false, name: 'Aria', extra: {} },
+            { mes: 'x', swipes: ['x'], is_user: false, is_system: false, name: 'Beorn', extra: {} },
+            { mes: 'x', swipes: ['x'], is_user: false, is_system: false, name: 'Narrator Voice', extra: { type: 'narrator' } },
+        ];
+
+        await messages.saveMessageEditById(0, 'text');
+        await messages.saveMessageEditById(1, 'text');
+        await messages.saveMessageEditById(2, 'text');
+
+        assert.deepEqual(overrides, ['Aria', 'Beorn', undefined]);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: getRegexedString -> substituteParams -> removeMacros compose in ST\'s exact order, extractMessageBias runs on the post-regex/pre-main-substitution text, and mes.mes/swipes[swipe_id] end up byte-identical', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        const TARGET_ID = 4;
+        // is_system so the computed bias also persists to extra.bias below,
+        // while regexPlacement selection (which only checks is_user/narrator,
+        // never is_system) still resolves to AI_OUTPUT — pinning that
+        // is_system does not affect placement selection.
+        host.context.chat = buildChat(TARGET_ID, 6, {
+            is_user: false, is_system: true, name: 'System', extra: {}, swipe_id: 0, swipes: ['old'],
         });
+        host.context.chatMetadata = {};
+
+        host.registry.getRegexedString = (text, placement, opts) => `R[${placement}|${opts.characterOverride}|${opts.isEdit}](${text})`;
+        host.registry.substituteParams = (text) => `S(${text})`;
+        host.registry.extractMessageBias = (text) => `B(${text})`;
+        host.registry.removeMacros = (text) => `M(${text})`;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
+
+        await messages.saveMessageEditById(TARGET_ID, 'RAW');
+
+        const mes = host.context.chat[TARGET_ID];
+        assert.equal(mes.mes, 'M(S(R[2|System|true](RAW)))', 'final text: regex, then substituteParams, then removeMacros (bias was truthy)');
+        assert.equal(mes.swipes[0], mes.mes, 'the active swipe slot mirrors mes.mes exactly');
+        assert.equal(mes.extra.bias, 'S(B(R[2|System|true](RAW)))', 'bias = substituteParams(extractMessageBias(...)) applied to the post-regex text, before that same text is fed through the main substituteParams call');
+        assert.equal(host.context.chatMetadata.tainted, true);
     } finally {
         await host.dispose();
     }
 });
 
-test('_dispatchClickAndWait resolves with the delegated handler\'s settled value when it returns a real promise', async () => {
+test('saveMessageEditById: extra.bias is set to the computed bias only for is_system/is_user/narrator messages; every other message type gets extra.bias forced to null even though the same truthy bias still gated removeMacros for all of them', async () => {
     const host = await createFakeStHost();
     try {
-        const internals = await host.importModule('adapter/internals.js');
-        installFakeJQuery(host, () => Promise.resolve('messageEditDone-result'));
+        const messages = await host.importModule('adapter/messages.js');
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => ' {{bias tagged}}';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
 
-        const button = document.createElement('button');
-        const value = await internals._dispatchClickAndWait(button, 50);
+        const cases = [
+            { label: 'is_user', overrides: { is_user: true, is_system: false, extra: {} } },
+            { label: 'is_system', overrides: { is_user: false, is_system: true, extra: {} } },
+            { label: 'narrator', overrides: { is_user: false, is_system: false, extra: { type: 'narrator' } } },
+        ];
 
-        assert.equal(value, 'messageEditDone-result');
+        for (const { label, overrides } of cases) {
+            const TARGET_ID = 2;
+            host.context.chat = buildChat(TARGET_ID, 5, overrides);
+            await messages.saveMessageEditById(TARGET_ID, 'text');
+            assert.equal(host.context.chat[TARGET_ID].extra.bias, ' {{bias tagged}}', `${label}: bias must persist`);
+        }
+
+        const TARGET_ID = 2;
+        host.context.chat = buildChat(TARGET_ID, 5, { is_user: false, is_system: false, extra: {} });
+        await messages.saveMessageEditById(TARGET_ID, 'text');
+        assert.equal(host.context.chat[TARGET_ID].extra.bias, null, 'plain AI message: bias forced to null');
     } finally {
         await host.dispose();
     }
 });
 
-test('_dispatchClickAndWait rejects with a distinct timeout error instead of hanging forever when the delegated handler\'s promise never settles', async () => {
+test('saveMessageEditById: ensureSwipes runs strictly before the swipes[swipe_id] write — the write must land on top of whatever ensureSwipes just created, not the other way around', async () => {
     const host = await createFakeStHost();
     try {
-        const internals = await host.importModule('adapter/internals.js');
-        // A promise that never resolves/rejects — the old code's failure-open
-        // path (`new Promise(() => undefined)`) reproduced exactly this shape.
-        installFakeJQuery(host, () => new Promise(() => undefined));
+        const messages = await host.importModule('adapter/messages.js');
+        const TARGET_ID = 3;
+        host.context.chat = buildChat(TARGET_ID, 5, { is_user: false, is_system: false, extra: {}, swipe_id: 0 });
+        delete host.context.chat[TARGET_ID].swipes;
 
-        const button = document.createElement('button');
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = (mes) => { mes.swipes = ['not-yet-written']; return true; };
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
 
-        await assert.rejects(internals._dispatchClickAndWait(button, 20), (error) => {
-            assert.match(error.message, /timed out after 20ms/);
-            return true;
-        });
+        await messages.saveMessageEditById(TARGET_ID, 'edited');
+
+        assert.equal(host.context.chat[TARGET_ID].swipes[0], 'edited', 'the write must overwrite the array ensureSwipes just created');
     } finally {
         await host.dispose();
     }
 });
 
-test('_dispatchClickAndWait propagates a rejection from the delegated handler\'s promise', async () => {
+test('saveMessageEditById: trims text after regex, only when power_user.trim_spaces is truthy', async () => {
     const host = await createFakeStHost();
     try {
-        const internals = await host.importModule('adapter/internals.js');
-        installFakeJQuery(host, () => Promise.reject(new Error('native save failed')));
+        const messages = await host.importModule('adapter/messages.js');
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
 
-        const button = document.createElement('button');
+        const TARGET_ID = 1;
+        host.context.powerUserSettings = { trim_spaces: false };
+        host.context.chat = buildChat(TARGET_ID, 4, { is_user: false, is_system: false, extra: {} });
+        await messages.saveMessageEditById(TARGET_ID, '  padded  ');
+        assert.equal(host.context.chat[TARGET_ID].mes, '  padded  ', 'trim_spaces off: whitespace preserved');
 
-        await assert.rejects(internals._dispatchClickAndWait(button, 50), /native save failed/);
+        host.context.powerUserSettings = { trim_spaces: true };
+        host.context.chat = buildChat(TARGET_ID, 4, { is_user: false, is_system: false, extra: {} });
+        await messages.saveMessageEditById(TARGET_ID, '  padded  ');
+        assert.equal(host.context.chat[TARGET_ID].mes, 'padded', 'trim_spaces on: leading/trailing whitespace stripped');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: initializes a missing extra object before touching it, mirroring native\'s mes.extra ??= {} guard', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
+
+        const TARGET_ID = 1;
+        host.context.chat = buildChat(TARGET_ID, 3, { is_user: false, is_system: false, extra: undefined });
+        await messages.saveMessageEditById(TARGET_ID, 'text');
+
+        const extra = host.context.chat[TARGET_ID].extra;
+        assert.ok(extra && typeof extra === 'object', 'extra must be initialized to an object');
+        assert.equal(extra.bias, null);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: emits MESSAGE_EDITED strictly before MESSAGE_UPDATED, both with exactly the numeric message id as their sole argument', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        const TARGET_ID = 5;
+        host.context.chat = buildChat(TARGET_ID, 7, { is_user: false, is_system: false, extra: {} });
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
+
+        const events = [];
+        host.eventSource.on(host.event_types.MESSAGE_EDITED, (id) => events.push(['MESSAGE_EDITED', id]));
+        host.eventSource.on(host.event_types.MESSAGE_UPDATED, (id) => events.push(['MESSAGE_UPDATED', id]));
+
+        await messages.saveMessageEditById(TARGET_ID, 'text');
+
+        assert.deepEqual(events, [
+            ['MESSAGE_EDITED', TARGET_ID],
+            ['MESSAGE_UPDATED', TARGET_ID],
+        ]);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: saves via saveChatConditional (not saveChatDebounced), and refreshes swipe buttons afterward, in that exact order', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        const TARGET_ID = 2;
+        host.context.chat = buildChat(TARGET_ID, 4, { is_user: false, is_system: false, extra: {} });
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+
+        const calls = [];
+        host.registry.saveChatConditional = () => calls.push('saveChatConditional');
+        host.registry.saveChatDebounced = () => calls.push('saveChatDebounced');
+        host.registry.refreshSwipeButtons = () => calls.push('refreshSwipeButtons');
+
+        await messages.saveMessageEditById(TARGET_ID, 'text');
+
+        assert.deepEqual(calls, ['saveChatConditional', 'refreshSwipeButtons']);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: never calls getContext().updateMessageBlock when the message row is not currently rendered', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        const TARGET_ID = 3;
+        host.context.chat = buildChat(TARGET_ID, 5, { is_user: false, is_system: false, extra: {} });
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
+        host.registry.updateMessageBlock = () => {
+            throw new Error('updateMessageBlock must never be called when nothing renders this row (no #chat, or #chat with no matching row)');
+        };
+
+        // No #chat container at all this time.
+        await messages.saveMessageEditById(TARGET_ID, 'text');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: heals a currently-rendered native row via getContext().updateMessageBlock — called with the id and the exact same live mes reference it just mutated, strictly between MESSAGE_EDITED and MESSAGE_UPDATED', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        const TARGET_ID = 3;
+        host.context.chat = buildChat(TARGET_ID, 5, { is_user: false, is_system: false, extra: {} });
+        const chatContainer = createChatContainer();
+        appendMesRow(chatContainer, TARGET_ID);
+
+        host.registry.getRegexedString = (text) => text;
+        host.registry.substituteParams = (text) => text;
+        host.registry.extractMessageBias = () => '';
+        host.registry.removeMacros = (text) => text;
+        host.registry.ensureSwipes = () => true;
+        host.registry.saveChatConditional = () => undefined;
+        host.registry.refreshSwipeButtons = () => undefined;
+
+        const order = [];
+        host.eventSource.on(host.event_types.MESSAGE_EDITED, () => order.push('MESSAGE_EDITED'));
+        host.eventSource.on(host.event_types.MESSAGE_UPDATED, () => order.push('MESSAGE_UPDATED'));
+        let healedWith = null;
+        host.registry.updateMessageBlock = (id, mes) => { healedWith = [id, mes]; order.push('updateMessageBlock'); };
+
+        await messages.saveMessageEditById(TARGET_ID, 'edited text');
+
+        assert.deepEqual(order, ['MESSAGE_EDITED', 'updateMessageBlock', 'MESSAGE_UPDATED']);
+        assert.equal(healedWith[0], TARGET_ID);
+        assert.equal(healedWith[1], host.context.chat[TARGET_ID], 'must pass the exact same live mes reference, not a copy');
+        assert.equal(healedWith[1].mes, 'edited text');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: rejects a non-finite message id before touching the host', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        await assert.rejects(
+            () => messages.saveMessageEditById(Number.NaN, 'text'),
+            /Invalid message id for edit/,
+        );
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('saveMessageEditById: throws when no message record exists at that id, without tainting chat_metadata or emitting MESSAGE_EDITED', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        host.context.chat = [];
+        host.context.chatMetadata = {};
+        let emitted = false;
+        host.eventSource.on(host.event_types.MESSAGE_EDITED, () => { emitted = true; });
+
+        await assert.rejects(
+            () => messages.saveMessageEditById(3, 'text'),
+            /Message record not found for edit/,
+        );
+
+        assert.equal(host.context.chatMetadata.tainted, undefined);
+        assert.equal(emitted, false);
     } finally {
         await host.dispose();
     }
