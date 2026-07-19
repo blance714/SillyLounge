@@ -16,6 +16,7 @@
         "test": "pnpm run build && node --test",
         "test:e2e": "pnpm run runtime && playwright test && node ./scripts/e2e/measure-chat-switch.mjs",
         "test:e2e:switch": "pnpm run runtime && node ./scripts/e2e/measure-chat-switch.mjs",
+        "test:e2e:guard": "pnpm run runtime && node ./scripts/e2e/verify-truncation-guard.mjs",
         "test:perf": "pnpm run runtime && node ./scripts/e2e/measure-long-chat.mjs",
         "test:st": "pnpm run runtime && node ./scripts/e2e/smoke-st.mjs",
         "typecheck": "tsc --noEmit",

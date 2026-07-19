@@ -33,6 +33,7 @@ declare module '@st/script' {
     export const openCharacterChat: any;
     export const renameChat: any;
     export const saveSettingsDebounced: any;
+    export function saveSettings(): Promise<void>;
     export const selectCharacterById: any;
     export function sendTextareaMessage(): Promise<unknown>;
     export function setEditedMessageId(value: number | undefined): void;

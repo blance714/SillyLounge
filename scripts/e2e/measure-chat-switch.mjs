@@ -18,8 +18,8 @@ const FIXTURE_ROOT = path.join(PROJECT_ROOT, 'test', 'e2e', 'fixtures');
 const DEFAULT_FIXTURE = 'long-rich-switch';
 const CHAT_STORE_BROWSER_MODULE = '/scripts/extensions/third-party/SillyLounge/store/chat-store.js';
 
-function defaultOutput(fixture) {
-    return path.join(PROJECT_ROOT, 'test-results', 'performance', `${fixture}.json`);
+function defaultOutput(fixture, suffix = '') {
+    return path.join(PROJECT_ROOT, 'test-results', 'performance', `${fixture}${suffix}.json`);
 }
 
 function defaultEvidenceRoot(fixture) {
@@ -31,7 +31,7 @@ function parseArgs(argv) {
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--') continue;
-        if (!['--fixture', '--output', '--evidence-root', '--native-truncation'].includes(argument)) {
+        if (!['--fixture', '--output', '--evidence-root', '--native-truncation', '--truncation-guard'].includes(argument)) {
             throw new Error(`unknown argument: ${argument}`);
         }
         const value = argv[index + 1];
@@ -42,6 +42,14 @@ function parseArgs(argv) {
         if (argument === '--output') options.output = value;
         if (argument === '--evidence-root') options.evidenceRoot = value;
         if (argument === '--native-truncation') options.nativeTruncation = Number(value);
+        // Selects the real product flag path (settings.nativeTruncationOverrideEnabled,
+        // read by src/index.ts's setup() -> activateNativeTruncationGuard()) rather
+        // than the tool-level `--native-truncation` poke below, which writes
+        // power_user.chat_truncation directly and never runs that production code.
+        if (argument === '--truncation-guard') {
+            if (!['on', 'off'].includes(value)) throw new Error('--truncation-guard must be on or off');
+            options.truncationGuardFlag = value === 'on';
+        }
         index += 1;
     }
     return options;
@@ -361,13 +369,22 @@ export async function measureChatSwitch({
     output,
     evidenceRoot,
     nativeTruncation,
+    truncationGuardFlag = false,
 }) {
     if (!stRoot) throw new Error('stRoot is required (set SILLYTAVERN_TEST_ROOT)');
     if (!/^[a-z0-9-]+$/i.test(fixture)) throw new Error('fixture must be one safe directory name');
+    if (truncationGuardFlag && nativeTruncation !== undefined) {
+        throw new Error('nativeTruncation and truncationGuardFlag are mutually exclusive');
+    }
+    // Tool-level `--native-truncation` still validates eagerly even in flag
+    // mode so a bad combination fails before a browser launches; the value
+    // itself is unused once the real flag is live (see below).
     const resolvedNativeTruncation = normalizeNativeTruncation(nativeTruncation);
 
-    const resolvedOutput = path.resolve(output ?? defaultOutput(fixture));
-    const resolvedEvidenceRoot = path.resolve(evidenceRoot ?? defaultEvidenceRoot(fixture));
+    const resolvedOutput = path.resolve(output ?? defaultOutput(fixture, truncationGuardFlag ? '-truncation-guard' : ''));
+    const resolvedEvidenceRoot = path.resolve(
+        evidenceRoot ?? defaultEvidenceRoot(truncationGuardFlag ? `${fixture}-truncation-guard` : fixture),
+    );
     const runRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sillylounge-switch-'));
     const dataRoot = path.join(runRoot, 'data');
     let browser = null;
@@ -390,6 +407,12 @@ export async function measureChatSwitch({
             fixturePath: path.join(FIXTURE_ROOT, fixture, 'fixture.json'),
             extensionMode: 'active',
             regexMode: 'active',
+            // Real product flag path: src/index.ts's setup() reads this at
+            // APP_READY and calls activateNativeTruncationGuard(), which backs
+            // up and overrides power_user.chat_truncation itself. Distinct from
+            // the tool-level `page.evaluate` poke below, which never exercises
+            // that code.
+            nativeTruncationOverrideEnabled: truncationGuardFlag,
         });
         const conversations = generated.manifest.conversations;
         assert.equal(conversations.length, 2, 'switch fixture must contain exactly two conversations');
@@ -459,10 +482,21 @@ export async function measureChatSwitch({
         await waitForConversation(page, expected(first, second), allFileNames);
         await assertConversationEdges(page, expected(first, second));
         await assertSmoothConversationEdges(page, expected(first, second));
-        await page.evaluate(async count => {
-            const { power_user: powerUser } = await import('/scripts/power-user.js');
-            powerUser.chat_truncation = count;
-        }, toStNativeTruncation(resolvedNativeTruncation));
+        // Flag mode: the real activateNativeTruncationGuard() already applied
+        // and is already live from boot (src/index.ts's setup() runs on
+        // APP_READY, before this script ever touches the page) — poking
+        // power_user.chat_truncation here would just overwrite that product
+        // code's effect with the tool-level experiment value instead of
+        // measuring it.
+        if (!truncationGuardFlag) {
+            await page.evaluate(async count => {
+                const { power_user: powerUser } = await import('/scripts/power-user.js');
+                powerUser.chat_truncation = count;
+            }, toStNativeTruncation(resolvedNativeTruncation));
+        }
+        const expectedNativeMessages = truncationGuardFlag
+            ? generated.manifest.nativeTruncation.overrideSentinel
+            : resolvedNativeTruncation;
         const initial = {
             chatId: first.fileName,
             ...await captureCollectedBrowserState(page, cdp),
@@ -499,7 +533,7 @@ export async function measureChatSwitch({
             && transition.ready.messageCache.materializationsSinceRefresh < first.messageCount
         )), true);
         assert.equal(transitions.every(transition => (
-            transition.ready.nativeMessages === resolvedNativeTruncation
+            transition.ready.nativeMessages === expectedNativeMessages
         )), true);
         assert.equal(transitions.every(transition => transition.afterGc.openDialogs === 0), true);
         assert.deepEqual(pageErrors, []);
@@ -511,7 +545,9 @@ export async function measureChatSwitch({
             st: generated.manifest.st,
             browser: 'chromium',
             viewport: DESKTOP_VIEWPORT,
-            nativeTruncation: resolvedNativeTruncation,
+            nativeTruncation: expectedNativeMessages,
+            nativeTruncationMode: truncationGuardFlag ? 'product-flag' : 'tool-override',
+            truncationGuardFlag,
             fixture: {
                 id: generated.manifest.fixture,
                 conversations,

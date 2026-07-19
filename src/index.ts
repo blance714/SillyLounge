@@ -12,7 +12,7 @@
  */
 
 import { extension_settings } from '@st/extensions';
-import { saveSettingsDebounced, eventSource, event_types } from '@st/script';
+import { saveSettings, saveSettingsDebounced, eventSource, event_types } from '@st/script';
 import { CHATUI_DISABLE_EVENT } from './store/chat-actions.js';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { getConfig, initConfigStore } from './store/config-store.js';
@@ -144,10 +144,39 @@ function teardown() {
  * enqueueHostTask — see store/sidebar-actions.ts's deleteChatuiChat), so the
  * restore-then-reload only runs once every in-flight host operation has
  * drained, and every module-level ChatUI singleton also resets cleanly on
- * reload instead of needing its own manual rollback. If the debounced
- * settings save loses the race against the reload, boot self-heal
- * (selfHealNativeTruncation(), called unconditionally at the top of init())
- * finishes the job on the very next load — see native-window-guard.ts.
+ * reload instead of needing its own manual rollback.
+ *
+ * MUST await a real, non-debounced `saveSettings()` (script.js's own
+ * unwrapped save, not `saveSettingsDebounced()`) between the restore and the
+ * reload. `saveSettingsDebounced()` — called both by the `settings.enabled =
+ * false` write above this function's callers and by
+ * restoreForDisable()'s internal clearBackup() — is a single shared,
+ * cancel-and-reset timer (SillyTavern/public/scripts/utils.js's `debounce()`:
+ * every call clears and re-arms the *same* timeout). `window.location.reload()`
+ * tears down this page's JS context well before that timer's
+ * debounce_timeout.relaxed (1000ms) window can ever elapse, so without a
+ * forced flush here, this exact click reliably (not just occasionally) loses
+ * *both* writes: the persisted `settings.enabled` stays `true` and
+ * `power_user.chat_truncation`/the backup stay at their pre-restore values on
+ * disk. The very next boot then reads `enabled: true` off disk, reactivates
+ * ChatUI (and the truncation guard) all over again before SillyTavern's own
+ * fire-and-forget boot print (RA_autoloadchat → printMessages) gets a chance
+ * to run against the restored value — so the native chat window stays pinned
+ * at the truncation sentinel indefinitely, since nothing ever prints again to
+ * pick up a later in-memory fix. (Confirmed via
+ * scripts/e2e/verify-truncation-guard.mjs's scenario A + instrumented disk/DOM
+ * polling across a real disable-reload: disk settings never moved off their
+ * pre-disable values for the entire observation window, and `#chat` stayed
+ * stuck at the sentinel count.) Awaiting the real save turns "the reload
+ * usually beats the debounce" into "the reload only ever runs once the write
+ * actually landed" — the same guarantee this codebase's other reload paths
+ * already get for free from their own awaited server round trip (e.g.
+ * store/sidebar-actions.ts's current-chat delete awaits the delete API call
+ * before reloading). Boot self-heal (selfHealNativeTruncation(), called
+ * unconditionally at the top of init()) remains as a defense-in-depth
+ * backstop for cases the awaited save itself can't cover (e.g. the tab
+ * crashing mid-request), not as the primary mechanism for the ordinary click
+ * path.
  *
  * Branches on `isNativeTruncationGuardLive()` — whether
  * activateNativeTruncationGuard() actually applied the override this
@@ -159,7 +188,8 @@ function teardown() {
  * `power_user.chat_truncation` needs restoring.
  *
  * When the guard was never live this session, nothing native was ever
- * touched: the existing in-place teardown() (no reload) is unchanged.
+ * touched: the existing in-place teardown() (no reload) is unchanged, and
+ * no forced flush is needed — no reload races it.
  *
  * @returns {void}
  */
@@ -170,6 +200,7 @@ function disableChatuiLayers(): void {
     }
     enqueueHostTask(async () => {
         restoreNativeTruncationForDisable();
+        await saveSettings();
         sealHostOperationQueueForReload();
         window.location.reload();
     });

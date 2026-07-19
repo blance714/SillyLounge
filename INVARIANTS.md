@@ -406,6 +406,7 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 | 相同固件输入生成字节级一致的数据根 | `test/e2e/generate-data-root.test.mjs :: same fixture inputs generate byte-identical data roots` |
 | 生成的单用户设置选中固件并启用 SillyLounge | `test/e2e/generate-data-root.test.mjs :: generated single-user settings select the fixture and enable SillyLounge` |
 | 扩展模式隔离 native/bootstrap/active 三态基线 | `test/e2e/generate-data-root.test.mjs :: extension modes isolate native, bootstrap, and active performance baselines` |
+| 原生截断守卫的 overrideEnabled/pollution 两个开关与 extensionMode 正交，各自落在 chatui_composer 设置的正确字段（.config / .nativeTruncationBackup / power_user.chat_truncation） | `test/e2e/generate-data-root.test.mjs :: native truncation guard flags are orthogonal to extension mode and land in the right settings slots` |
 | 生成的角色卡指向既有 smoke 会话 | `test/e2e/generate-data-root.test.mjs :: generated character card points at the existing smoke chat` |
 | 生成的 JSONL 具有声明的用户轮次与交替角色 | `test/e2e/generate-data-root.test.mjs :: generated JSONL has the declared user turns and alternating roles` |
 | long-plain 生成器物化恰好 400 用户楼层与回复 | `test/e2e/generate-data-root.test.mjs :: long-plain generator materializes exactly 400 user floors and replies` |
@@ -423,6 +424,8 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 | 切换测量器在启动浏览器前拒绝不安全的原生截断值 | `test/e2e/measure-chat-switch.test.mjs :: chat-switch harness rejects an unsafe native truncation before browser launch` |
 | 性能测量器在启动浏览器前拒绝固件路径穿越 | `test/e2e/measure-long-chat.test.mjs :: performance harness rejects fixture path traversal before launching a browser` |
 | 性能测量器拒绝未知正则模式 | `test/e2e/measure-long-chat.test.mjs :: performance harness rejects unknown regex modes before launching a browser` |
+| 截断守卫验收器要求锁定版本的 SillyTavern checkout | `test/e2e/verify-truncation-guard.test.mjs :: truncation-guard harness requires the pinned SillyTavern checkout` |
+| 截断守卫验收器在启动浏览器前拒绝固件路径穿越 | `test/e2e/verify-truncation-guard.test.mjs :: truncation-guard harness rejects fixture path traversal before browser launch` |
 | checkout 锁定接受未跟踪文件、拒绝提交或跟踪树漂移 | `test/e2e/st-process.test.mjs :: checkout pin accepts untracked files but rejects commit or tracked-tree drift` |
 | 固件守卫拒绝未签名或跨运行的数据根 | `test/e2e/st-process.test.mjs :: fixture guard rejects unsigned or out-of-run data roots` |
 | 服务器生命周期传递隔离路径、探测就绪并释放进程 | `test/e2e/st-process.test.mjs :: server lifecycle passes isolated paths, probes readiness, and releases the process` |
@@ -446,6 +449,43 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 - **`scripts/e2e/measure-long-chat.mjs`**（`test:perf`，手动）：400 楼样张三态性能
   归因 + 楼层标尺功能验收。⚠️ 不在任何 CI 门内——楼层标尺的浏览器级窗口断言目前
   只能靠手动运行。
+- **`scripts/e2e/verify-truncation-guard.mjs`**（`test:e2e:guard`；**2026-07-19 起
+  为 CI 发布门禁的显式步骤**，随所有者拍板翻开默认值一并接入）：闭合 §16 曾经
+  登记的两条 native-window-guard 浏览器层缺口。场景自带 flag-on 固件，不依赖
+  代码默认值，因此无论默认值未来如何变化都保持有效门禁。
+  - **场景 A（flag-on 激活 + 真实停用-刷新往返）**：flag-on 激活后，断言 live
+    `power_user.chat_truncation` 为覆盖哨兵而持久化的 SillyLounge 备份仍是固件原
+    值；原生 `#chat` 只挂载截断窗口，ChatUI 自身仍展示/可导航完整会话；无控制台
+    错误。同一次开机原样重跑一遍激活（折入 backupOnce 的 already-present 分支）：
+    覆盖照常应用，且绝不会用覆盖值顶替既有备份。随后驱动与用户等价的真实停用控件
+    （侧栏「设置」→ Settings 面板「关闭 ChatUI」按钮 → 确认对话框，途经
+    `CHATUI_DISABLE_EVENT`），断言确有一次真实页面刷新（sealed-queue 路径）而非
+    原地 `teardown()`。刷新后：live 与持久化的 `chat_truncation` 都等于固件原值、
+    SillyLounge 备份字段已清空、`#chat` 重新渲染完整（按用户真实设置，非截断）的
+    原生消息集；全程无控制台错误。
+    ⚠️ **首次真实运行发现的时序缺陷（已修复）**：ST 的 `power_user.chat_truncation`
+    只在 `printMessages()`（开机或切换会话的那一次打印）读取一次，纯内存改写不
+    会触发重打印——这本身是产品既有语义，脚本对此不作任何放松。真正的缺陷是
+    `disableChatuiLayers()`（`src/index.ts`）在停用时只调了防抖的
+    `saveSettingsDebounced()` 就几乎同步 `location.reload()`；`saveSettingsDebounced`
+    是 ST `utils.js::debounce()` 包出的单个共享 1000ms 定时器，每次调用都会
+    `clearTimeout` 重新起跳，而 reload 摧毁页面 JS 上下文的时机远早于这个窗口能
+    走完——停用点击因此**必然**丢掉「`enabled: false`」与「截断恢复」两笔落盘写
+    入，下次开机读到磁盘上仍是 `enabled: true` 而重新整套激活 ChatUI，其激活流程
+    总能抢在 ST 自己 fire-and-forget 的开机打印（`RA_autoloadchat()`）之前把
+    `chat_truncation` 摁回哨兵值，原生 `#chat` 从此钉死在哨兵计数、没有任何后续
+    事件会去重打印。诊断用真实往返 + 磁盘/DOM 双重插桩复现确认。修复：
+    `disableChatuiLayers()` 在写回真值之后、reload 之前改为 `await` 一次 ST 未包
+    装的真实 `saveSettings()`（而非 `saveSettingsDebounced()`），把「reload 大概
+    率能抢在防抖前面」换成「reload 只在写入真正落盘后才会发生」，与本仓库其余
+    reload 路径（如 `store/sidebar-actions.ts` 当前会话删除，reload 前已 `await`
+    过真正的删除请求）的既有约定一致。见 DOM-DECOUPLING.md「停用恢复」行的完整
+    时序缺陷补充说明。
+  - **场景 B（bootstrap 自愈）**：生成一个 settings 已预置崩溃现场（持久化
+    `chat_truncation` 等于覆盖哨兵、SillyLounge 备份持有原值）、扩展已安装但替换
+    UI 处于 bootstrap 关闭态的数据根；开机后断言 `init()` 顶部的自愈先于任何其他
+    可观察行为跑过：live 与持久化的 `chat_truncation` 都恢复为原值、备份已清空、
+    原生 chat 按恢复后的值渲染，全程无控制台错误。
 
 ## 14. 原生截断窗口守卫（adapter/native-window-guard）
 
@@ -511,24 +551,37 @@ promise 用 'cancel' 结算，绝不留空悬 promise），这是钉死的设计
 ## 16. 未覆盖缺口（❌ 补测待办）
 
 2026-07-19 第一批六个单元层缺口已全部补齐（§3、§4 新增行），滚动中编辑的浏览器
-验收已入 §13。当前剩余：
+验收已入 §13。同日第二批：native-window-guard 的两条 index.ts 接线路径浏览器层
+缺口**已闭合**——`scripts/e2e/verify-truncation-guard.mjs`（§13）新增两个真实
+Chromium 场景，直接驱动 index.ts 本身的 `setup()`/`disableChatuiLayers()` 接线
+（而不再只在假宿主里调用编译后的 `adapter/native-window-guard.js`）：场景 A 覆盖
+「停用即刷新」（flag-on 激活 → 真实停用控件 → 断言走的是 sealed-queue 刷新而非
+原地 `teardown()` → 刷新后原值/备份/原生窗口全部恢复，并顺带折入一次
+already-present 再激活的回归），场景 B 覆盖「bootstrap 自愈」（预置崩溃现场的数
+据根开机后，`init()` 顶部的自愈先于一切其他可观察行为跑过）。**这条浏览器层缺口
+不是「补个测试就绿」——首次真实运行时场景 A 在停用-刷新往返上 120s 超时，诊断
+（真实往返 + 磁盘/DOM 插桩复现）查明是 `disableChatuiLayers()` 的真实产品缺陷：
+停用时只调防抖的 `saveSettingsDebounced()` 就几乎同步 `location.reload()`，而
+`saveSettingsDebounced` 是 ST 单个共享定时器（每次调用都重置整个防抖窗口），
+reload 摧毁页面上下文的时机必然早于该窗口，导致 `enabled: false` 与截断恢复两
+笔落盘写入必然丢失、ChatUI 在下次开机又整套重新激活，原生 `#chat` 因此钉死在
+截断哨兵计数上。已在 `src/index.ts` 修复（reload 前 `await` 真实 `saveSettings()`，
+不再依赖防抖），详见本节场景 A 描述与 DOM-DECOUPLING.md「停用恢复」行的时序缺
+陷补充说明；两个场景现已全绿。**`nativeTruncationOverrideEnabled`
+标志本身依旧默认关闭、也未接出任何 UI 开关，因此该脚本本轮**未接入任何 CI 门
+禁**——是否翻开标志、进而让这两条路径在真实产品中可达，是后续由所有者基于这批
+验收证据拍板的独立决定，不随脚本落地自动发生。当前剩余：
 
 浏览器层：
 
+- **主门禁固件尚未迁移到新默认（2026-07-19 翻开关后遗留）**：`smoke` /
+  `chat-switch` / 两个 perf 样张的生成器仍显式写
+  `nativeTruncationOverrideEnabled: false`，即这些门禁验证的是 flag-off 配置，而
+  产品默认已是 flag-on（flag-on 的门禁覆盖目前仅来自 `verify-truncation-guard`
+  的两个场景与基线测量时的一次性 flag-on 运行）。待办：把主门禁固件翻到新默认，
+  并按 flag-on 语义复核其原生行数断言（预期 `#chat` 挂载 1 行而非 100 行）。
 - 滚动往返后的**保存**路径（当前浏览器验收只走取消路径以保证练习自包含；保存的
   草稿清除语义已有单测背书）。
-- native-window-guard 的两条 index.ts 接线路径（当前只在假宿主里直接调用了编译后的
-  `adapter/native-window-guard.js`，没有驱动 index.ts 本身的 setup()/disableChatuiLayers()
-  接线——后者现在按 `isNativeTruncationGuardLive()` 的会话态分叉，而不是按
-  `nativeTruncationOverrideEnabled` 标志的当前取值分叉；`nativeTruncationOverrideEnabled`
-  目前默认关闭、也未接出任何 UI 开关，两条路径在真实产品中尚不可达，故未强行拼凑覆盖）：
-  - **停用即刷新**：真实 ST + 真实 Chromium 下把标志翻开、激活 ChatUI，再走「关闭
-    ChatUI」（原生复选框或应用内按钮）→ 断言 `power_user.chat_truncation` 刷新后等于
-    刷新前的真实值、`extensionSettings.chatui_composer.nativeTruncationBackup` 已清空、
-    `#chat` 重新是完整（非截断）的原生消息集。
-  - **bootstrap 自愈**：人为把覆盖值（1）连同一条备份记录一起持久化进
-    `extensionSettings`，以 `enabled: false`（bootstrap 模式）启动，断言开机自愈在
-    ChatUI 从未激活的这次会话里，仍把 `power_user.chat_truncation` 写回原值并清空备份。
 - character 角色消息的编辑入口藏在溢出菜单里，同一滚动往返场景未在浏览器层驱动
   （实现对角色无分支逻辑，风险有限）。
 - 双滚动系统（useAutoScroll 与 virtualizer 内建 end-anchoring）的一致性——待合并为

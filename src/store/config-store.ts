@@ -74,13 +74,14 @@ const DEFAULT_CONFIG: ChatuiConfig = {
     // so 续写 stands in until that lands.
     plusPinned: ['regenerate', 'continue'],
     // Gates adapter/native-window-guard.ts's power_user.chat_truncation=1
-    // override (DOM-DECOUPLING.md 停用恢复 row, 2026-07-19 拍板). Defaults OFF:
-    // edit-save and full-message delete are still DOM-gated (Tier 1 keeps a
-    // `.mes` lookup for those two paths — see DOM-DECOUPLING.md's action-by-
-    // action table) until DOM-DECOUPLING.md Tier 2/3 land, so truncating the
-    // native render window to 1 message would break them for every message
-    // that isn't the last one. Flip once Tier 2/3 ship.
-    nativeTruncationOverrideEnabled: false,
+    // override (DOM-DECOUPLING.md 停用恢复 row, 2026-07-19 拍板). Defaults ON
+    // since 2026-07-19: all three decoupling tiers shipped (every message
+    // action works without the native .mes row), the disable-reload round
+    // trip and crash self-heal passed real-browser acceptance
+    // (test:e2e:guard), and the measured payoff is -22% chat-switch
+    // content-ready with switch long-tasks eliminated (PERFORMANCE.md
+    // 2026-07-19 真实 flag 性能验收).
+    nativeTruncationOverrideEnabled: true,
 };
 
 const _store = createStore(DEFAULT_CONFIG);

@@ -135,6 +135,40 @@ test('extension modes isolate native, bootstrap, and active performance baseline
     );
 });
 
+test('native truncation guard flags are orthogonal to extension mode and land in the right settings slots', async t => {
+    const plain = await generate(t, 'truncation-plain');
+    const plainSettings = JSON.parse(await fs.readFile(plain.paths.settings, 'utf8'));
+    assert.deepEqual(plain.manifest.nativeTruncation, {
+        overrideEnabled: false,
+        pollution: false,
+        originalChatTruncation: 100,
+        overrideSentinel: 1,
+    });
+    assert.equal(plainSettings.power_user.chat_truncation, 100);
+    assert.equal(plainSettings.extension_settings.chatui_composer.config, undefined);
+    assert.equal(plainSettings.extension_settings.chatui_composer.nativeTruncationBackup, undefined);
+
+    const activeFlagOn = await generate(t, 'truncation-active-flag-on', {
+        extensionMode: 'active',
+        nativeTruncationOverrideEnabled: true,
+    });
+    const activeFlagOnSettings = JSON.parse(await fs.readFile(activeFlagOn.paths.settings, 'utf8'));
+    assert.equal(activeFlagOn.manifest.nativeTruncation.overrideEnabled, true);
+    assert.equal(activeFlagOnSettings.extension_settings.chatui_composer.enabled, true);
+    assert.equal(activeFlagOnSettings.extension_settings.chatui_composer.config.nativeTruncationOverrideEnabled, true);
+    assert.equal(activeFlagOnSettings.power_user.chat_truncation, 100);
+
+    const bootstrapPolluted = await generate(t, 'truncation-bootstrap-polluted', {
+        extensionMode: 'bootstrap',
+        nativeTruncationPollution: true,
+    });
+    const bootstrapPollutedSettings = JSON.parse(await fs.readFile(bootstrapPolluted.paths.settings, 'utf8'));
+    assert.equal(bootstrapPolluted.manifest.nativeTruncation.pollution, true);
+    assert.equal(bootstrapPollutedSettings.extension_settings.chatui_composer.enabled, false);
+    assert.equal(bootstrapPollutedSettings.power_user.chat_truncation, 1);
+    assert.equal(bootstrapPollutedSettings.extension_settings.chatui_composer.nativeTruncationBackup, 100);
+});
+
 test('generated character card points at the existing smoke chat', async t => {
     const result = await generate(t);
     const metadata = readCharacterMetadata(await fs.readFile(result.paths.character));
