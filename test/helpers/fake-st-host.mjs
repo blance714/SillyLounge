@@ -57,7 +57,12 @@
 // they are small working fakes (a real pub/sub bus, a frozen map of event
 // names, a plain mutable object) because that is what the dist code
 // actually needs to function, not something a test should have to
-// re-implement per test file.
+// re-implement per test file. The one exception living inside
+// getContext()'s object is `callGenericPopup` — dist code needs per-test
+// control over the user's popup choice (confirm/cancel/custom-button), so
+// it's the one `context.*` property that IS a registry passthrough
+// (`host.registry.callGenericPopup = ...`), same rules as every other
+// registry function.
 
 import fs from 'node:fs/promises';
 import os from 'node:os';
@@ -234,6 +239,28 @@ export const context = {
     name2: undefined,
     extensionSettings: {},
     powerUserSettings: {},
+    // Live-reference mutation target for the deleteMessage() swipe-only
+    // mini-fork's \`chat_metadata.tainted = true\` write (script.js:9323's
+    // deleteSwipe() does the same) — see adapter/messages.ts::_deleteSwipeById.
+    chatMetadata: {},
+    // Real ST values (public/scripts/popup.js) — kept exact so contract
+    // tests can assert against the same constants dist code compares
+    // against (e.g. \`result === POPUP_RESULT.AFFIRMATIVE\`).
+    POPUP_TYPE: Object.freeze({ TEXT: 1, CONFIRM: 2, INPUT: 3, DISPLAY: 4, CROP: 5 }),
+    POPUP_RESULT: Object.freeze({
+        AFFIRMATIVE: 1, NEGATIVE: 0, CANCELLED: null,
+        CUSTOM1: 1001, CUSTOM2: 1002, CUSTOM3: 1003,
+    }),
+    // Non-localized identity tag — real ST's \`t\` (scripts/i18n.js) applies a
+    // locale lookup dist code must not depend on for its literal wording;
+    // tests assert against the untranslated English strings this reproduces.
+    t: (strings, ...values) => strings.reduce((acc, part, i) => acc + part + (values[i] ?? ''), ''),
+    // Per-test override target for adapter/messages.ts's delete-confirmation
+    // popup (getContext().callGenericPopup, re-exported from
+    // public/scripts/popup.js). Registry-backed like every other stubbed
+    // host function: unconfigured calls throw "stub not configured", never
+    // silently resolve.
+    callGenericPopup: makeStub('callGenericPopup'),
 };
 `;
 }
@@ -261,6 +288,8 @@ export const getRequestHeaders = makeStub('getRequestHeaders');
 export const messageEdit = makeStub('messageEdit');
 export const swipe = makeStub('swipe');
 export const deleteMessage = makeStub('deleteMessage');
+export const deleteSwipe = makeStub('deleteSwipe');
+export const syncSwipeToMes = makeStub('syncSwipeToMes');
 export const saveChatConditional = makeStub('saveChatConditional');
 export const getThumbnailUrl = makeStub('getThumbnailUrl');
 export const getPastCharacterChats = makeStub('getPastCharacterChats');
@@ -690,7 +719,11 @@ function createFetchController() {
  *   returns. Mutate its properties in place (`host.context.chat.push(...)`,
  *   `host.context.characterId = 0`) — do not reassign `host.context`
  *   itself, that would desync it from what `getContext()` hands back to
- *   already-imported modules.
+ *   already-imported modules. Includes `chatMetadata` (plain mutable
+ *   object), the real-valued `POPUP_TYPE`/`POPUP_RESULT` constants, a
+ *   non-localized identity `t` tag, and `callGenericPopup` — the last is
+ *   registry-backed (`host.registry.callGenericPopup = (...) => ...`), not a
+ *   plain property to reassign.
  * @property {{setHandler(fn): void, calls: Array<{input, init}>, reset(): void}} fetch
  *   Controls `globalThis.fetch` for this scratch tree's dist code (used by
  *   adapter/chats/{queries,delete-transaction,rename-transaction,selection-protocol}.js).
