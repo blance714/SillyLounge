@@ -219,3 +219,122 @@ O(N) 扫描，以及少数可见 formatter 调用内部仍可能扫描完整聊�
 再增加宽松的同轮相对预算和结构上限；功能门应继续断言“400 楼可预览、滚动和跳转”，
 不要把“必须挂载 800 个 article”固化成契约；当前功能门反而明确要求挂载数小于完整
 消息数。
+
+## 2026-07-19 真实 flag 性能验收（停用恢复决策数据）
+
+DOM-DECOUPLING.md“停用恢复”行落地后，这组数据为 owner 的翻默认值决策提供依据。
+**决策已于 2026-07-19 做出：默认值已翻为 `true`**（见 src/store/config-store.ts
+的定义注释），验收脚本同日接入 CI 发布门禁。以下为决策时采集的原始证据。
+
+### 方法：走产品 flag，而不是工具级覆盖
+
+“隐藏原生消息窗口实验”一节里 100/40/1/0 那组数据，是 `measure-chat-switch.mjs` 在
+页面已经加载完之后用 `page.evaluate` 直接改写 `power_user.chat_truncation`，完全
+绕开了 `adapter/native-window-guard.ts` 的备份 / 应用 / 自愈 / 回滚逻辑——它测的是
+“原生窗口大小”这个变量本身，不是这个功能。这一轮改为让
+`scripts/e2e/generate-data-root.mjs` 按“真实 flag”生成数据根：
+`extensionMode: 'active'` 且 `nativeTruncationOverrideEnabled: true`，这正是
+src/index.ts 的 `setup()` 在 `APP_READY` 时从 `getConfig()` 读到、并交给
+`activateNativeTruncationGuard()` 应用的同一个配置位（写入
+`extension_settings.chatui_composer.config`）。为此给
+`scripts/e2e/measure-chat-switch.mjs` 和 `scripts/e2e/measure-long-chat.mjs` 都加了
+`--truncation-guard on|off`（`truncationGuardFlag` 参数），转发进
+`generateStDataRoot()` 的同名参数；`measure-chat-switch.mjs` 在 flag 开启时额外跳过
+了原有的 `page.evaluate` 覆盖（否则会用工具级值把真实 flag 已经生效的结果盖掉），
+断言用的期望原生消息数改读 `generated.manifest.nativeTruncation.overrideSentinel`。
+
+两组测量都固定 1920×1080、`SILLYTAVERN_TEST_ROOT` 指向本机 pinned 的 SillyTavern
+1.18.0（51ad27f）：
+
+- 会话切换用 `long-rich-switch`（双 400 楼富文本）样张，走真实侧栏 A→B→A；脚本本身
+  单样本，为取中位数另写了一个一次性驱动脚本，各方向重复 3 次。诚实声明：该驱动
+  脚本未入库，逐次中间报告已被末次运行覆盖，墙钟中位数因此不可独立复核；结构计数
+  （原生消息数、DOM 元素、挂载窗口）在存续的末次 JSON 里可复核，且为本文约定的
+  主要信号；
+- 三态首屏对照用 `long-plain`（400 楼单会话）样张，`pnpm run test:perf -- --warmups
+  1 --repetitions 3` 的调用方式（1 轮预热 + 3 个正式样本）。
+
+本轮不测“真实点击禁用 + reload 往返”的性能——那是
+`scripts/e2e/verify-truncation-guard.mjs` 的功能验收范围（Scenario A/B），已经通过，
+不是这里的性能对照对象。
+
+### 对照 1：会话切换（`long-rich-switch`，各方向 3 次中位数）
+
+| 切换方向 | flag | content ready | settled | long task 总时长 | 原生消息 | DOM 元素 | GC 后堆 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A→B | 关闭 | 402 ms | 783 ms | 125 ms | 100 | 26,061 | 40.3 MiB |
+| A→B | 开启 | 322 ms | 706 ms | 0 ms | 1 | 10,754 | 39.8 MiB |
+| B→A | 关闭 | 346 ms | 744 ms | 124 ms | 100 | 26,061 | 40.5 MiB |
+| B→A | 开启 | 261 ms | 645 ms | 0 ms | 1 | 10,754 | 39.9 MiB |
+
+两个方向平均：content ready 从约 374 ms 降到约 292 ms（-22%），settled 从约 764 ms
+降到约 676 ms（-11%），long task 总时长从约 125 ms 降到 0（消失），DOM 元素从
+26,061 降到 10,754（-59%）。方向和量级与历史工具级 100→1 档一致，但这次是产品化
+之后真正会跑的代码路径产生的，不是工具直接改设置——这是“翻默认值能拿到与历史实验
+同量级收益”的第一次直接证据。
+
+### 对照 2：首屏三态对照（`long-plain`，1 轮预热 + 3 个正式样本中位数）
+
+| 状态 | flag | 就绪时间 | long task 总时长 | 原生消息 | DOM 元素 | CDP 堆 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `disabled` | 关闭 | 2743 ms | 198 ms | 100 | 15,440 | 21.6 MiB |
+| `disabled` | 开启 | 2739 ms | 193 ms | 100 | 15,440 | 20.1 MiB |
+| `bootstrap` | 关闭 | 2001 ms | 197 ms | 100 | 15,453 | 24.6 MiB |
+| `bootstrap` | 开启 | 2707 ms | 195 ms | 100 | 15,453 | 22.0 MiB |
+| `active` | 关闭 | 1855 ms | 233 ms | 100 | 15,845 | 35.7 MiB |
+| `active` | 开启 | 2003 ms | 110 ms | 1 | 9,410 | 24.7 MiB |
+
+**意外发现，与本轮任务预设的假设相反**：预设假设是“如果首屏行不受 flag 影响，就把
+会话切换数据当主要结论”；实测首屏 `active` 行的原生消息数也从 100 降到 1，DOM 元素
+减少 41%，CDP 堆减少 31%，long task 中位数从 233 ms 降到 110 ms——三次重复样本里这
+几个结构指标零方差（每次都是 100/15,440、100/15,453 或 1/9,410，两组 flag 状态各自
+稳定），`disabled`/`bootstrap` 两行的结构指标在两轮之间完全没有变化（符合预期：
+`setup()`、进而 `activateNativeTruncationGuard()`，只在 `settings.enabled` 即
+`extensionMode: 'active'` 时才会跑）。
+
+原因不是 flag 语义变了，是 SillyTavern 自己的启动时序给了一次稳定的竞态窗口：
+`power_user.auto_load_chat` 走 `RossAscends-mods.js` 的 `RA_autoloadchat()`，在
+`initRossMods()` 里是**不 await** 调用的（`initApp()` 继续往下跑其余同步初始化，
+最终 `await eventSource.emit(event_types.APP_READY)`），而 SillyLounge 挂在
+`APP_READY` 上的 `init()` → `setup()` → `activateNativeTruncationGuard()` 在这台
+机器上稳定地在 `RA_autoloadchat()` 内部异步的 `selectCharacterById()` → 原生
+`printMessages()` 真正跑完之前完成，于是把 `chat_truncation` 提前钉在了覆盖哨兵值
+上。这个结构性结果在本轮两组、各 3 次重复里都是零抖动，**但这只是两条独立异步链路
+之间的一次竞态，不是 `eventSource.emit(APP_READY)` 承诺的顺序**——网络、磁盘或机器
+负载不同时这条竞态完全可能翻过来，因此“首屏也会被压缩”只能记录为这次单机验收观察
+到的现象，不能当成跨环境的稳定契约写进产品行为说明。
+
+就绪时间（`navigationToReadyMs`）本身的噪声大到不能直接归因：`disabled`/
+`bootstrap` 两行按设计根本不会被这个 flag 触碰，但它们在两轮独立调用之间的绝对
+耗时摆动，比 `active` 行 flag 开关之间的差异还大（`bootstrap` 从 2001 ms 摆到
+2707 ms，相差 706 ms；`active` 开关之间只差 148 ms）。逐样本明细：
+
+| 状态 | flag | 就绪时间样本（ms） |
+| --- | --- | --- |
+| `disabled` | 关闭 | 2743, 1918, 2761 |
+| `disabled` | 开启 | 2767, 2695, 2739 |
+| `bootstrap` | 关闭 | 1994, 2695, 2001 |
+| `bootstrap` | 开启 | 1944, 2728, 2707 |
+| `active` | 关闭 | 1809, 1855, 2659 |
+| `active` | 开启 | 2721, 2003, 1806 |
+
+三态、两组 flag 状态下的就绪时间区间彼此重叠（约 1800–2760 ms），看不出可信的方向
+性信号，因此这份验收把 `active` 行就绪时间的差异计为单机噪声，不作为结论；结构计数
+（原生消息数、DOM 元素、CDP 节点/堆）和 long task 总时长才是这一节可信的信号，这和
+本文档一贯的“结构计数优先、墙钟时间只做诊断”的方法是一致的。
+
+### 样本数与噪声说明
+
+- 单机（本地开发机）一次性跑完两组对照，不是多机重复实验，仅供这轮停用恢复 flip
+  决策参考，不建立 CI 硬阈值，也不追加进任何自动化门禁。
+- 会话切换：脚本本身单样本，各方向另行重复 3 次取中位数；首屏三态对照：1 轮预热 +
+  3 个正式样本，与 `pnpm run test:perf -- --warmups 1 --repetitions 3` 的调用方式
+  完全一致。3 个正式样本是这次任务要求的“诚实最小对照”样本量，比 2026-07-15 基线
+  的 5 样本更薄，方向性结论可信，但没有资格覆盖 2026-07-15 那组基线。
+- 结构计数在两组内部的重复样本里零方差，可信度高；`navigationToReadyMs` 的噪声显著
+  大于 flag 造成的差异，不能单独作为证据，已在上面逐样本列出而不是被中位数掩盖。
+- 这一节就是 DOM-DECOUPLING.md“停用恢复”行所要求的那轮基线重新测量；owner 依据
+  本节数据于 2026-07-19 显式拍板翻开默认值。上面“意外发现”一节给出的竞态机制解释，与
+  DOM-DECOUPLING.md 同一行里记录的停用-reload 时序缺陷诊断（`RA_autoloadchat()` 同样
+  是不 await 的 fire-and-forget 调用，`activateNativeTruncationGuard()` 同样稳定
+  抢在它前面完成）互相印证，不是本节独立猜测的新机制。

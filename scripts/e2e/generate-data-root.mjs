@@ -18,6 +18,19 @@ const EXTENSION_FOLDER = 'SillyLounge';
 const FIXTURE_MANIFEST_FILE = '_sillylounge-fixture.json';
 const EXTENSION_MODES = new Set(['disabled', 'bootstrap', 'active']);
 const REGEX_MODES = new Set(['active', 'disabled']);
+/**
+ * The fixture's real `power_user.chat_truncation` in every generated data
+ * root, absent a truncation-guard pollution request (see
+ * `truncationGuard.pollution` below). Recorded in the manifest so consumers
+ * (e.g. scripts/e2e/verify-truncation-guard.mjs) never have to hardcode it.
+ */
+const CHAT_TRUNCATION_DEFAULT = 100;
+/**
+ * Mirrors `NATIVE_TRUNCATION_OVERRIDE` in src/adapter/native-window-guard.ts
+ * (ST reads `chat_truncation || MAX_SAFE_INTEGER`, so 0 means "unlimited" —
+ * the override sentinel is the smallest non-zero floor).
+ */
+const NATIVE_TRUNCATION_OVERRIDE_SENTINEL = 1;
 
 function isPathInside(rootPath, candidatePath) {
     const relative = path.relative(rootPath, candidatePath);
@@ -197,7 +210,7 @@ async function discoverGlobalExtensionNames(stRoot) {
     return discovered.sort((left, right) => left.localeCompare(right));
 }
 
-function patchSettings(baseSettings, fixture, stVersion, globalExtensions, extensionMode, regexMode) {
+function patchSettings(baseSettings, fixture, stVersion, globalExtensions, extensionMode, regexMode, truncationGuard = {}) {
     const settings = structuredClone(baseSettings);
     settings.firstRun = false;
     settings.currentVersion = stVersion;
@@ -211,7 +224,14 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions, exten
         : {};
     settings.power_user.default_persona = fixture.user.avatar;
     settings.power_user.auto_load_chat = true;
-    settings.power_user.chat_truncation = 100;
+    // `pollution` simulates the exact bootstrap self-heal crash signature
+    // (INVARIANTS.md §16 gap 2): a previous session's crash left
+    // chat_truncation pinned at the override sentinel in the user's own
+    // persisted settings, with the pre-override real value still sitting in
+    // SillyLounge's own backup below.
+    settings.power_user.chat_truncation = truncationGuard.pollution
+        ? NATIVE_TRUNCATION_OVERRIDE_SENTINEL
+        : CHAT_TRUNCATION_DEFAULT;
     settings.power_user.personas = settings.power_user.personas && typeof settings.power_user.personas === 'object'
         ? settings.power_user.personas
         : {};
@@ -244,6 +264,22 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions, exten
         ...(existing && typeof existing === 'object' ? existing : {}),
         enabled: extensionMode === 'active',
     };
+    if (truncationGuard.overrideEnabled) {
+        // src/store/config-store.ts reads this from extensionSettings via
+        // src/adapter/config.ts::read() — `chatui_composer.config`, a sibling
+        // of `.enabled`/`.nativeTruncationBackup`, not nested under either.
+        const existingConfig = settings.extension_settings.chatui_composer.config;
+        settings.extension_settings.chatui_composer.config = {
+            ...(existingConfig && typeof existingConfig === 'object' ? existingConfig : {}),
+            nativeTruncationOverrideEnabled: true,
+        };
+    }
+    if (truncationGuard.pollution) {
+        // src/adapter/native-window-guard.ts reads/writes this at
+        // `chatui_composer.nativeTruncationBackup` directly (sibling of
+        // `.config`, see getGuardNamespace()).
+        settings.extension_settings.chatui_composer.nativeTruncationBackup = CHAT_TRUNCATION_DEFAULT;
+    }
     settings.extension_settings.character_allowed_regex = fixture.scopedRegexProfile && regexMode === 'active'
         ? [fixture.character.fileName]
         : [];
@@ -646,6 +682,13 @@ export async function generateStDataRoot({
     stPinPath = DEFAULT_ST_PIN_PATH,
     extensionMode = 'active',
     regexMode = 'active',
+    // Orthogonal to extensionMode/regexMode so any combination is reachable
+    // (e.g. active + overrideEnabled for a real activation round trip, or
+    // bootstrap + pollution for the self-heal crash signature) without a
+    // combinatorial explosion of named modes — see
+    // scripts/e2e/verify-truncation-guard.mjs and INVARIANTS.md §16.
+    nativeTruncationOverrideEnabled = false,
+    nativeTruncationPollution = false,
 }) {
     if (!targetRoot || !stRoot || !runtimeRoot) {
         throw new Error('targetRoot, stRoot, and runtimeRoot are required');
@@ -670,6 +713,9 @@ export async function generateStDataRoot({
     if (!REGEX_MODES.has(regexMode)) {
         throw new Error(`invalid regex mode: ${regexMode}`);
     }
+    if (typeof nativeTruncationOverrideEnabled !== 'boolean' || typeof nativeTruncationPollution !== 'boolean') {
+        throw new Error('nativeTruncationOverrideEnabled and nativeTruncationPollution must be booleans');
+    }
     const validatedFixture = validateFixture(fixture);
     const characterCardPath = path.join(path.dirname(sourceFixturePath), fixture.character.card);
     const characterCard = materializeCharacterCard(fixture, await readJson(characterCardPath));
@@ -687,7 +733,10 @@ export async function generateStDataRoot({
 
     await writeJson(
         settingsPath,
-        patchSettings(baseSettings, fixture, pin.version, globalExtensions, extensionMode, regexMode),
+        patchSettings(baseSettings, fixture, pin.version, globalExtensions, extensionMode, regexMode, {
+            overrideEnabled: nativeTruncationOverrideEnabled,
+            pollution: nativeTruncationPollution,
+        }),
     );
     await fs.mkdir(path.dirname(avatarPath), { recursive: true });
     await fs.writeFile(avatarPath, createSolidPng(128, 128, fixture.user.avatarColor));
@@ -747,6 +796,12 @@ export async function generateStDataRoot({
         extension: EXTENSION_FOLDER,
         extensionMode,
         regexMode,
+        nativeTruncation: {
+            overrideEnabled: nativeTruncationOverrideEnabled,
+            pollution: nativeTruncationPollution,
+            originalChatTruncation: CHAT_TRUNCATION_DEFAULT,
+            overrideSentinel: NATIVE_TRUNCATION_OVERRIDE_SENTINEL,
+        },
     };
     const manifestPath = fixturePath(resolvedTarget, FIXTURE_MANIFEST_FILE);
     await writeJson(manifestPath, manifest);

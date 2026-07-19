@@ -62,7 +62,7 @@ Tier 3 落地一并移除的：Tier 2 的 `this_edit_mes_id` 影子变量（其�
 （唯一调用方已消失，随其一起删除的还有四条专属单测）、
 `triggerMessageActionById` 里 `edit` 的 DOM 门卫分支（本就从未被真实 UI 经它
 触发过——进入编辑模式一直是纯本地 Preact 状态）。截断标志翻开不再被任何动作层
-依赖阻塞，但仍保持默认关闭，见「停用恢复」行与推进顺序段落的补充说明。详见下方
+依赖阻塞，并已于 2026-07-19 经显式决策默认开启，见「停用恢复」行与推进顺序段落。详见下方
 「逐动作裁决」edit（保存）行、推进顺序 Tier 3、契约测试清单、INVARIANTS.md
 §7/§16。
 
@@ -82,7 +82,7 @@ Tier 3 落地一并移除的：Tier 2 的 `this_edit_mes_id` 影子变量（其�
 | edit（保存） | **薄分叉，已在 Tier 3 落地（2026-07-19）；DOM 门卫已撤除** | `updateMessage()`（script.js:8080-8134）+ `messageEditDone()`（script.js:8337-8375，门后本体去掉全部 DOM 渲染步骤）依赖的纯函数均有导出（`getRegexedString`/`regex_placement` 新增 `@st/regex-engine` 映射，`substituteParams`/`extractMessageBias`/`removeMacros`/`ensureSwipes`/`system_message_types` 走既有 `@st/script`）——`saveMessageEditById`（`src/adapter/messages.ts`）逐字复刻这段编排，彻底不再驱动 ST 原生 `.mes_edit`/`.mes_edit_done` 按钮、不再打开任何原生编辑会话。渲染行愈合走守卫过的 `getContext().updateMessageBlock()`（未渲染时绝不调用——该函数本身对未渲染行不安全，见 INVARIANTS.md §7「渲染行愈合」段落）。契约测试钉死了完整编排顺序，ST 升 pin 时 CI 大声失败而非静默漂移，见下方契约测试清单与 INVARIANTS.md §7 |
 | edit（取消） | 无需任何 ST 调用 | SillyLounge 草稿在自己手里，取消即丢弃本地状态（可选清 `setEditedMessageId(undefined)`，script.js:7101 有导出） |
 | swipe（切换候选） | 无限期推迟（已拍板） | 成功路径本身 DOM 驱动（`addOneMessage` type='swipe' 原地更新节点，script.js:2513/10233）；但 ST 自身限制仅末条可 swipe（isMessageSwipeable，script.js:9136），截断留 1 条恰好保住末条 |
-| 停用恢复 | **2026-07-19 机制已落地并复审修订（`adapter/native-window-guard.ts`），单测背书；标志默认关闭，浏览器级验收待补** | reload 方案：停用时尝试写回真值 → 经既有事务层 `reloadRequired` 终局机制（`sealHostOperationQueueForReload` + `enqueueHostTask`，`src/index.ts::disableChatuiLayers`）→ `location.reload()`，顺带清干净全部模块级残留状态（含无复位口的 `swipeState`）。覆盖值绝不永久污染用户配置的四层防线均已实现并单测：(a) 激活时先把真实 `chat_truncation` 写一次性备份进 SillyLounge 自有 `extensionSettings`（`backupOnce`，三态返回 `established`/`already-present`/`unreadable`），仅当存在有效恢复点（前两态之一）才做内存覆盖（`applyOverride`，值为 1——ST 把 0 解读为「无限制」，覆盖值绝不能是 0）——`unreadable`（读不出有限数字）时 `activateNativeTruncationGuard()` 拒绝激活并 `console.warn`，绝不裸奔覆盖；(b) 备份存在期间的再次激活绝不覆写（写一次语义）；(c) 每次启动（含 bootstrap / 标志关闭模式）在 `index.ts::init()` 最前面无条件跑自愈检查（`selfHealNativeTruncation`），发现「存有备份且当前仍是覆盖哨兵值」即写回并清空备份——防崩溃/强关标签页、也防停用时的 `saveSettingsDebounced` 与 `location.reload()` 赛跑；(d) `restoreForDisable()` 镜像 (c) 的守卫哲学：只有当前值仍是覆盖哨兵才真正写回备份，若用户已经过 ST 原生 `#AdvancedFormatting` 抽屉（不受 st-dom-shield.ts 遮罩）手动改过 `chat_truncation`，手动值权威，停用恢复按兵不动、只清掉过期备份，绝不用陈旧备份覆盖用户刚做的选择。激活被 `store/config-store.ts` 的 `nativeTruncationOverrideEnabled` 标志整体门控，默认 OFF。**2026-07-19 Tier 3 落地后，edit（保存）/delete（整条）都已摆脱对 `.mes` 节点的依赖**——阻挡标志翻开的最后一块拼图已经落地，但标志本身仍保持默认关闭，故意不在这一轮里顺手翻开：翻开前还需要一轮专门的、深思熟虑的验收（浏览器级停用即刷新往返 + bootstrap 自愈的真实驱动，见 INVARIANTS.md §16 未覆盖缺口）与一轮性能基线重新测量（`scripts/e2e/measure-chat-switch.mjs`/`measure-long-chat.mjs` 在截断=1 下的样张需要重新采集，不能直接沿用截断=0 时代的历史数字）——这是一次独立、显式的决定，不是本轮改动的副作用。`disableChatuiLayers()` 的停用分叉按 `isNativeTruncationGuardLive()` 报告的「本次会话覆盖是否真的在生效」分叉，而非按标志的当前取值分叉，故标志未来接出 UI 开关后半途翻掉也不会把仍在生效的覆盖错误地导向裸 `teardown()`（无写回、无 reload）。单测见 INVARIANTS.md §14；index.ts 接线本身（真实「停用即刷新」往返、真实 bootstrap 自愈）尚无浏览器级驱动，见 INVARIANTS.md §15 |
+| 停用恢复 | **2026-07-19 机制已落地并复审修订（`adapter/native-window-guard.ts`），单测背书；2026-07-19 浏览器级验收（`scripts/e2e/verify-truncation-guard.mjs`）落地过程中发现并修复了一处真实停用-reload 时序缺陷（见下方补充说明）；标志已于 2026-07-19 经显式决策默认开启（验收 + 基线数据支撑，见 PERFORMANCE.md「真实 flag 性能验收」节）** | reload 方案：停用时尝试写回真值 → 经既有事务层 `reloadRequired` 终局机制（`sealHostOperationQueueForReload` + `enqueueHostTask`，`src/index.ts::disableChatuiLayers`）→ `location.reload()`，顺带清干净全部模块级残留状态（含无复位口的 `swipeState`）。覆盖值绝不永久污染用户配置的四层防线均已实现并单测：(a) 激活时先把真实 `chat_truncation` 写一次性备份进 SillyLounge 自有 `extensionSettings`（`backupOnce`，三态返回 `established`/`already-present`/`unreadable`），仅当存在有效恢复点（前两态之一）才做内存覆盖（`applyOverride`，值为 1——ST 把 0 解读为「无限制」，覆盖值绝不能是 0）——`unreadable`（读不出有限数字）时 `activateNativeTruncationGuard()` 拒绝激活并 `console.warn`，绝不裸奔覆盖；(b) 备份存在期间的再次激活绝不覆写（写一次语义）；(c) 每次启动（含 bootstrap / 标志关闭模式）在 `index.ts::init()` 最前面无条件跑自愈检查（`selfHealNativeTruncation`），发现「存有备份且当前仍是覆盖哨兵值」即写回并清空备份——这是防崩溃/强关标签页的兜底，**不是**（2026-07-19 复审前的表述曾误认为是）防停用时序竞态的主防线，见下方补充说明；(d) `restoreForDisable()` 镜像 (c) 的守卫哲学：只有当前值仍是覆盖哨兵才真正写回备份，若用户已经过 ST 原生 `#AdvancedFormatting` 抽屉（不受 st-dom-shield.ts 遮罩）手动改过 `chat_truncation`，手动值权威，停用恢复按兵不动、只清掉过期备份，绝不用陈旧备份覆盖用户刚做的选择。激活被 `store/config-store.ts` 的 `nativeTruncationOverrideEnabled` 标志整体门控，2026-07-19 起默认 ON。**2026-07-19 Tier 3 落地后，edit（保存）/delete（整条）都已摆脱对 `.mes` 节点的依赖**——阻挡标志翻开的最后一块拼图落地后，同日完成了基线重测与浏览器验收，owner 据此显式拍板把默认值翻为开启（切换 content ready -22%、切换 long task 归零、首屏 DOM -41%；数据与诚实脚注见 PERFORMANCE.md）。`disableChatuiLayers()` 的停用分叉按 `isNativeTruncationGuardLive()` 报告的「本次会话覆盖是否真的在生效」分叉，而非按标志的当前取值分叉，故标志未来接出 UI 开关后半途翻掉也不会把仍在生效的覆盖错误地导向裸 `teardown()`（无写回、无 reload）。单测见 INVARIANTS.md §14；index.ts 接线本身（真实「停用即刷新」往返、真实 bootstrap 自愈）已由 `scripts/e2e/verify-truncation-guard.mjs` 的两个真实 Chromium 场景驱动并全绿，见 INVARIANTS.md §13/§16。**2026-07-19 时序缺陷补充说明**：`verify-truncation-guard.mjs` 首次真实运行时，场景 A 在「停用→刷新」后卡死等待原生 `#chat` 恢复到用户原截断值，120s 超时。诊断（实测 + 读 ST `public/script.js`/`RossAscends-mods.js`/`public/scripts/utils.js` 源码）查明两层事实：① ST 的 `chat_truncation` 只在 `printMessages()`（即一次会话打印：开机或切换会话）读取一次，纯内存改写不会触发重打印——首屏按开机那一刻的值渲染，之后任何原地修改都要等下一次打印才可见，这本身是 ST 的既有语义，非缺陷；② `disableChatuiLayers()` 原实现在 `restoreForDisable()`（内部经 `clearBackup()`）与调用方此前的 `settings.enabled = false` 都只调了 `saveSettingsDebounced()`，随即几乎同步 `location.reload()`——而 `saveSettingsDebounced()` 是 ST `utils.js::debounce()` 包出来的单个共享定时器（每次调用都会 `clearTimeout` 重置整个 1000ms 窗口），reload 摧毁当前页面 JS 上下文的时机远早于这个窗口能走完，因此这次点击**必然**（而非偶发）丢掉两笔写入：磁盘上 `chatui_composer.enabled` 仍是 `true`、`power_user.chat_truncation`/备份仍是停用前的值。下一次开机因此读到 `enabled: true` 而重新整套激活 ChatUI（含再次调用 `activateNativeTruncationGuard()`），且这次重新激活总能抢在 ST 自己的 fire-and-forget 开机打印（`initRossMods()` 里不 `await` 直接调用的 `RA_autoloadchat()`）前把 `chat_truncation` 又摁回哨兵值——原生 `#chat` 从此钉死在哨兵计数上，没有任何后续事件会触发重打印去反映自愈后的内存值。用插桩过的真实往返复现并核实：刷新后 15 秒内磁盘设置从未离开过停用前的值，`#chat` 计数从未离开过哨兵值。修复：`disableChatuiLayers()` 在 `restoreForDisable()` 之后、`location.reload()` 之前改为 `await` ST 未包装的真实 `saveSettings()`（`public/script.js`，非 `saveSettingsDebounced`），把「reload 大概率能抢在防抖前面」换成「reload 只在这次写入真正落盘后才会发生」——与本仓库其余 reload 路径（如 `store/sidebar-actions.ts` 当前会话删除，reload 前已 `await` 过真正的删除请求）的既有约定一致。自愈机制保留，但角色收窄为「已 await 的落盘仍覆盖不到的极端情形（例如刷新请求半途标签页崩溃）」的纵深防御，不再是停用路径日常要依赖的主防线。 |
 
 ## 已拍板决策（2026-07-19）
 
@@ -134,10 +134,16 @@ Tier 3 落地一并移除的：Tier 2 的 `this_edit_mes_id` 影子变量（其�
    动作层选择。**2026-07-19：机制已实现并接线（`adapter/native-window-guard.ts` +
    `src/index.ts`）**——`nativeTruncationOverrideEnabled` 标志默认关闭；
    **2026-07-19 Tier 3 落地后，delete（整条）与 edit（保存）都已摆脱对 `.mes`
-   节点的依赖，动作层不再有任何理由挡住标志翻开**，但标志仍保持默认关闭：翻开
-   前需要一轮独立的浏览器级验收（真实「停用即刷新」往返、真实 bootstrap 自愈，
-   见 INVARIANTS.md §16）与一轮性能基线重新测量，见「停用恢复」行的
-   2026-07-19 补充说明。
+   节点的依赖，动作层不再有任何理由挡住标志翻开**。**2026-07-19：独立的浏览器级
+   验收（真实「停用即刷新」往返、真实 bootstrap 自愈，`scripts/e2e/
+   verify-truncation-guard.mjs`，见 INVARIANTS.md §13/§16）已完成并全绿**——过程
+   中发现并修复了停用路径一处真实的落盘时序缺陷（`location.reload()` 曾抢在
+   `saveSettingsDebounced()` 的防抖窗口之前跑，导致停用状态与截断恢复值必然丢
+   失，见上表「停用恢复」行 2026-07-19 时序缺陷补充说明）。**2026-07-19：基线
+   重测完成后（切换 content ready -22%、long task 归零，PERFORMANCE.md），owner
+   显式拍板，默认值已翻为开启；验收脚本同日接入 CI 发布门禁。** 后续待办：主门禁
+   （smoke / chat-switch / perf）的固件仍显式写 flag-off，尚未迁移到新默认，见
+   INVARIANTS.md §16。
 3. **Tier 2：delete 薄分叉** + 自实现确认 UI + 契约测试。**2026-07-19 已落地**：
    delete（仅 swipe）的 mini-fork 已在 Tier 1 提前完成（同等契约测试对待，见
    下）；delete（整条）本身的薄分叉（`_deleteFullMessageById`，DOM 门卫已撤除，
@@ -206,9 +212,13 @@ Tier 3 落地一并移除的：Tier 2 的 `this_edit_mes_id` 影子变量（其�
   false 时跳过弹窗；true 时按 `getDeleteEligibility()` 决定两态还是三态弹窗，
   三态的默认项/升级项/取消分别映射到仅删 swipe / 整条删除 / 零变更；对话框仍开
   着时会话切换必须让最终执行按会话键拒绝。
-- 停用恢复 smoke（按 reload 方案改写）：真 Chromium 验收——停用并刷新后
-  `chat_truncation` 恢复为用户原值、`#chat` 含完整（非截断）原生消息集；另需
-  自愈用例：人为把覆盖值持久化后以 bootstrap 模式启动，断言开机守卫写回原值。
+- 停用恢复 smoke（按 reload 方案改写，**2026-07-19 已落地**，
+  `scripts/e2e/verify-truncation-guard.mjs`，见 INVARIANTS.md §13/§16）：真
+  Chromium 验收——停用并刷新后 `chat_truncation` 恢复为用户原值、`#chat` 含完整
+  （非截断）原生消息集；另有自愈用例：人为把覆盖值持久化后以 bootstrap 模式启
+  动，断言开机守卫写回原值。首次真实运行即在停用-刷新往返上发现并修复了一处落
+  盘时序缺陷（`disableChatuiLayers()` 改为 reload 前 `await` 真实 `saveSettings()`），
+  见上表「停用恢复」行的补充说明。
 - **2026-07-19 新增缺口**（浏览器层，见 INVARIANTS.md §16）：ChatUI 自有确认对
   话框组件（`ConfirmDialogHost`/`ConfirmDialog` 的真实渲染与三态按钮点击）与
   「点击删除 → 真弹窗 → 点击真按钮 → ST 真实 `chat`/`#chat` 发生预期变化」的端

@@ -78,6 +78,16 @@ jobs:
             exit "$status"
           }
 
+      - name: Verify the native-truncation guard acceptance
+        env:
+          SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
+        run: |
+          node ./scripts/e2e/verify-truncation-guard.mjs || {
+            status=$?
+            echo "::error::truncation-guard acceptance failed; its report lives under test-results/truncation-guard/ and is picked up by the browser-test evidence upload below"
+            exit "$status"
+          }
+
       - name: Upload browser-test evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6

@@ -306,11 +306,13 @@ export function selfHealNativeTruncation(): boolean {
  * to the current live value, and keeping it around would make the next
  * activation's backupOnce() wrongly skip capturing a fresh one).
  *
- * If the reload that normally follows a real restore (see index.ts) races
- * the debounced settings save and wins, the write here never reaches the
- * server — but selfHealNativeTruncation() detects and repairs exactly that
- * on the very next boot, so this path does not need to force-flush the
- * save itself.
+ * Persistence ordering is the CALLER's responsibility: the disable flow in
+ * index.ts must await ST's non-debounced saveSettings() before reloading —
+ * relying on the debounced save deterministically LOSES the write, because
+ * the reload tears the page down inside the shared 1000ms debounce window
+ * (found empirically by the 2026-07-19 browser acceptance; fixed in
+ * disableChatuiLayers). selfHealNativeTruncation() remains a backstop for
+ * genuine crashes, not a substitute for awaited persistence here.
  *
  * @returns {boolean} Whether the backup value was actually restored onto
  *   the live setting (false both when there was no backup, and when a

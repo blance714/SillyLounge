@@ -26,7 +26,7 @@ const DURATION_METRICS = Object.freeze([
 ]);
 
 function parseArgs(argv) {
-    const values = { repetitions: 1, warmups: 0, fixture: DEFAULT_FIXTURE, regex: 'active' };
+    const values = { repetitions: 1, warmups: 0, fixture: DEFAULT_FIXTURE, regex: 'active', 'truncation-guard': 'off' };
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--') continue;
@@ -50,6 +50,15 @@ function parseArgs(argv) {
     if (!['active', 'disabled'].includes(values.regex)) {
         throw new Error('regex must be active or disabled');
     }
+    // Real product flag path: src/store/config-store.ts's
+    // nativeTruncationOverrideEnabled, applied at boot by src/index.ts's
+    // setup() -> activateNativeTruncationGuard() for the `active` mode only
+    // (setup() never runs for `disabled`/`bootstrap`, see src/index.ts's
+    // init()).
+    if (!['on', 'off'].includes(values['truncation-guard'])) {
+        throw new Error('truncation-guard must be on or off');
+    }
+    values.truncationGuardFlag = values['truncation-guard'] === 'on';
     return values;
 }
 
@@ -57,8 +66,8 @@ function fixturePath(fixture) {
     return path.join(FIXTURE_ROOT, fixture, 'fixture.json');
 }
 
-function defaultOutput(fixture, regexMode) {
-    const suffix = regexMode === 'active' ? '' : '-regex-disabled';
+function defaultOutput(fixture, regexMode, truncationGuardFlag = false) {
+    const suffix = `${regexMode === 'active' ? '' : '-regex-disabled'}${truncationGuardFlag ? '-truncation-guard' : ''}`;
     return path.join(PROJECT_ROOT, 'test-results', 'performance', `${fixture}${suffix}.json`);
 }
 
@@ -114,7 +123,7 @@ async function waitForMeasuredPage(page, mode, expected) {
         const nativeMessages = document.querySelectorAll('#chat .mes');
         const nativeLast = nativeMessages[nativeMessages.length - 1];
         if (
-            nativeMessages.length !== Math.min(100, expected.messageCount)
+            !expected.nativeMessageCounts.includes(nativeMessages.length)
             || nativeLast?.getAttribute('mesid') !== String(expected.messageCount - 1)
         ) return false;
         if (selectedMode !== 'active') {
@@ -242,7 +251,7 @@ async function copyIfPresent(source, destination) {
     }
 }
 
-async function runScenario({ browser, stRoot, fixture, regexMode, mode, iteration, warmup, outputRoot }) {
+async function runScenario({ browser, stRoot, fixture, regexMode, mode, iteration, warmup, outputRoot, truncationGuardFlag }) {
     const runRoot = await fs.mkdtemp(path.join(os.tmpdir(), `sillylounge-perf-${mode}-`));
     const dataRoot = path.join(runRoot, 'data');
     const label = `${warmup ? 'warmup' : `run-${iteration + 1}`}-${mode}`;
@@ -261,6 +270,13 @@ async function runScenario({ browser, stRoot, fixture, regexMode, mode, iteratio
             fixturePath: fixturePath(fixture),
             extensionMode: mode,
             regexMode,
+            // Real product flag path (src/store/config-store.ts's
+            // nativeTruncationOverrideEnabled). Only takes effect for `active`
+            // (setup() -> activateNativeTruncationGuard() never runs for
+            // `disabled`/`bootstrap`); writing it unconditionally is harmless
+            // and keeps the three-state comparison's data roots otherwise
+            // identical.
+            nativeTruncationOverrideEnabled: truncationGuardFlag,
         });
         server = await startStServer({ stRoot, runRoot, dataRoot, readyTimeoutMs: 120_000 });
         context = await browser.newContext({
@@ -310,10 +326,25 @@ async function runScenario({ browser, stRoot, fixture, regexMode, mode, iteratio
         const cdpBefore = metricMap(await cdp.send('Performance.getMetrics'));
         const navigationStarted = nodePerformance.now();
         await page.goto(server.url, { waitUntil: 'domcontentloaded', timeout: 120_000 });
+        // Baseline: ST always prints min(chat_truncation_default, messageCount)
+        // natively. In `active` + flag-on, activateNativeTruncationGuard() may
+        // additionally have forced chat_truncation down to the override
+        // sentinel by the time this first print happens — or may not, if
+        // APP_READY (when setup() runs) fires after ST's own initial chat
+        // print. Accept either so the wait reflects reality instead of
+        // assuming an answer; browserState.dom.nativeMessages below records
+        // which one actually happened for the report to state as a finding.
+        const nativeMessageCounts = truncationGuardFlag && mode === 'active'
+            ? [
+                Math.min(100, generated.manifest.conversation.messageCount),
+                Math.min(generated.manifest.nativeTruncation.overrideSentinel, generated.manifest.conversation.messageCount),
+            ]
+            : [Math.min(100, generated.manifest.conversation.messageCount)];
         const expected = {
             chatId: generated.manifest.conversation.fileName,
             messageCount: generated.manifest.conversation.messageCount,
             userTurns: generated.manifest.conversation.userTurns,
+            nativeMessageCounts,
             firstFloor: generated.manifest.fixture === 'long-plain' ? {
                 title: '第 1 楼用户消息：用于测量长对话加载与跳转。',
                 preview: '第 1 楼助手回复：固定、简短、无附件的 Markdown 文本。',
@@ -358,6 +389,7 @@ async function runScenario({ browser, stRoot, fixture, regexMode, mode, iteratio
         return {
             mode,
             iteration,
+            truncationGuardFlag,
             fixture: generated.manifest.conversation,
             navigationToReadyMs,
             cdp: metricReport(cdpBefore, cdpAfter),
@@ -398,6 +430,7 @@ function aggregateResults(results) {
             heapBytes: median(samples.map(sample => sample.cdp.JSHeapUsedSize)),
             nodes: median(samples.map(sample => sample.cdp.Nodes)),
             totalElements: median(samples.map(sample => sample.dom.totalElements)),
+            nativeMessages: median(samples.map(sample => sample.dom.nativeMessages)),
             rootArticles: median(samples.map(sample => sample.dom.rootArticles)),
             rootButtons: median(samples.map(sample => sample.dom.rootButtons)),
             iframes: median(samples.map(sample => sample.dom.iframes)),
@@ -424,11 +457,12 @@ export async function measureLongChat({
     repetitions = 1,
     warmups = 0,
     output,
+    truncationGuardFlag = false,
 }) {
     if (!stRoot) throw new Error('stRoot is required (pass --st or SILLYTAVERN_TEST_ROOT)');
     if (!/^[a-z0-9-]+$/i.test(fixture)) throw new Error('fixture must be one safe directory name');
     if (!['active', 'disabled'].includes(regexMode)) throw new Error('regexMode must be active or disabled');
-    const resolvedOutput = path.resolve(output ?? defaultOutput(fixture, regexMode));
+    const resolvedOutput = path.resolve(output ?? defaultOutput(fixture, regexMode, truncationGuardFlag));
     const outputRoot = path.dirname(resolvedOutput);
     const evidenceRoot = path.join(outputRoot, 'runs');
     await fs.mkdir(outputRoot, { recursive: true });
@@ -450,6 +484,7 @@ export async function measureLongChat({
                     iteration: warmup,
                     warmup: true,
                     outputRoot: evidenceRoot,
+                    truncationGuardFlag,
                 });
             }
         }
@@ -465,6 +500,7 @@ export async function measureLongChat({
                     iteration,
                     warmup: false,
                     outputRoot: evidenceRoot,
+                    truncationGuardFlag,
                 }));
             }
         }
@@ -480,6 +516,7 @@ export async function measureLongChat({
         viewport: DESKTOP_VIEWPORT,
         repetitions,
         warmups,
+        truncationGuardFlag,
         fixture: {
             id: fixture,
             regexMode,
@@ -506,11 +543,13 @@ async function main() {
         repetitions: args.repetitions,
         warmups: args.warmups,
         output: args.output,
+        truncationGuardFlag: args.truncationGuardFlag,
     });
     console.table(Object.fromEntries(Object.entries(result.report.summary).map(([mode, summary]) => [mode, {
         readyMs: Math.round(summary.navigationToReadyMs),
         longTaskMs: Math.round(summary.longTaskTotalMs),
         elements: Math.round(summary.totalElements),
+        nativeMessages: Math.round(summary.nativeMessages),
         rootArticles: Math.round(summary.rootArticles),
         rootButtons: Math.round(summary.rootButtons),
         iframes: Math.round(summary.iframes),
