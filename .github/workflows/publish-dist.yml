@@ -60,10 +60,23 @@ jobs:
       - name: Install Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Assemble browser-test runtime
+        run: pnpm run runtime
+
       - name: Verify the real SillyTavern UI
         env:
           SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
-        run: pnpm run test:e2e
+        run: pnpm exec playwright test
+
+      - name: Verify the chat-switch performance harness
+        env:
+          SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
+        run: |
+          node ./scripts/e2e/measure-chat-switch.mjs || {
+            status=$?
+            echo "::error::chat-switch harness failed; its JSON report (on success) and screenshots/SillyTavern logs (always) live under test-results/performance/ and are picked up by the browser-test evidence upload below"
+            exit "$status"
+          }
 
       - name: Upload browser-test evidence
         if: ${{ !cancelled() }}

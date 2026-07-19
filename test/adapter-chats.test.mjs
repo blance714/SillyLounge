@@ -578,6 +578,495 @@ test('reconcileCurrentRenameSafety gives up and reports uncertain+reloadRequired
     }
 });
 
+// -----------------------------------------------------------------------
+// Gap 4: rename response is HTTP ok but its JSON body is unparseable
+// (confirmedName stays ''). renameCharacterChatFile must fall back to
+// inferring the outcome from the before/after raw-directory-listing diff
+// (the `additions` set) instead of ever guessing from the request's own
+// success/failure. Every test below is a non-current rename so the
+// ambiguous-diff path resolves ('unknown' or otherwise) after exactly one
+// readback, with no retry-budget plumbing involved.
+// -----------------------------------------------------------------------
+
+test('a rename response with an unparseable body infers a clean success from a single matching directory addition', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a'),  // pre-rename existence check
+            rawListing('chat-z'),  // forward-rename readback: chat-a gone, chat-z is the one addition
+        );
+        router.queue('/api/chats/rename', { ok: true, status: 200, json: async () => {
+            throw new Error('malformed rename response body');
+        } });
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let emittedPayload = null;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, payload => { emittedPayload = payload; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'chat-a', 'chat-z');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: false,
+            avatar: 'bob.png',
+            oldFileName: 'chat-a',
+            newFileName: 'chat-z',
+            oldChatKey: chatKey('bob.png', 'chat-a'),
+            newChatKey: chatKey('bob.png', 'chat-z'),
+        });
+        assert.deepEqual(emittedPayload, {
+            avatarId: 'bob.png',
+            groupId: null,
+            oldFileName: 'chat-a.jsonl',
+            newFileName: 'chat-z.jsonl',
+        });
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a rename response with an unparseable body infers a conflict when the old name and a single addition coexist', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a'),               // pre-rename existence check
+            rawListing('chat-a', 'chat-z'),      // forward-rename readback: chat-a still present too
+        );
+        router.queue('/api/chats/rename', { ok: true, status: 200, json: async () => {
+            throw new Error('malformed rename response body');
+        } });
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'chat-a', 'chat-z');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: true,
+            uncertain: true,
+            reloadRequired: false,
+            avatar: 'bob.png',
+            oldFileName: 'chat-a',
+            newFileName: 'chat-z',
+            oldChatKey: chatKey('bob.png', 'chat-a'),
+            newChatKey: chatKey('bob.png', 'chat-z'),
+        });
+        assert.equal(renamedEmitted, false,
+            'the old name surviving alongside a new addition must never be reported a clean success');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a rename response with an unparseable body honestly reports unknown when the directory diff is ambiguous, without guessing a filename', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a'),                  // pre-rename existence check
+            rawListing('chat-x', 'chat-y'),         // forward-rename readback: two unrelated additions, chat-a gone
+        );
+        router.queue('/api/chats/rename', { ok: true, status: 200, json: async () => {
+            throw new Error('malformed rename response body');
+        } });
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'chat-a', 'chat-z');
+
+        assert.deepEqual(result, {
+            renamed: false,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: false,
+            avatar: 'bob.png',
+            oldFileName: 'chat-a',
+            newFileName: 'chat-z',
+            oldChatKey: chatKey('bob.png', 'chat-a'),
+            newChatKey: chatKey('bob.png', 'chat-z'),
+        });
+        assert.equal(router.callCount('/api/characters/chats'), 2,
+            'a non-current rename must give up after its first ambiguous read, never retrying or guessing a winner');
+        assert.equal(renamedEmitted, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
+// -----------------------------------------------------------------------
+// Gap 3: persistCharacterChatSelection resolving 'different' (a concurrent
+// writer won the character-card pointer before the rename could claim it).
+// rename-transaction.ts documents two entirely different responses to this
+// race depending on whether the chat being renamed is the live current chat:
+// a non-current rename just follows the winner locally and still reports a
+// clean success (the file move itself is not in question); a current-chat
+// rename discards this branch's own verdict entirely and defers to
+// reconcileCurrentRenameSafety, because only that function may safely touch
+// the live message buffer's pointer.
+// -----------------------------------------------------------------------
+
+test('a non-current rename that loses the character-card pointer race still reports a clean success and follows the winner locally', async () => {
+    const host = await createFakeStHost();
+    try {
+        // characterId is left unset: this rename never touches "the current chat".
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'old-chat' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('old-chat'),  // pre-rename existence check
+            rawListing('new-chat'),  // forward-rename readback: clean move
+        );
+        router.queue('/api/chats/rename', renameResponse('new-chat'));
+        router.queue('/api/characters/merge-attributes', okJson({}));
+        router.queue('/api/characters/get', pointerResponse('someone-elses-chat'));
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let emittedPayload = null;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, payload => { emittedPayload = payload; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'old-chat', 'new-chat');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: false,
+            avatar: 'bob.png',
+            oldFileName: 'old-chat',
+            newFileName: 'new-chat',
+            oldChatKey: chatKey('bob.png', 'old-chat'),
+            newChatKey: chatKey('bob.png', 'new-chat'),
+        });
+        assert.deepEqual(emittedPayload, {
+            avatarId: 'bob.png',
+            groupId: null,
+            oldFileName: 'old-chat.jsonl',
+            newFileName: 'new-chat.jsonl',
+        }, 'the file move itself is reported by its real names, independent of who won the pointer');
+        assert.equal(host.context.characters[0].chat, 'someone-elses-chat',
+            'the live card record must follow the winning pointer, not the renamed file');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a current-chat rename that loses the character-card pointer race defers entirely to reconcileCurrentRenameSafety, never acting on the race itself', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'old-chat' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'old-chat.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('old-chat'),  // pre-rename existence check
+            rawListing('new-chat'),  // forward-rename readback: clean move
+            rawListing('new-chat'),  // reconciliation: the live session file (old-chat) is gone
+        );
+        router.queue('/api/chats/rename', renameResponse('new-chat'));
+        router.queue('/api/characters/merge-attributes', okJson({}));
+        router.queue('/api/characters/get',
+            pointerResponse('someone-elses-chat'), // initial pointer-persist readback: a winner already
+            pointerResponse('new-chat'),            // reconciliation's own durable-pointer read: valid now
+        );
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'old-chat', 'new-chat');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: true,
+            avatar: 'bob.png',
+            oldFileName: 'old-chat',
+            newFileName: 'new-chat',
+            oldChatKey: chatKey('bob.png', 'old-chat'),
+            newChatKey: chatKey('bob.png', 'new-chat'),
+        });
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 1,
+            'the current-chat branch must not itself attempt a second write once it lost the race; ' +
+            'only reconcileCurrentRenameSafety may act further');
+        assert.equal(host.context.characters[0].chat, 'old-chat.jsonl',
+            'the live card record must stay untouched by this race; only a reload may safely apply a new pointer');
+        assert.equal(renamedEmitted, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
+// -----------------------------------------------------------------------
+// Gap 1: reconcileCurrentRenameSafety's convergence branches for when the
+// live session file no longer appears in a *fresh* raw directory listing
+// (a call this function always issues itself, never trusting what the
+// forward rename already observed). It must fall back first to an
+// already-valid durable pointer, then to locating identity by
+// renamedFileName, then by oldFileName — and every one of those fallbacks
+// must itself handle a concurrent pointer-alignment write losing honestly.
+//
+// Every test fixes cardChatName to a chat unrelated to the rename target so
+// renameCharacterChat's own top-level pointer-persist block never fires,
+// isolating coverage to reconcileCurrentRenameSafety's own retry loop.
+// -----------------------------------------------------------------------
+
+test('reconcileCurrentRenameSafety uses an already-valid durable pointer directly once the live session file is gone, without writing anything', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'old-chat.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('old-chat'), // pre-rename existence check
+            rawListing('new-chat'), // forward-rename readback: clean move
+            rawListing('new-chat'), // reconciliation's own fresh read: old-chat (live) is gone
+        );
+        router.queue('/api/chats/rename', renameResponse('new-chat'));
+        router.queue('/api/characters/get', pointerResponse('new-chat')); // durable pointer already valid
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'old-chat', 'new-chat');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: true,
+            avatar: 'bob.png',
+            oldFileName: 'old-chat',
+            newFileName: 'new-chat',
+            oldChatKey: chatKey('bob.png', 'old-chat'),
+            newChatKey: chatKey('bob.png', 'new-chat'),
+        });
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 0,
+            'an already-valid durable pointer must be used as-is, never re-written');
+        assert.equal(host.context.characters[0].chat, 'unrelated-chat.jsonl',
+            'the live card record must be left untouched; only a reload may apply this pointer');
+        assert.equal(renamedEmitted, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('reconcileCurrentRenameSafety falls back to the renamed file when the live session file is gone and the durable pointer is stale, converging cleanly', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'old-chat.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('old-chat'), // pre-rename existence check
+            rawListing('new-chat'), // forward-rename readback: clean move
+            rawListing('new-chat'), // reconciliation's own fresh read: only the renamed file exists
+        );
+        router.queue('/api/chats/rename', renameResponse('new-chat'));
+        router.queue('/api/characters/get',
+            okJson({ chat: '' }),         // durable pointer read: empty/stale
+            pointerResponse('new-chat'),  // alignment write readback: confirms the renamed file
+        );
+        router.queue('/api/characters/merge-attributes', okJson({}));
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let emittedPayload = null;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, payload => { emittedPayload = payload; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'old-chat', 'new-chat');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: false,
+            avatar: 'bob.png',
+            oldFileName: 'old-chat',
+            newFileName: 'new-chat',
+            oldChatKey: chatKey('bob.png', 'old-chat'),
+            newChatKey: chatKey('bob.png', 'new-chat'),
+        });
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 1,
+            'the recovered identity must be persisted exactly once');
+        assert.deepEqual(emittedPayload, {
+            avatarId: 'bob.png',
+            groupId: null,
+            oldFileName: 'old-chat.jsonl',
+            newFileName: 'new-chat.jsonl',
+        });
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('reconcileCurrentRenameSafety falls back to the original file when neither the live session file nor the renamed file survives, and flags the mismatch as uncertain', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+        host.context.characterId = 0;
+        // The two pre-rename gating reads still see the chat being renamed;
+        // reconciliation's own fresh read (3rd+ call) sees a live session
+        // name that is neither oldFileName nor renamedFileName — the diff
+        // recovery this branch exists for cares only about those two names,
+        // never the live buffer's own (possibly stale) tracked name.
+        let chatDetailsCalls = 0;
+        host.registry.getCurrentChatDetails = () => {
+            chatDetailsCalls += 1;
+            return { sessionName: chatDetailsCalls <= 2 ? 'old-chat.jsonl' : 'ghost-session.jsonl' };
+        };
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('old-chat'), // pre-rename existence check
+            rawListing('new-chat'), // forward-rename readback: clean move
+            rawListing('old-chat'), // reconciliation's own fresh read: the renamed file is gone too
+        );
+        router.queue('/api/chats/rename', renameResponse('new-chat'));
+        router.queue('/api/characters/get',
+            okJson({ chat: '' }),         // durable pointer read: empty/stale
+            pointerResponse('old-chat'),  // alignment write readback: confirms the original file
+        );
+        router.queue('/api/characters/merge-attributes', okJson({}));
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'old-chat', 'new-chat');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: false,
+            avatar: 'bob.png',
+            oldFileName: 'old-chat',
+            newFileName: 'new-chat',
+            oldChatKey: chatKey('bob.png', 'old-chat'),
+            newChatKey: chatKey('bob.png', 'new-chat'),
+        });
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 1,
+            'the recovered identity must still be persisted even though it is not the rename target');
+        assert.equal(renamedEmitted, false,
+            'reconciling onto oldFileName instead of the rename target must never be reported a clean success');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('reconcileCurrentRenameSafety reports uncertain and forces a reload when a concurrent write wins while recovering onto the renamed file', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'old-chat.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('old-chat'),                        // pre-rename existence check
+            rawListing('new-chat'),                         // forward-rename readback: clean move
+            rawListing('new-chat', 'someone-elses-chat'),    // reconciliation: a third file also exists
+        );
+        router.queue('/api/chats/rename', renameResponse('new-chat'));
+        router.queue('/api/characters/get',
+            okJson({ chat: '' }),                     // durable pointer read: empty/stale
+            pointerResponse('someone-elses-chat'),     // alignment write readback: another writer won
+        );
+        router.queue('/api/characters/merge-attributes', okJson({}));
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'old-chat', 'new-chat');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: true,
+            avatar: 'bob.png',
+            oldFileName: 'old-chat',
+            newFileName: 'new-chat',
+            oldChatKey: chatKey('bob.png', 'old-chat'),
+            newChatKey: chatKey('bob.png', 'new-chat'),
+        });
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 1,
+            'a single alignment attempt must not be retried once a non-ambiguous concurrent winner is confirmed');
+        assert.equal(renamedEmitted, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('reconcileCurrentRenameSafety reports uncertain and forces a reload when a concurrent write wins while recovering onto the original file', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'unrelated-chat' });
+        host.context.characterId = 0;
+        let chatDetailsCalls = 0;
+        host.registry.getCurrentChatDetails = () => {
+            chatDetailsCalls += 1;
+            return { sessionName: chatDetailsCalls <= 2 ? 'old-chat.jsonl' : 'ghost-session.jsonl' };
+        };
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('old-chat'),                        // pre-rename existence check
+            rawListing('new-chat'),                         // forward-rename readback: clean move
+            rawListing('old-chat', 'someone-elses-chat'),    // reconciliation: the renamed file is gone too
+        );
+        router.queue('/api/chats/rename', renameResponse('new-chat'));
+        router.queue('/api/characters/get',
+            okJson({ chat: '' }),                     // durable pointer read: empty/stale
+            pointerResponse('someone-elses-chat'),     // alignment write readback: another writer won
+        );
+        router.queue('/api/characters/merge-attributes', okJson({}));
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'old-chat', 'new-chat');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: true,
+            avatar: 'bob.png',
+            oldFileName: 'old-chat',
+            newFileName: 'new-chat',
+            oldChatKey: chatKey('bob.png', 'old-chat'),
+            newChatKey: chatKey('bob.png', 'new-chat'),
+        });
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 1);
+        assert.equal(renamedEmitted, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
 // =======================================================================
 // delete-transaction.js
 // =======================================================================
@@ -769,5 +1258,172 @@ test('the post-delete existence poll gives up and reports uncertain, without rol
         assert.equal(deletedEmitted, false);
     } finally {
         await host.dispose();
+    }
+});
+
+// -----------------------------------------------------------------------
+// Gap 3: persistCharacterChatSelection resolving 'different' (a concurrent
+// writer won the character-card pointer before deleteCharacterChat could
+// claim it). delete-transaction.ts documents two entirely different
+// responses depending on whether the deleted chat is the live current chat:
+// deleting the current chat abandons the whole operation immediately and
+// requires a reload (the destructive DELETE must never fire once the
+// pointer race is lost, per its own doc comment); deleting a non-current
+// chat just follows the winner locally and safely proceeds with DELETE,
+// because no live message buffer is at risk.
+// -----------------------------------------------------------------------
+
+test('deleting the current chat abandons the operation and requires a reload when a concurrent writer wins the pointer race, never issuing the destructive request', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a', 'chat-b'));
+        router.queue('/api/chats/search', okJson([]));
+        router.queue('/api/characters/merge-attributes', okJson({}));
+        router.queue('/api/characters/get', pointerResponse('someone-elses-chat'));
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        let deletedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_DELETED, () => { deletedEmitted = true; });
+
+        const result = await del.deleteCharacterChat('bob.png', 'chat-a');
+
+        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true });
+        assert.equal(router.callCount('/api/chats/delete'), 0,
+            'losing the pointer race must abandon the deletion before the destructive request is ever sent');
+        assert.equal(host.context.characters[0].chat, 'chat-a.jsonl',
+            'the live card record must be left untouched; only a reload may safely resolve the winning pointer');
+        assert.equal(deletedEmitted, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('deleting a non-current chat that loses the character-card pointer race still safely proceeds with the destructive request and follows the winner locally', async () => {
+    const host = await createFakeStHost();
+    try {
+        // characterId is left unset: this delete never touches "the current chat".
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a', 'chat-b'), // pre-delete existence check
+            rawListing('chat-b'),            // post-delete existence poll: chat-a confirmed gone
+        );
+        router.queue('/api/chats/search', okJson([]));
+        router.queue('/api/characters/merge-attributes', okJson({}));
+        router.queue('/api/characters/get', pointerResponse('someone-elses-chat'));
+        router.queue('/api/chats/delete', { ok: true });
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        let deletedPayload;
+        host.eventSource.on(host.event_types.CHAT_DELETED, payload => { deletedPayload = payload; });
+
+        const result = await del.deleteCharacterChat('bob.png', 'chat-a');
+
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.equal(deletedPayload, 'chat-a',
+            'the file is still safely removed by its real name, independent of who won the pointer');
+        assert.equal(host.context.characters[0].chat, 'someone-elses-chat',
+            'the live card record must follow the winning pointer, not the replacement candidate');
+    } finally {
+        await host.dispose();
+    }
+});
+
+// -----------------------------------------------------------------------
+// Gap 2: deleting the current chat must never let the destructive DELETE
+// cross the await gap between "the replacement pointer is durably
+// persisted" and "the request is actually sent" while generation or chat
+// saving starts in that window. deleteCharacterChat's own doc comment
+// requires rolling the pointer back to the original file and abandoning
+// the delete entirely — this is the one client-side path that cannot
+// otherwise guard against writing the target's in-flight messages into the
+// replacement chat after an await-time state change.
+// -----------------------------------------------------------------------
+
+test('deleting the current chat rolls the pointer back and abandons the delete when generation starts in the gap between persisting the replacement and issuing DELETE', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+
+        // false for the pre-persist gate, true from then on — isGenerating()
+        // is called exactly twice on this path (the early gate, then the
+        // post-persist re-check), so this deterministically simulates
+        // generation starting in the await gap between them, without any
+        // reliance on timing.
+        let isGeneratingCalls = 0;
+        host.registry.isGenerating = () => {
+            isGeneratingCalls += 1;
+            return isGeneratingCalls > 1;
+        };
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a', 'chat-b'));
+        router.queue('/api/chats/search', okJson([]));
+        router.queue('/api/characters/merge-attributes', okJson({}), okJson({}));
+        router.queue('/api/characters/get', pointerResponse('chat-b'), pointerResponse('chat-a'));
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        let deletedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_DELETED, () => { deletedEmitted = true; });
+
+        const result = await del.deleteCharacterChat('bob.png', 'chat-a');
+
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.equal(router.callCount('/api/chats/delete'), 0,
+            'generation starting in the await gap must abandon the delete before the destructive request is sent');
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 2,
+            'the replacement pointer write must be followed by exactly one rollback write back to the original file');
+        assert.equal(isGeneratingCalls, 2);
+        assert.equal(deletedEmitted, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('deleting the current chat rolls the pointer back and abandons the delete when chat saving begins in the gap between persisting the replacement and issuing DELETE', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+        host.registry.isGenerating = () => false;
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a', 'chat-b'));
+        router.queue('/api/chats/search', okJson([]));
+        // The initial replacement-pointer write's response is the trigger:
+        // by the time it resolves, chat saving has begun — modeling a save
+        // starting concurrently with (not caused by) the pointer write,
+        // strictly inside the await gap the destructive DELETE must never
+        // cross.
+        router.queue('/api/characters/merge-attributes',
+            () => { host.state.setChatSaving(true); return okJson({}); },
+            okJson({}),
+        );
+        router.queue('/api/characters/get', pointerResponse('chat-b'), pointerResponse('chat-a'));
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        let deletedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_DELETED, () => { deletedEmitted = true; });
+
+        const result = await del.deleteCharacterChat('bob.png', 'chat-a');
+
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.equal(router.callCount('/api/chats/delete'), 0,
+            'chat saving beginning in the await gap must abandon the delete before the destructive request is sent');
+        assert.equal(router.callCount('/api/characters/merge-attributes'), 2,
+            'the replacement pointer write must be followed by exactly one rollback write back to the original file');
+        assert.equal(deletedEmitted, false);
+    } finally {
+        await host.dispose();
+        host.state.setChatSaving(false);
     }
 });

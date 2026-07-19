@@ -171,7 +171,8 @@ SillyLounge 的 shield 隐藏了 `#chat`，这部分正则、Markdown、DOMPurif
 从 100 条降到 1 条使平均内容可用时间减少约 29%，并消除了这组样张中的切换 long
 task；完全移除最后一条只再节省约 5 ms，不值得单独承担额外兼容代价。
 
-这还不是可发布实现。当前部分消息动作通过原生 `.mes` 定位目标：
+这还不是可发布实现。产品化的逐动作解耦设计与已定决策见 DOM-DECOUPLING.md（其中
+修正了下文按 ID 调用可行性的粗分类）。当前部分消息动作通过原生 `.mes` 定位目标：
 `saveMessageEditById` 需要原生编辑 textarea，统一 action/swipe 入口也先查原生元素。
 因此零条会破坏全部这类动作，一条也只能覆盖末条。产品化必须先把可直接按 ID 调用的
 copy、branch、checkpoint、hide、delete、swipe 从 DOM 身份中解耦；编辑则需要一个
