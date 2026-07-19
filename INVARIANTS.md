@@ -74,6 +74,20 @@
 | 核实读取成功但文件仍在时立即如实报 deleted:false，不进入轮询 | `test/adapter-chats.test.mjs :: a listing that successfully reads back but still shows the file resolves deleted:false immediately, without polling` |
 | 删除当前会话必须先持久化替换指针、要求刷新，且绝不向将失效的运行时广播 CHAT_DELETED | `test/adapter-chats.test.mjs :: deleting the current chat persists the replacement pointer before deleting and always requires a reload, never emitting CHAT_DELETED` |
 | 删除后轮询耗尽预算时只能报 uncertain，绝不回滚指针（防止指向已不存在的文件） | `test/adapter-chats.test.mjs :: the post-delete existence poll gives up and reports uncertain, without rolling back the pointer, once the retry budget is exhausted` |
+| 重命名响应体不可解析时，目录差集唯一新增匹配目标即判定成功 | `test/adapter-chats.test.mjs :: a rename response with an unparseable body infers a clean success from a single matching directory addition` |
+| 响应体不可解析且旧名仍在时判定冲突（uncertain），不谎报干净成功 | `test/adapter-chats.test.mjs :: a rename response with an unparseable body infers a conflict when the old name and a single addition coexist` |
+| 目录差集含多个新增无法唯一定位时诚实报 unknown，不臆测文件名 | `test/adapter-chats.test.mjs :: a rename response with an unparseable body honestly reports unknown when the directory diff is ambiguous, without guessing a filename` |
+| 非当前会话重命名输掉指针竞态时就地跟随胜者，文件改名本身仍报干净成功 | `test/adapter-chats.test.mjs :: a non-current rename that loses the character-card pointer race still reports a clean success and follows the winner locally` |
+| 当前会话重命名的指针竞态分支自身绝不改写实时记录，结果完全交给安全对账 | `test/adapter-chats.test.mjs :: a current-chat rename that loses the character-card pointer race defers entirely to reconcileCurrentRenameSafety, never acting on the race itself` |
+| live 文件消失但持久指针仍指向真实文件时，直接采用该指针且零写入，要求刷新 | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety uses an already-valid durable pointer directly once the live session file is gone, without writing anything` |
+| live 文件与持久指针均失效时，回退定位重命名目标并持久化，干净收敛 | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety falls back to the renamed file when the live session file is gone and the durable pointer is stale, converging cleanly` |
+| 仅剩原文件名可回退时持久化成功，但因与重命名目标不符必须标记 uncertain | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety falls back to the original file when neither the live session file nor the renamed file survives, and flags the mismatch as uncertain` |
+| 回退到重命名目标对齐指针时被并发写抢先，必须报 uncertain 并要求刷新 | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety reports uncertain and forces a reload when a concurrent write wins while recovering onto the renamed file` |
+| 回退到原文件名对齐指针时被并发写抢先，同样报 uncertain 并要求刷新 | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety reports uncertain and forces a reload when a concurrent write wins while recovering onto the original file` |
+| 删除当前会话时替换指针竞态失利，立即放弃删除并要求刷新，绝不发出破坏性请求 | `test/adapter-chats.test.mjs :: deleting the current chat abandons the operation and requires a reload when a concurrent writer wins the pointer race, never issuing the destructive request` |
+| 删除非当前会话时竞态失利，跟随胜者对齐本地指针后仍安全继续删除 | `test/adapter-chats.test.mjs :: deleting a non-current chat that loses the character-card pointer race still safely proceeds with the destructive request and follows the winner locally` |
+| 指针已持久化到发出 DELETE 的间隙内生成开始，必须回滚指针并放弃删除 | `test/adapter-chats.test.mjs :: deleting the current chat rolls the pointer back and abandons the delete when generation starts in the gap between persisting the replacement and issuing DELETE` |
+| 同一间隙内聊天保存开始，同样回滚指针并放弃删除（覆盖两个析取分支） | `test/adapter-chats.test.mjs :: deleting the current chat rolls the pointer back and abandons the delete when chat saving begins in the gap between persisting the replacement and issuing DELETE` |
 
 ## 4. 消息视图模型与流式（chat-store）
 
@@ -86,6 +100,10 @@
 | 切换会话不清空其它会话的输入框草稿 | `test/chat-store.test.mjs :: composer drafts for chats other than the one being switched away from survive a CHAT_CHANGED refresh` |
 | 轻量索引投影不携带昂贵内容字段（全文/swipes/extra） | `test/state-contracts.test.mjs :: message index projection ignores expensive content fields` |
 | 原始宿主消息在 adapter 边界规范化为不可变 DTO，畸形字段回退安全默认值 | `test/state-contracts.test.mjs :: raw messages are normalized into an immutable adapter-boundary DTO` |
+| 现代数组形状附件（extra.media/files）按序精确投影，无附件消息投影空列表不抛错 | `test/chat-store.test.mjs :: message DTO attachment projection: array-shaped media/files extras project ids, urls, titles, and order exactly, including display/inline/mediaIndex overrides` |
+| 旧版单字段附件（extra.image/video/file）按固定顺序经回退形状投影 | `test/chat-store.test.mjs :: message DTO attachment projection: legacy single image/video/file extras project through the fallback shape without throwing` |
+| 格式化 HTML 缓存超过上限（1024）后持续裁剪收敛，不无界增长 | `test/chat-store.test.mjs :: the formatter HTML cache trims to FORMAT_HTML_CACHE_LIMIT once distinct formatted messages exceed it` |
+| 同一消息的正文与推理文本 HTML 各占独立缓存槽，互不覆盖、互不代答 | `test/chat-store.test.mjs :: the formatter HTML cache keeps a message's reasoning-text HTML and body HTML in independent slots, so editing one never reformats or leaks into the other` |
 
 ## 5. 临时会话隔离（temp-chat）
 
@@ -233,34 +251,41 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 - **`e2e/smoke.spec.mjs`**（CI 门禁，dist 发布前必须通过）：真实 ST 服务器 + 真实
   Chromium 下，smoke 会话正确投影进 SillyLounge，含一次真实消息编辑往返（回读
   `context.chat` 验证落盘）。
-- **`scripts/e2e/measure-chat-switch.mjs`**（`test:e2e` 内）：双 400 楼会话经真实侧栏
-  A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表声明 800 条但只挂载有界
-  窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、无控制台错误；
-  `materializedMessages` 恒低于索引总量（DTO 缓存有界性的浏览器级背书）。
+- **`scripts/e2e/measure-chat-switch.mjs`**（CI 门禁，publish-dist 的显式步骤）：双
+  400 楼会话经真实侧栏 A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表
+  声明 800 条但只挂载有界窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、
+  无控制台错误；`materializedMessages` 恒低于索引总量（DTO 缓存有界性的浏览器级
+  背书）。每次切换样本还各跑一遍**滚动中编辑验收**：对靠底部消息开编辑并输入
+  marker → Home 跳顶后编辑行仍挂载（rangeExtractor 钉行）且 textarea 保有
+  marker → 除钉住行外其余挂载行仍是紧邻视口的有界连续块 → End 返回后草稿完整
+  （message-edit-draft-store）→ 取消后渲染文本与底层 `chat[id].mes` 与编辑前完全
+  一致。
 - **`scripts/e2e/measure-long-chat.mjs`**（`test:perf`，手动）：400 楼样张三态性能
   归因 + 楼层标尺功能验收。⚠️ 不在任何 CI 门内——楼层标尺的浏览器级窗口断言目前
   只能靠手动运行。
 
 ## 14. 未覆盖缺口（❌ 补测待办）
 
-单元层可补（假宿主 harness 已支持，属范围取舍未实现）：
+2026-07-19 第一批六个单元层缺口已全部补齐（§3、§4 新增行），滚动中编辑的浏览器
+验收已入 §13。当前剩余：
 
-- reconcileCurrentRenameSafety 的其余收敛分支（live 文件已不在磁盘、按新旧名回退
-  定位及其指针对齐失败路径）——目前 6 条分支只覆盖了 1 条。
-- 删除当前会话时，「已持久化替换指针」到「发出删除请求」的 await 间隙内生成开始或
-  聊天保存中，必须回滚指针并放弃删除。
-- persistCharacterChatSelection 返回 `different` 时，rename/delete 两个上层事务在
-  「当前会话」与「非当前角色」场景下的编排分支。
-- rename 响应 HTTP 成功但 JSON 不可解析时，依据目录快照差集推断结果的路径。
-- 消息 DTO 附件投影（attachments.media / attachments.files 对 extra 的映射）。
-- 格式化 HTML 缓存上限（1024）裁剪行为与 reasoning 条目的隔离。
+浏览器层：
+
+- 滚动往返后的**保存**路径（当前浏览器验收只走取消路径以保证练习自包含；保存的
+  草稿清除语义已有单测背书）。
+- character 角色消息的编辑入口藏在溢出菜单里，同一滚动往返场景未在浏览器层驱动
+  （实现对角色无分支逻辑，风险有限）。
+- 双滚动系统（useAutoScroll 与 virtualizer 内建 end-anchoring）的一致性——待合并为
+  单一机制后补断言，当前为已知重构待办。
 
 需要 src 级注入口子或只能在浏览器层验证：
 
 - `*ById` 系动作链路（saveMessageEditById、triggerMessageActionById 等）依赖
   `#chat .mes[mesid="X"]` 复合选择器与 jQuery 委托，假 DOM 不支持——由 Chromium
-  e2e 覆盖；若要下沉到单测需给元素查找加注入 seam。
-- 滚动中编辑的端到端断言（编辑行钉住 + 草稿存活）——rangeExtractor 钉行与草稿
-  store 已有单测，但真实浏览器里的组合行为尚无 e2e 用例。
-- 双滚动系统（useAutoScroll 与 virtualizer 内建 end-anchoring）的一致性——待合并为
-  单一机制后补断言，当前为已知重构待办。
+  e2e 覆盖；若要下沉到单测需给元素查找加注入 seam（DOM 解耦调研进行中，见
+  相关设计产出）。
+
+低价值备忘：
+
+- 附件投影与 reasoning 格式化缓存在同一次消息投影中的交叉组合测试（两者已分别
+  覆盖，交叉场景价值有限）。
