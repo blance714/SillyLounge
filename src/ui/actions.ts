@@ -66,6 +66,11 @@ export {
 } from '../store/toast-store.js';
 
 export {
+    resolveChatuiConfirm,
+    resetChatuiConfirmStore,
+} from '../store/confirm-store.js';
+
+export {
     openSettings as openChatuiSettings,
     closeSettings as closeChatuiSettings,
     setActiveSettings as setActiveChatuiSettings,

@@ -20,7 +20,8 @@
 //
 //   <tmp>/public/script.js
 //   <tmp>/public/scripts/{extensions,chats,slash-commands,personas,
-//                          st-context,utils,bookmarks,RossAscends-mods}.js
+//                          st-context,utils,bookmarks,RossAscends-mods,
+//                          itemized-prompts}.js
 //   <tmp>/public/scripts/extensions/third-party/SillyLounge/   <- dist/runtime, copied (not symlinked)
 //   <tmp>/public/scripts/extensions/third-party/SillyLounge/dist/root-app.mjs
 //   <tmp>/package.json                                         <- {"type":"module"}, so the
@@ -287,12 +288,32 @@ export const cancelDebouncedChatSave = makeStub('cancelDebouncedChatSave');
 export const getRequestHeaders = makeStub('getRequestHeaders');
 export const messageEdit = makeStub('messageEdit');
 export const swipe = makeStub('swipe');
-export const deleteMessage = makeStub('deleteMessage');
 export const deleteSwipe = makeStub('deleteSwipe');
 export const syncSwipeToMes = makeStub('syncSwipeToMes');
 export const saveChatConditional = makeStub('saveChatConditional');
 export const getThumbnailUrl = makeStub('getThumbnailUrl');
 export const getPastCharacterChats = makeStub('getPastCharacterChats');
+
+// DOM-DECOUPLING.md Tier 2 (adapter/messages.ts's _deleteFullMessageById
+// fork): every one of these is a real ST host behavior this repo
+// deliberately does NOT reimplement (see that function's doc comment) --
+// dist code's job is only to call them with the right arguments in the right
+// order, which these registry stubs let tests observe directly.
+export const getFirstDisplayedMessageId = makeStub('getFirstDisplayedMessageId');
+export const updateViewMessageIds = makeStub('updateViewMessageIds');
+export const saveChatDebounced = makeStub('saveChatDebounced');
+export const setEditedMessageId = makeStub('setEditedMessageId');
+export const refreshSwipeButtons = makeStub('refreshSwipeButtons');
+// _renumberRenderedRowsAfterDelete (adapter/messages.ts) calls this
+// unconditionally after doing its own DOM-tolerant renumber (see that
+// function's doc comment for why it owns the renumber but still delegates
+// this one call to native unmodified). Real native updateEditArrowClasses
+// (script.js:9427) reads jQuery's module-level chatElement, which this
+// harness's fake DOM has no jQuery to back -- so, like
+// getFirstDisplayedMessageId/updateViewMessageIds above, it's a
+// registry-backed stub here: tests can assert it *was* called, not what it
+// would have done to the DOM.
+export const updateEditArrowClasses = makeStub('updateEditArrowClasses');
 
 // Plain-value ST exports (read without calling) — live bindings, mutated
 // only through the private setters below.
@@ -374,6 +395,14 @@ import { makeStub } from '${BRIDGE_FROM_SCRIPTS_SIBLING}';
 
 export const createNewBookmark = makeStub('createNewBookmark');
 export const branchChat = makeStub('branchChat');
+`;
+}
+
+function itemizedPromptsJsSource() {
+    return `// Generated stub for @st/itemized-prompts (public/scripts/itemized-prompts.js).
+import { makeStub } from '${BRIDGE_FROM_SCRIPTS_SIBLING}';
+
+export const deleteItemizedPromptForMessage = makeStub('deleteItemizedPromptForMessage');
 `;
 }
 
@@ -799,6 +828,7 @@ export async function createFakeStHost(options = {}) {
     await fs.writeFile(path.join(scriptsDir, 'utils.js'), utilsJsSource());
     await fs.writeFile(path.join(scriptsDir, 'bookmarks.js'), bookmarksJsSource());
     await fs.writeFile(path.join(scriptsDir, 'RossAscends-mods.js'), rossAscendsModsJsSource());
+    await fs.writeFile(path.join(scriptsDir, 'itemized-prompts.js'), itemizedPromptsJsSource());
 
     function toFileUrl(absPath) {
         return pathToFileURL(absPath).href;

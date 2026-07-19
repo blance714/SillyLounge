@@ -16,26 +16,35 @@ declare module '@st/script' {
     export const isGenerating: any;
     export const isChatSaving: any;
     export const createOrEditCharacter: any;
-    export const deleteMessage: any;
     export const doNewChat: any;
     export const getCurrentChatDetails: any;
     export function extractMessageBias(message: string): string;
+    export function getFirstDisplayedMessageId(): number;
     export const getPastCharacterChats: any;
     export const getRequestHeaders: any;
     export const getThumbnailUrl: any;
     export const messageEdit: any;
     export const messageFormatting: any;
+    export function refreshSwipeButtons(updateCounters?: boolean, fade?: boolean): void;
     export function removeMacros(text: string): string;
     export function saveChatConditional(): Promise<void>;
+    export function saveChatDebounced(): void;
     export const openCharacterChat: any;
     export const renameChat: any;
     export const saveSettingsDebounced: any;
     export const selectCharacterById: any;
     export function sendTextareaMessage(): Promise<unknown>;
+    export function setEditedMessageId(value: number | undefined): void;
     export function stopGeneration(): boolean;
     export const swipe: any;
     export const swipeState: string;
     export const syncSwipeToMes: any;
+    export function updateViewMessageIds(startIndex?: number | null): void;
+    export function updateEditArrowClasses(): void;
+}
+
+declare module '@st/itemized-prompts' {
+    export function deleteItemizedPromptForMessage(messageId: number): void;
 }
 
 declare module '@st/slash-commands' {

@@ -19,16 +19,25 @@ export function ConfirmDialog({
     confirmLabel = '确定',
     cancelLabel = '取消',
     danger = false,
+    escalateLabel,
     onConfirm,
     onCancel,
+    onEscalate,
 }: {
     title: string;
     message?: string;
     confirmLabel?: string;
     cancelLabel?: string;
     danger?: boolean;
+    /** Optional third ("escalate") button rendered between cancel and confirm —
+     * e.g. message delete's "Delete Message" upgrade from the default "Delete
+     * Swipe" (DOM-DECOUPLING.md decision #3's three-way delete confirm).
+     * Omitted (with onEscalate) means a plain two-button dialog, unchanged for
+     * every other existing caller of this component. */
+    escalateLabel?: string;
     onConfirm: () => void;
     onCancel: () => void;
+    onEscalate?: () => void;
 }): ComponentChild {
     const cancelRef = useRef<HTMLButtonElement>(null);
 
@@ -67,6 +76,15 @@ export function ConfirmDialog({
                     >
                         {cancelLabel}
                     </button>
+                    {escalateLabel && onEscalate && (
+                        <button
+                            className="cui-root-dialog-btn cui-root-dialog-escalate"
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); onEscalate(); }}
+                        >
+                            {escalateLabel}
+                        </button>
+                    )}
                     <button
                         className={`cui-root-dialog-btn cui-root-dialog-confirm${danger ? ' is-danger' : ''}`}
                         type="button"

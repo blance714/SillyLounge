@@ -19,12 +19,13 @@ import { MessageItem } from './components/MessageItem.js';
 import { MessageFloorRail } from './components/MessageFloorRail.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import { Toaster } from './components/Toaster.js';
+import { ConfirmDialogHost } from './components/ConfirmDialogHost.js';
 import { SettingsNav } from './components/settings/SettingsNav.js';
 import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { SelectorChips } from './components/SelectorChip.js';
 import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings } from './hooks.js';
-import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, resetChatuiComposerDraftStore, resetChatuiMessageEditDraftStore } from './actions.js';
+import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMessageEditDraftStore } from './actions.js';
 import { teardownCardEmbedRuntime } from './card-embed.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
@@ -315,6 +316,7 @@ function ChatuiApp(): ComponentChild {
                   </section>
             }
             <Toaster />
+            <ConfirmDialogHost />
         </>
     );
 }
@@ -344,6 +346,7 @@ export function teardownChatuiRoot(): void {
     const cleanups: Array<() => void> = [
         closeChatuiSettings,
         clearChatuiToasts,
+        resetChatuiConfirmStore,
         resetChatuiComposerDraftStore,
         resetChatuiMessageEditDraftStore,
         () => rootApi?.unmount(),

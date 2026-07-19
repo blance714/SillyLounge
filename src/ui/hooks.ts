@@ -8,6 +8,7 @@ import {
     subscribeChatuiStore,
 } from '../store/chat-store.js';
 import { getToasts, subscribeToasts } from '../store/toast-store.js';
+import { getChatuiConfirmRequest, subscribeChatuiConfirm } from '../store/confirm-store.js';
 import { getConfig, subscribeConfig } from '../store/config-store.js';
 import { getUiState, subscribeUiStore } from '../store/ui-store.js';
 import {
@@ -106,6 +107,10 @@ export function useSettings(): SettingsModeState {
 
 export function useToasts(): ReturnType<typeof getToasts> {
     return useSyncExternalStore(subscribeToasts, getToasts);
+}
+
+export function useChatuiConfirmRequest(): ReturnType<typeof getChatuiConfirmRequest> {
+    return useSyncExternalStore(subscribeChatuiConfirm, getChatuiConfirmRequest);
 }
 
 function getCurrentChatSnapshot(): ChatuiState['chat']['currentChat'] {

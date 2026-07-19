@@ -30,6 +30,33 @@ function setActiveGroupChat(host, sessionName, groupId) {
     host.context.groupId = groupId;
 }
 
+function fillerMessage() {
+    return { mes: 'filler', swipes: ['filler'], is_user: false, is_system: false, extra: {} };
+}
+
+/** Builds a chat array of `chatLength` filler messages with a target message at `targetId` (mirrors test/messages.test.mjs's helper). */
+function buildChat(targetId, chatLength, targetOverrides) {
+    const chat = Array.from({ length: chatLength }, fillerMessage);
+    chat[targetId] = { mes: 'target', swipes: ['s0'], is_user: false, is_system: false, extra: {}, ...targetOverrides };
+    return chat;
+}
+
+/**
+ * Registers no-op stubs for every host call the delete fork's execution
+ * (either sub-case) can reach, so a test only has to override the ones it
+ * actually cares about observing. Mirrors test/messages.test.mjs's own
+ * delete-execution setup, one layer up.
+ */
+function installDeleteExecutionHost(host) {
+    host.registry.deleteItemizedPromptForMessage = () => undefined;
+    host.registry.updateEditArrowClasses = () => undefined;
+    host.registry.saveChatDebounced = () => undefined;
+    host.registry.setEditedMessageId = () => undefined;
+    host.registry.refreshSwipeButtons = () => undefined;
+    host.registry.syncSwipeToMes = () => undefined;
+    host.registry.saveChatConditional = () => undefined;
+}
+
 /** Register #send_textarea so composer.ts's getNativeComposerTextarea() finds it via plain #id lookup. */
 function installComposerTextarea() {
     const textarea = document.createElement('textarea');
@@ -483,6 +510,263 @@ test('a started-timeout rejects the stuck operation with a distinct toast, keeps
         assert.equal(onAcceptedCalls, 1);
 
         actions.__setGenerationStartTimeoutMsForTesting(null);
+    } finally {
+        await host.dispose();
+    }
+});
+
+// ---------------------------------------------------------------------------
+// DOM-DECOUPLING.md Tier 2: message-delete orchestration
+//
+// triggerChatuiMessageAction(id, 'delete', chatKey) is the one action this
+// module dispatches specially (see deleteChatuiMessage in
+// src/store/chat-actions.ts): it reads confirm_message_delete +
+// getDeleteEligibility() from the adapter, awaits a ChatUI-owned confirm
+// dialog through store/confirm-store.js when required, and only then enqueues
+// the actual mutation. These tests drive that whole path through a fake host,
+// standing in for the (not-yet-built) dialog component by calling
+// confirm-store's resolveChatuiConfirm() directly with each of the three
+// possible outcomes.
+// ---------------------------------------------------------------------------
+
+test('triggerChatuiMessageAction("delete"): confirm_message_delete === false skips the confirm dialog entirely and runs a full-message delete immediately', async () => {
+    const host = await createFakeStHost();
+    try {
+        const actions = await host.importModule('store/chat-actions.js');
+        const { chatuiAdapter } = await host.importModule('adapter/st-adapter.js');
+        const confirmStore = await host.importModule('store/confirm-store.js');
+        const hostQueue = await host.importModule('store/host-operation-queue.js');
+
+        setActiveChat(host, 'chat-a.jsonl');
+        const TARGET_ID = 2;
+        // is_user: true would force the full-message branch anyway even with
+        // confirm on — proving this test's "no dialog at all" behavior really
+        // comes from confirm_message_delete, not incidentally from ineligibility.
+        host.context.chat = buildChat(TARGET_ID, 5, { is_user: true });
+        host.context.powerUserSettings = { confirm_message_delete: false };
+        host.context.chatMetadata = {};
+        const chatKeyA = chatuiAdapter.getCurrentChatKey();
+
+        installDeleteExecutionHost(host);
+
+        let requestSeen = false;
+        confirmStore.subscribeChatuiConfirm((request) => { if (request) requestSeen = true; });
+
+        actions.triggerChatuiMessageAction(TARGET_ID, 'delete', chatKeyA);
+        await hostQueue.waitForHostOperationsIdle();
+
+        assert.equal(requestSeen, false, 'no confirm dialog request may be created when the setting is off');
+        assert.equal(host.context.chat.length, 4, 'the message must actually be deleted');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with ST\'s own wording; choosing "confirm" runs the swipe-only mini-fork with the message\'s selected swipe id', async () => {
+    const host = await createFakeStHost();
+    try {
+        const actions = await host.importModule('store/chat-actions.js');
+        const { chatuiAdapter } = await host.importModule('adapter/st-adapter.js');
+        const confirmStore = await host.importModule('store/confirm-store.js');
+        const hostQueue = await host.importModule('store/host-operation-queue.js');
+
+        setActiveChat(host, 'chat-a.jsonl');
+        const TARGET_ID = 1;
+        host.context.chat = buildChat(TARGET_ID, TARGET_ID + 1, { swipes: ['a', 'b'], swipe_id: 1, is_user: false });
+        host.context.powerUserSettings = { confirm_message_delete: true };
+        host.context.chatMetadata = {};
+        const chatKeyA = chatuiAdapter.getCurrentChatKey();
+
+        installDeleteExecutionHost(host);
+        host.registry.saveChatDebounced = () => {
+            throw new Error('the full-message fork must not run when the user confirms the default (swipe) choice');
+        };
+
+        actions.triggerChatuiMessageAction(TARGET_ID, 'delete', chatKeyA);
+        await Promise.resolve();
+
+        const request = confirmStore.getChatuiConfirmRequest();
+        assert.ok(request, 'a confirm request must be created');
+        assert.equal(request.variant, 'three-way');
+        assert.equal(request.title, 'Are you sure you want to delete this message?');
+        assert.equal(request.confirmLabel, 'Delete Swipe');
+        assert.equal(request.escalateLabel, 'Delete Message');
+        assert.equal(request.cancelLabel, 'Cancel');
+        assert.equal(request.danger, true);
+
+        confirmStore.resolveChatuiConfirm(request.id, 'confirm');
+        // Resolving the confirm-store promise only *schedules* deleteChatuiMessage's
+        // continuation (the enqueue) as a microtask -- waitForHostOperationsIdle()
+        // reads the current queue tail synchronously, so it must be called after
+        // that continuation has actually run and appended the task, not before.
+        await Promise.resolve();
+        await hostQueue.waitForHostOperationsIdle();
+
+        assert.deepEqual(host.context.chat[TARGET_ID].swipes, ['a'], 'the message\'s selected swipe (index 1) must be the one deleted');
+        assert.equal(host.context.chat.length, TARGET_ID + 1, 'the message itself must survive a swipe-only delete');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('triggerChatuiMessageAction("delete"): swipe-eligible + confirm on — choosing "escalate" in the three-way dialog runs the full-message fork instead, with no second dialog', async () => {
+    const host = await createFakeStHost();
+    try {
+        const actions = await host.importModule('store/chat-actions.js');
+        const { chatuiAdapter } = await host.importModule('adapter/st-adapter.js');
+        const confirmStore = await host.importModule('store/confirm-store.js');
+        const hostQueue = await host.importModule('store/host-operation-queue.js');
+
+        setActiveChat(host, 'chat-a.jsonl');
+        const TARGET_ID = 1;
+        host.context.chat = buildChat(TARGET_ID, TARGET_ID + 1, { swipes: ['a', 'b'], swipe_id: 1, is_user: false });
+        host.context.powerUserSettings = { confirm_message_delete: true };
+        host.context.chatMetadata = {};
+        const chatKeyA = chatuiAdapter.getCurrentChatKey();
+
+        installDeleteExecutionHost(host);
+        host.registry.saveChatConditional = () => {
+            throw new Error('the swipe-only mini-fork must not run once the user escalates to a full delete');
+        };
+
+        actions.triggerChatuiMessageAction(TARGET_ID, 'delete', chatKeyA);
+        await Promise.resolve();
+
+        const request = confirmStore.getChatuiConfirmRequest();
+        let dialogRequestsAfterEscalate = 0;
+        confirmStore.subscribeChatuiConfirm((next) => { if (next) dialogRequestsAfterEscalate += 1; });
+
+        confirmStore.resolveChatuiConfirm(request.id, 'escalate');
+        await Promise.resolve(); // see the 'confirm' test above for why this flush is required
+        await hostQueue.waitForHostOperationsIdle();
+
+        assert.equal(host.context.chat.length, TARGET_ID, 'the whole message must be gone');
+        assert.equal(dialogRequestsAfterEscalate, 0, 'escalating must not reopen a second dialog');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('triggerChatuiMessageAction("delete"): choosing "cancel" (either dialog variant) leaves the chat untouched and never calls any delete-execution host function', async () => {
+    const host = await createFakeStHost();
+    try {
+        const actions = await host.importModule('store/chat-actions.js');
+        const { chatuiAdapter } = await host.importModule('adapter/st-adapter.js');
+        const confirmStore = await host.importModule('store/confirm-store.js');
+
+        setActiveChat(host, 'chat-a.jsonl');
+        const TARGET_ID = 1;
+        host.context.chat = buildChat(TARGET_ID, TARGET_ID + 1, { swipes: ['a', 'b'], swipe_id: 1, is_user: false });
+        host.context.powerUserSettings = { confirm_message_delete: true };
+        const chatKeyA = chatuiAdapter.getCurrentChatKey();
+
+        for (const fn of [
+            'deleteItemizedPromptForMessage', 'updateEditArrowClasses',
+            'saveChatDebounced', 'setEditedMessageId', 'refreshSwipeButtons',
+            'syncSwipeToMes', 'saveChatConditional',
+        ]) {
+            host.registry[fn] = () => { throw new Error(`${fn} must not be called when the user cancels`); };
+        }
+
+        actions.triggerChatuiMessageAction(TARGET_ID, 'delete', chatKeyA);
+        await Promise.resolve();
+
+        const request = confirmStore.getChatuiConfirmRequest();
+        confirmStore.resolveChatuiConfirm(request.id, 'cancel');
+        await Promise.resolve(); // let the cancel branch's early `return` run
+
+        assert.equal(confirmStore.getChatuiConfirmRequest(), null, 'the request must be cleared once answered');
+        assert.equal(host.context.chat.length, TARGET_ID + 1);
+        assert.deepEqual(host.context.chat[TARGET_ID].swipes, ['a', 'b']);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('triggerChatuiMessageAction("delete"): not swipe-eligible + confirm on requests a plain two-way dialog; confirming deletes the whole message', async () => {
+    const host = await createFakeStHost();
+    try {
+        const actions = await host.importModule('store/chat-actions.js');
+        const { chatuiAdapter } = await host.importModule('adapter/st-adapter.js');
+        const confirmStore = await host.importModule('store/confirm-store.js');
+        const hostQueue = await host.importModule('store/host-operation-queue.js');
+
+        setActiveChat(host, 'chat-a.jsonl');
+        const TARGET_ID = 1;
+        // is_user: true is structurally ineligible for a swipe-only delete
+        // regardless of swipe count/isLast.
+        host.context.chat = buildChat(TARGET_ID, TARGET_ID + 1, { swipes: ['a', 'b'], swipe_id: 1, is_user: true });
+        host.context.powerUserSettings = { confirm_message_delete: true };
+        host.context.chatMetadata = {};
+        const chatKeyA = chatuiAdapter.getCurrentChatKey();
+
+        installDeleteExecutionHost(host);
+
+        actions.triggerChatuiMessageAction(TARGET_ID, 'delete', chatKeyA);
+        await Promise.resolve();
+
+        const request = confirmStore.getChatuiConfirmRequest();
+        assert.ok(request);
+        assert.equal(request.variant, 'two-way');
+        assert.equal(request.confirmLabel, 'Delete Message');
+        assert.equal(request.escalateLabel, undefined, 'a two-way dialog must carry no escalate button at all');
+        assert.equal(request.cancelLabel, 'Cancel');
+
+        confirmStore.resolveChatuiConfirm(request.id, 'confirm');
+        await Promise.resolve(); // see the three-way 'confirm' test above for why this flush is required
+        await hostQueue.waitForHostOperationsIdle();
+
+        assert.equal(host.context.chat.length, TARGET_ID, 'the whole message must be gone');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('triggerChatuiMessageAction("delete"): a chat switch while the confirm dialog is still open aborts the eventual execution instead of mutating the now-different chat, and surfaces the same stale-operation toast as every other action', async () => {
+    const host = await createFakeStHost();
+    try {
+        const actions = await host.importModule('store/chat-actions.js');
+        const { chatuiAdapter } = await host.importModule('adapter/st-adapter.js');
+        const confirmStore = await host.importModule('store/confirm-store.js');
+        const hostQueue = await host.importModule('store/host-operation-queue.js');
+        const toastStore = await host.importModule('store/toast-store.js');
+
+        setActiveChat(host, 'chat-a.jsonl');
+        const TARGET_ID = 1;
+        host.context.chat = buildChat(TARGET_ID, TARGET_ID + 1, { swipes: ['a'], is_user: true });
+        host.context.powerUserSettings = { confirm_message_delete: true };
+        const chatKeyA = chatuiAdapter.getCurrentChatKey();
+
+        installDeleteExecutionHost(host);
+        host.registry.saveChatDebounced = () => {
+            throw new Error('a stale operation must never reach the delete-execution host calls');
+        };
+
+        actions.triggerChatuiMessageAction(TARGET_ID, 'delete', chatKeyA);
+        await Promise.resolve();
+        const request = confirmStore.getChatuiConfirmRequest();
+
+        // The user is still looking at the dialog when the active chat changes
+        // out from under them (e.g. a sidebar navigation).
+        setActiveChat(host, 'chat-b.jsonl');
+
+        const toastSeen = new Promise((resolve) => {
+            const unsubscribe = toastStore.subscribeToasts((toasts) => {
+                if (toasts.length > 0) { unsubscribe(); resolve(toasts); }
+            });
+        });
+
+        confirmStore.resolveChatuiConfirm(request.id, 'confirm');
+        await Promise.resolve(); // see the three-way 'confirm' test above for why this flush is required
+        await hostQueue.waitForHostOperationsIdle();
+
+        const toasts = await toastSeen;
+        assert.equal(toasts.length, 1);
+        assert.equal(toasts[0].kind, 'error');
+        assert.equal(toasts[0].text, '对话已切换，操作已取消');
+        toastStore.dismissToast(toasts[0].id);
+
+        assert.equal(host.context.chat.length, TARGET_ID + 1, 'the stale chat must be left completely untouched');
     } finally {
         await host.dispose();
     }
