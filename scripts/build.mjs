@@ -29,6 +29,7 @@ const ST_EXTERNAL_TARGETS = Object.freeze({
     '@st/utils': { up: 3, file: 'utils.js' },
     '@st/bookmarks': { up: 3, file: 'bookmarks.js' },
     '@st/chats': { up: 3, file: 'chats.js' },
+    '@st/itemized-prompts': { up: 3, file: 'itemized-prompts.js' },
     '@st/personas': { up: 3, file: 'personas.js' },
     '@st/slash-commands': { up: 3, file: 'slash-commands.js' },
     '@st/scripts/RossAscends-mods': { up: 4, file: 'scripts/RossAscends-mods.js' },

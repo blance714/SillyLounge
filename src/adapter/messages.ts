@@ -3,18 +3,22 @@
  */
 
 import {
-    deleteMessage as stDeleteMessage,
     eventSource,
     event_types,
     isGenerating,
     messageEdit,
+    refreshSwipeButtons,
     saveChatConditional,
+    saveChatDebounced,
+    setEditedMessageId,
     swipe as stSwipe,
     syncSwipeToMes,
+    updateEditArrowClasses,
 } from '@st/script';
 import { copyText } from '@st/utils';
 import { branchChat, createNewBookmark } from '@st/bookmarks';
 import { hideChatMessage, unhideChatMessage } from '@st/chats';
+import { deleteItemizedPromptForMessage } from '@st/itemized-prompts';
 import {
     _dispatchClick,
     _dispatchClickAndWait,
@@ -29,8 +33,9 @@ import {
 import { parseMessageRecord } from './schema.js';
 
 type MessageId = number | string;
-export type MessageAction = 'copy' | 'regen' | 'edit' | 'branch' | 'checkpoint' | 'hide' | 'delete';
+export type MessageAction = 'copy' | 'regen' | 'edit' | 'branch' | 'checkpoint' | 'hide';
 export type SwipeDirection = 'left' | 'right';
+export type DeleteIntent = 'swipe' | 'message';
 
 type DeleteSettingsContext = {
     powerUserSettings?: {
@@ -129,6 +134,46 @@ export function editMessage(mesEl: Element): void {
 }
 
 /**
+ * Shadow of ST's module-private `this_edit_mes_id` (script.js:610). script.js
+ * exports only a setter for it (`setEditedMessageId`, script.js:7101) — there
+ * is no exported getter anywhere in the pinned checkout (grepped). The
+ * full-message delete fork below (`_deleteFullMessageById`) needs to
+ * reproduce native `deleteMessage()`'s own `if (this_edit_mes_id === id)`
+ * conditional reset (script.js:1663-1665) without being able to read the
+ * real value, so this module tracks its own shadow instead.
+ *
+ * This is exact, not a heuristic, for every path reachable through ChatUI:
+ * ChatUI's own edit UI (ui/components/message/MessageEditor.tsx) never opens
+ * ST's native editor until the moment it *saves* — entering "edit mode" is
+ * purely local Preact state (app.tsx's `editingMessage`) that never touches
+ * this_edit_mes_id. saveMessageEditById() below is the only ChatUI path that
+ * ever sets the real this_edit_mes_id (via messageEdit()) or clears it (via
+ * the completed `.mes_edit_done` click, which runs ST's own
+ * messageEditDone() and resets it internally as its last step,
+ * script.js:8372) — and every ChatUI-triggered save/delete funnels through
+ * the single serialized host-operation queue (store/host-operation-queue.ts),
+ * so a save and a delete can never interleave. That leaves exactly one gap:
+ * if saveMessageEditById() throws between messageEdit() (which already set
+ * this_edit_mes_id) and the completed done-click (element/button missing,
+ * dispatch rejects/times out), the shadow is deliberately left dangling at
+ * normalizedId — exactly mirroring how the real this_edit_mes_id would also
+ * stay dangling in that same failure. The one thing this cannot see is
+ * direct interaction with ST's *native* DOM bypassing ChatUI's shield
+ * (src/shield/st-dom-shield.ts); see DOM-DECOUPLING.md/INVARIANTS.md §15 for
+ * that documented, bounded gap.
+ */
+let _shadowEditedMessageId: number | undefined;
+
+/** Test-only: seed the this_edit_mes_id shadow without driving a real edit
+ * flow (saveMessageEditById needs a live `#chat .mes[mesid=X]` compound
+ * selector the unit-test fake DOM deliberately doesn't support — see
+ * test/helpers/fake-st-host.mjs's module doc comment). Pass undefined to
+ * clear it. */
+export function __setShadowEditedMessageIdForTesting(value: number | undefined): void {
+    _shadowEditedMessageId = value;
+}
+
+/**
  * Saves a ChatUI-owned edit through SillyTavern's native editor pipeline.
  * This preserves ST's regex, macro, bias, swipe, save, and message update logic
  * while keeping the visible edit surface owned by ChatUI.
@@ -149,6 +194,10 @@ export async function saveMessageEditById(mesId: MessageId, text: string): Promi
     }
 
     await messageEdit(normalizedId);
+    // messageEdit() sets the real this_edit_mes_id synchronously, before any
+    // await inside it (verified against the pinned checkout) — mirrored here
+    // the moment our own await returns.
+    _shadowEditedMessageId = normalizedId;
 
     const textarea = mesEl.querySelector('.edit_textarea') as HTMLTextAreaElement | null;
     if (!textarea) {
@@ -166,6 +215,9 @@ export async function saveMessageEditById(mesId: MessageId, text: string): Promi
     // delegated jQuery handler promise so the shared host-operation lane stays
     // occupied through both the in-memory update and durable save.
     await _dispatchClickAndWait(done as HTMLElement);
+    // The completed click ran ST's own messageEditDone() to completion, which
+    // resets the real this_edit_mes_id as its last step — mirrored here.
+    _shadowEditedMessageId = undefined;
 }
 
 export async function createBranch(mesId: MessageId): Promise<void> {
@@ -314,116 +366,269 @@ export async function _deleteSwipeById(mesId: number, swipeId: number): Promise<
 }
 
 /**
- * Full-message delete stays DOM-gated: DOM-DECOUPLING.md scopes the DOM-free
- * dispatch to delete(仅 swipe) alone (Tier 1) — delete(整条) is Tier 2's thin
- * fork, not yet built. ST's own deleteMessage() still gates the *entire*
- * function, including its own confirm popup, on a live `.mes` node
- * (script.js:1632-1636, `messageElement.length === 0` -> silent `return`);
- * until Tier 2 removes that dependency, an unrendered target must fail
- * loudly here instead of silently no-op-ing through ST's own gate.
+ * Depth-first search for the first descendant carrying `className`, walking
+ * `.children` only (never a CSS selector engine). Used instead of
+ * `element.querySelector('.mesIDDisplay')` because ST's `.mesIDDisplay` node
+ * is nested two levels below `.mes` (`.mes > .mesAvatarWrapper >
+ * .mesIDDisplay`, public/index.html's `#message_template`) and the unit-test
+ * fake DOM (test/helpers/fake-st-host.mjs) only resolves `#id` through
+ * `querySelector`/`querySelectorAll` — a plain tree walk works identically
+ * against a real browser DOM and the fake one, so the renumber rule below can
+ * be pinned by a real unit test instead of only by a browser repro.
  */
-async function _deleteFullMessageById(mesId: number, confirm: boolean): Promise<void> {
-    const mesEl = getMessageElementById(mesId);
-    if (!mesEl) {
-        throw new Error(
-            `[ChatUI/adapter] Message element not found for delete: ${mesId} `
-            + '(full-message delete stays DOM-gated until DOM-DECOUPLING.md Tier 2 lands)',
-        );
+function _findDescendantByClass(root: Element, className: string): HTMLElement | null {
+    for (const child of Array.from(root.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        if (child.classList.contains(className)) return child;
+        const nested = _findDescendantByClass(child, className);
+        if (nested) return nested;
     }
-    await stDeleteMessage(mesId, undefined, confirm);
+    return null;
 }
-
-type StPopupContext = {
-    callGenericPopup: (
-        content: unknown,
-        type: unknown,
-        inputValue: unknown,
-        options: { okButton?: unknown; cancelButton?: unknown; customButtons?: unknown[] | null },
-    ) => Promise<unknown>;
-    POPUP_TYPE: { CONFIRM: unknown };
-    POPUP_RESULT: { AFFIRMATIVE: unknown };
-    t: (strings: TemplateStringsArray, ...values: unknown[]) => string;
-};
 
 /**
- * Restores the confirmation step ST's own deleteMessage() always showed
- * before this branch started calling the swipe-only mini-fork directly
- * (script.js:1638-1647's askConfirmation branch, canDeleteSwipe === true
- * case). deleteMessage() below no longer routes through ST's deleteMessage()
- * wrapper for this sub-case, so it must reproduce that same popup itself or
- * silently defeat the user's confirm_message_delete preference
- * (DOM-DECOUPLING.md decision #3: "不静默绕过用户偏好").
+ * Owns the post-delete renumber outright instead of delegating to native
+ * `updateViewMessageIds` (script.js:9407-9419). That function's `null`
+ * startIndex branch falls back to `minId = getFirstDisplayedMessageId()`,
+ * which re-scans the *current* DOM for its own minimum rendered `mesid`. Its
+ * correctness silently assumes native `deleteMessage()`'s own precondition:
+ * the deleted row's own `.mes` element was in the DOM and has *just* been
+ * physically `.remove()`d (script.js:1633-1636 gates on exactly that before
+ * ever reaching this code). Tier 2 deliberately breaks that precondition —
+ * chat_truncation=1 means most deletions target a message whose row was
+ * never rendered in the first place — so when `deletedId` itself was never
+ * rendered while later rows are, nothing was removed from the DOM, the
+ * re-scanned minimum is bytewise identical to before, and native's
+ * recomputation becomes a silent no-op: every still-rendered row keeps the
+ * `mesid` it already had, even though `chat.splice(deletedId, 1)` just
+ * shifted every later index down by one. Empirically proved (real jQuery +
+ * DOM, verbatim native `updateViewMessageIds`/`getFirstDisplayedMessageId`
+ * bodies) by this fork's own review round in a scratch repro (not checked
+ * into this repo — see the review notes for that round): deleted-unrendered
+ * + later-rendered ("edit message 7" after deleting id 5 silently mutates
+ * chat[7], which now holds former message 8's content), and
+ * chat_truncation=1 (deleting an earlier unrendered id leaves the sole
+ * rendered row's `mesid` pointing at an out-of-bounds `chat[]` slot). A
+ * follow-up repro extended both cases with a side-by-side comparison against
+ * *this* function's own rule for every configuration in this fork's test
+ * matrix below.
  *
- * getContext() already re-exports callGenericPopup/POPUP_TYPE/POPUP_RESULT/t
- * (public/scripts/st-context.js, all confirmed present in the pinned
- * checkout) through the already-mapped @st/st-context module — no new
- * @st/* module target is needed for this.
+ * The correct rule is old-`mesid`-based, not DOM-position-based, and is
+ * correct by construction for every rendered/unrendered combination because
+ * it never re-derives a baseline from the DOM at all — it only compares each
+ * currently-rendered row's own (still-stale) `mesid` attribute against the id
+ * that was just spliced out of `chat[]`:
  *
- * Mirrors ST's wording/behavior exactly: Cancel (or Escape) aborts with no
- * mutation; the default "Delete Swipe" button proceeds with the swipe-only
- * delete; the "Delete Message" custom button escalates to a full message
- * delete (still DOM-gated — see _deleteFullMessageById above).
+ *   - a row whose `mesid` === `deletedId` no longer exists by the time this
+ *     runs — its element was already `.remove()`d by the caller (mirroring
+ *     native's `messageElement.remove()`, script.js:1654) if it was rendered
+ *     at all;
+ *   - a row with `mesid` > `deletedId` gets its `mesid` decremented by
+ *     exactly one, because `chat.splice(deletedId, 1)` shifted that row's
+ *     underlying chat[] entry down one slot too;
+ *   - a row with `mesid` < `deletedId` is left untouched — its chat[] index
+ *     never moved.
+ *
+ * Also reproduces every other per-row observable effect native
+ * `updateViewMessageIds` produces on the same row set, in the same order:
+ * the `.mesIDDisplay` text mirror, the `last_mes` class handoff to whichever
+ * row is now last in DOM order, and a call to native `updateEditArrowClasses`
+ * (script.js:9427) — delegated to native unmodified. That delegation is
+ * provably safe, unlike `updateViewMessageIds`'s: `updateEditArrowClasses`
+ * never re-derives an offset baseline from the DOM, it only compares the
+ * *real* native `this_edit_mes_id` (kept in sync via `setEditedMessageId()`
+ * below, a genuine write to that module-private variable, not just this
+ * fork's own `_shadowEditedMessageId` mirror) against whatever `mesid`
+ * attributes are on the row set *right now* — which, by the time this call
+ * happens, this function has already made correct.
+ *
+ * `.mes` rows are always direct children of `#chat` (native only ever
+ * `.append()`/`.prepend()`s them straight onto `chatElement = $('#chat')` —
+ * script.js:1457/1481/1520/2530), so this walks `#chat`'s `.children`
+ * directly rather than the compound CSS selector `getMessageElementById`
+ * uses elsewhere in this file — the fake DOM used by this repo's unit-test
+ * harness doesn't resolve compound selectors, but does support
+ * getElementById/children/classList/attribute reads and writes, which is
+ * exactly what this needs.
  */
-async function _confirmSwipeOnlyDelete(): Promise<'swipe' | 'message' | 'cancelled'> {
-    const ctx = getContext() as StPopupContext;
-    const { t, callGenericPopup, POPUP_TYPE, POPUP_RESULT } = ctx;
-    const result = await callGenericPopup(
-        t`Are you sure you want to delete this message?`,
-        POPUP_TYPE.CONFIRM,
-        null,
-        {
-            okButton: t`Delete Swipe`,
-            cancelButton: 'Cancel',
-            customButtons: [t`Delete Message`],
-        },
-    );
-    if (!result) return 'cancelled';
-    return result === POPUP_RESULT.AFFIRMATIVE ? 'swipe' : 'message';
+function _renumberRenderedRowsAfterDelete(deletedId: number): void {
+    const chatContainer = document.getElementById('chat');
+    const rows = chatContainer
+        ? Array.from(chatContainer.children).filter(
+            (el): el is HTMLElement => el instanceof HTMLElement && el.classList.contains('mes'),
+        )
+        : [];
+
+    for (const row of rows) {
+        const oldMesid = Number(row.getAttribute('mesid'));
+        if (!Number.isFinite(oldMesid) || oldMesid <= deletedId) continue;
+        const newMesid = oldMesid - 1;
+        row.setAttribute('mesid', String(newMesid));
+        const display = _findDescendantByClass(row, 'mesIDDisplay');
+        if (display) display.textContent = `#${newMesid}`;
+    }
+
+    for (const row of rows) row.classList.remove('last_mes');
+    rows[rows.length - 1]?.classList.add('last_mes');
+
+    // Native always calls this at the end of updateViewMessageIds, even over
+    // zero `.mes` rows (its own jQuery selections just degrade to no-ops) —
+    // matched here unconditionally for the same reason.
+    updateEditArrowClasses();
 }
 
-export async function deleteMessage(mesId: MessageId): Promise<void> {
+/**
+ * Full-message delete thin fork of ST's own deleteMessage() (script.js:1618-
+ * 1673, the body *after* its own DOM gate) — reimplemented directly against
+ * the live host state instead of ever calling ST's exported deleteMessage()
+ * at all. DOM-DECOUPLING.md Tier 2. Deliberately DOM-*tolerant*, not
+ * DOM-gated like Tier 1's interim version: chat_truncation=1 only keeps the
+ * chat's last message rendered, so an unrendered target (any non-last
+ * message once that truncation is active, or any message before the native
+ * window has ever mounted) must still delete correctly, not throw.
+ *
+ * Reproduces every observable side effect of the native post-gate body, in
+ * the exact same order:
+ *
+ *  1. Look up `#chat .mes[mesid=id]`, if any (native's `messageElement`,
+ *     captured before its own DOM gate, script.js:1632) — zero matches is
+ *     fine here (unlike native, which gates on it); one match gets removed
+ *     below.
+ *  2. `chat.splice(id, 1)` against the live getContext().chat reference
+ *     (script.js:1653) — same live-reference assumption Tier 1's
+ *     _deleteSwipeById already relies on for its own splice.
+ *  3. Remove the captured element, if it existed (script.js:1654).
+ *  4. `chat_metadata.tainted = true` (script.js:1656).
+ *  5. `deleteItemizedPromptForMessage(id)` (script.js:1659) — new @st/*
+ *     mapping (public/scripts/itemized-prompts.js, the same up-3 pattern as
+ *     @st/utils; see scripts/build.mjs/check-runtime.mjs/st-externals.d.ts/
+ *     test/helpers/fake-st-host.mjs). DOM-free pure array filter+reindex,
+ *     verified against the pinned checkout — not reachable via getContext()
+ *     or any already-mapped @st/* module.
+ *  6. `_renumberRenderedRowsAfterDelete(id)` in place of native
+ *     `updateViewMessageIds(startIndex)` (script.js:1660-1661) — see that
+ *     function's own doc comment for why this fork owns the renumber outright
+ *     instead of delegating to native's DOM-self-recomputing version.
+ *  7. `saveChatDebounced()` (script.js:1661) — note this is the *debounced*
+ *     save, not saveChatConditional(): native's own deleteMessage() uses this
+ *     one specifically. (_deleteSwipeById's mini-fork above correctly uses
+ *     the *conditional* save instead, matching deleteSwipe()'s own choice —
+ *     these are deliberately different saves for deliberately different ST
+ *     functions.)
+ *  8. this_edit_mes_id reset (script.js:1663-1665) via the exported
+ *     setEditedMessageId() (script.js:7101) — see _shadowEditedMessageId's
+ *     doc comment above saveMessageEditById for how this fork reproduces the
+ *     exact `this_edit_mes_id === id` conditional without read access to the
+ *     real (module-private, getter-less) variable.
+ *  9. `refreshSwipeButtons()` (script.js:1667) — DOM-tolerant (bails out on
+ *     an empty chat; its own internal jQuery selection degrades to zero
+ *     iterations when nothing is rendered, verified against the pinned
+ *     checkout).
+ * 10. `eventSource.emit(MESSAGE_DELETED, chat.length)` (script.js:1669) —
+ *     `chat.length` read *after* the splice, matching native exactly.
+ */
+async function _deleteFullMessageById(id: number): Promise<void> {
+    const mesEl = getMessageElementById(id);
+
+    const chat = getCurrentChat();
+    chat.splice(id, 1);
+    mesEl?.remove();
+
+    const ctx = getContext() as { chatMetadata?: { tainted?: boolean } };
+    if (ctx.chatMetadata) ctx.chatMetadata.tainted = true;
+
+    deleteItemizedPromptForMessage(id);
+    _renumberRenderedRowsAfterDelete(id);
+    saveChatDebounced();
+
+    if (_shadowEditedMessageId === id) {
+        setEditedMessageId(undefined);
+        _shadowEditedMessageId = undefined;
+    }
+
+    refreshSwipeButtons();
+
+    await eventSource.emit(event_types.MESSAGE_DELETED, chat.length);
+}
+
+export type DeleteEligibility = Readonly<{
+    /** True exactly when ST's own `.mes_edit_delete` handler's structural
+     * eligibility check would allow a swipe-only delete (script.js:11922-
+     * 11928) — everything *except* the confirm_message_delete gate, which is
+     * the caller's job to combine with the user's actual dialog choice (see
+     * getConfirmMessageDeleteSetting below and store/chat-actions.ts). */
+    canDeleteSwipe: boolean;
+    /** The message's currently-selected swipe id, present only when
+     * canDeleteSwipe is true. */
+    swipeId: number | undefined;
+}>;
+
+/**
+ * Structural delete eligibility for one message: is it a non-user message
+ * with more than one swipe, is it the chat's last message, and does it have
+ * a selected swipe. Mirrors ST's own `.mes_edit_delete` handler
+ * (script.js:11922-11928) minus the confirm_message_delete gate — the
+ * adapter must never assume whether the user wants to be asked; that is
+ * store/chat-actions.ts's job, reading getConfirmMessageDeleteSetting()
+ * separately and deciding the three-way-vs-two-way confirm UI from both
+ * pieces together.
+ */
+export function getDeleteEligibility(mesId: MessageId): DeleteEligibility {
     const normalizedId = Number(mesId);
     if (!Number.isInteger(normalizedId) || normalizedId < 0) {
         throw new Error(`[ChatUI/adapter] Invalid message id for delete: ${mesId}`);
     }
-
-    // Mirror ST's .mes_edit_delete handler policy exactly so we keep native
-    // semantics: honour the user's confirm-before-delete preference, and when
-    // removing the last message that has multiple swipes, drop only the
-    // selected swipe rather than the whole message. (fromSlashCommand is
-    // always false from the ChatUI surface.) See ST script.js:11922-11928's
-    // .mes_edit_delete handler — note canDeleteSwipe itself requires
-    // confirm_message_delete, so `confirm` is always true whenever this
-    // branch is taken (the popup below is never skipped for it).
     const message = parseMessageRecord(getMessageById(normalizedId));
     if (!message) {
         throw new Error(`[ChatUI/adapter] Message record not found for delete: ${normalizedId}`);
     }
-    const confirm = !!(getContext() as DeleteSettingsContext).powerUserSettings?.confirm_message_delete;
-    const swipes = message.swipes;
-    const selectedSwipe = message.swipe_id;
     const isLast = normalizedId === arrayLength(getCurrentChat()) - 1;
-    const canDeleteSwipe = confirm
-        && !message.is_user
-        && swipes.length > 1
+    const canDeleteSwipe = !message.is_user
+        && message.swipes.length > 1
         && isLast
-        && selectedSwipe !== undefined;
+        && message.swipe_id !== undefined;
+    return { canDeleteSwipe, swipeId: canDeleteSwipe ? message.swipe_id : undefined };
+}
 
-    if (canDeleteSwipe) {
-        const choice = await _confirmSwipeOnlyDelete();
-        if (choice === 'cancelled') return;
-        if (choice === 'message') {
-            // User escalated from "Delete Swipe" to "Delete Message" in the
-            // popup ST itself offers here — already confirmed, so no second
-            // popup; still routes through the DOM-gated full-delete path.
-            await _deleteFullMessageById(normalizedId, false);
-            return;
+/**
+ * Read-only view of `power_user.confirm_message_delete`, coerced to a strict
+ * boolean (never forwarded as whatever raw settings value ST happens to
+ * store). The adapter never decides UI from this itself — it only reports
+ * it; store/chat-actions.ts is the sole reader (DOM-DECOUPLING.md decision
+ * #3's Tier 2 resolution: orchestration lives in the store, the adapter
+ * never shows UI).
+ */
+export function getConfirmMessageDeleteSetting(): boolean {
+    return !!(getContext() as DeleteSettingsContext).powerUserSettings?.confirm_message_delete;
+}
+
+/**
+ * Intent-explicit delete execution: the caller (store/chat-actions.ts) has
+ * already decided — from getDeleteEligibility() + getConfirmMessageDeleteSetting()
+ * plus, when applicable, the user's own confirm-dialog choice — exactly which
+ * mutation to perform. This function never reads settings, never shows any
+ * UI, and never asks anything; it only executes. `swipeId` is required (and
+ * revalidated by _deleteSwipeById's own guards, protecting against staleness
+ * between when eligibility was read and when the user actually confirmed)
+ * when intent === 'swipe'.
+ */
+export async function deleteMessageWithIntent(
+    mesId: MessageId,
+    intent: DeleteIntent,
+    swipeId?: number,
+): Promise<void> {
+    const normalizedId = Number(mesId);
+    if (!Number.isInteger(normalizedId) || normalizedId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for delete: ${mesId}`);
+    }
+    if (intent === 'swipe') {
+        if (swipeId === undefined) {
+            throw new Error(`[ChatUI/adapter] Swipe id required for swipe-only delete: ${normalizedId}`);
         }
-        await _deleteSwipeById(normalizedId, selectedSwipe);
+        await _deleteSwipeById(normalizedId, swipeId);
         return;
     }
-
-    await _deleteFullMessageById(normalizedId, confirm);
+    await _deleteFullMessageById(normalizedId);
 }
 
 export async function swipeMessage(mesEl: Element, direction: SwipeDirection): Promise<void> {
@@ -442,18 +647,20 @@ export async function swipeMessage(mesEl: Element, direction: SwipeDirection): P
 }
 
 /**
- * DOM-DECOUPLING.md Tier 1: copy / branch / checkpoint / hide / delete(仅
- * swipe) never require a live `.mes` node — the blanket getMessageElementById
- * gate that used to guard every action here is gone for exactly those. The
- * one exception living inside 'delete' is its full-message sub-case, which
- * still requires a live element — but that gate is applied explicitly
- * *inside* deleteMessage() -> _deleteFullMessageById(), not here, because
- * only deleteMessage() (after reading the message record) can tell which of
- * the two sub-cases applies; this dispatcher can't distinguish them ahead of
- * time. `edit` and `regen` still resolve and require the live element
- * explicitly right here (edit clicks `.mes_edit`; regen is unaffected by the
- * id but keeps its historical DOM precondition unchanged this tier) — see
- * DOM-DECOUPLING.md §「推进顺序」Tier 1/2/3 for what stays DOM-gated and why.
+ * DOM-DECOUPLING.md: copy / branch / checkpoint / hide never require a live
+ * `.mes` node (Tier 1) — the blanket getMessageElementById gate that used to
+ * guard every action here is gone for exactly those. `delete` is no longer
+ * dispatched through this generic entry point at all as of Tier 2: it needs
+ * to read confirm_message_delete and (conditionally) await a ChatUI-owned
+ * confirm dialog *before* deciding which mutation to run, which this
+ * dispatcher's synchronous-switch shape can't accommodate — see
+ * store/chat-actions.ts's dedicated delete orchestration, which calls
+ * getDeleteEligibility() / getConfirmMessageDeleteSetting() /
+ * deleteMessageWithIntent() directly instead. `edit` and `regen` still
+ * resolve and require the live element explicitly right here (edit clicks
+ * `.mes_edit`; regen is unaffected by the id but keeps its historical DOM
+ * precondition unchanged this tier) — see DOM-DECOUPLING.md §「推进顺序」for
+ * what stays DOM-gated and why.
  */
 export async function triggerMessageActionById(mesId: MessageId, action: MessageAction): Promise<void> {
     const normalizedId = Number(mesId);
@@ -466,7 +673,6 @@ export async function triggerMessageActionById(mesId: MessageId, action: Message
         case 'branch':     await createBranch(normalizedId);      return;
         case 'checkpoint': await createCheckpoint(normalizedId);  return;
         case 'hide':       await toggleHideMessage(normalizedId); return;
-        case 'delete':     await deleteMessage(normalizedId);     return;
         case 'regen':
         case 'edit': {
             const mesEl = getMessageElementById(normalizedId);

@@ -29,6 +29,9 @@ import {
     openMessageMedia,
 } from './media.js';
 import {
+    deleteMessageWithIntent,
+    getConfirmMessageDeleteSetting,
+    getDeleteEligibility,
     saveMessageEditById,
     swipeMessageById,
     triggerMessageActionById,
@@ -115,6 +118,9 @@ export const chatuiAdapter = Object.freeze({
         saveMessageEditById,
         swipeMessageById,
         triggerMessageActionById,
+        deleteMessageWithIntent,
+        getConfirmMessageDeleteSetting,
+        getDeleteEligibility,
     }),
     menuActions: Object.freeze({
         triggerOptionsAction,

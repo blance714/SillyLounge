@@ -32,8 +32,21 @@
 
 ## 2. 动作门禁与生成队列（chat-actions）
 
+`triggerChatuiMessageAction(id, 'delete', chatKey)`（DOM-DECOUPLING.md Tier 2，
+2026-07-19）是本模块唯一特殊编排的动作：先读 `confirm_message_delete` +
+`getDeleteEligibility()`，按需 `await` 一次 ChatUI 自有确认对话框
+（store/confirm-store.ts，见 §15）之后才决定删「swipe」还是「message」，最后才把
+真正的变更入队——弹窗等待过程本身故意留在共享宿主队列**之外**，避免用户盯着对话
+框发呆时挡住其它排队操作。
+
 | 不变量 | 验证 |
 | --- | --- |
+| confirm_message_delete 为 false 时跳过确认对话框，直接整条删除 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): confirm_message_delete === false skips the confirm dialog entirely and runs a full-message delete immediately` |
+| 仅删 swipe 资格具备 + confirm 开启时请求三态对话框（措辞与 ST 原生逐字一致），选择默认项按该消息的已选 swipe id 执行仅删 swipe | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with ST's own wording; choosing "confirm" runs the swipe-only mini-fork with the message's selected swipe id` |
+| 三态对话框选择「升级」项时改执行整条删除，绝不二次弹窗 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on — choosing "escalate" in the three-way dialog runs the full-message fork instead, with no second dialog` |
+| 任一对话框变体选择取消时零变更、零删除相关宿主调用 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): choosing "cancel" (either dialog variant) leaves the chat untouched and never calls any delete-execution host function` |
+| 不具备仅删 swipe 资格 + confirm 开启时请求纯两态对话框，确认后整条删除 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): not swipe-eligible + confirm on requests a plain two-way dialog; confirming deletes the whole message` |
+| 对话框仍开着时会话切换：最终执行必须按会话键拒绝、零变更，并给出与其它动作一致的「已切换」错误 toast | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): a chat switch while the confirm dialog is still open aborts the eventual execution instead of mutating the now-different chat, and surfaces the same stale-operation toast as every other action` |
 | 排队操作执行前若会话已切换，必须拒绝且绝不触达宿主（不把内容写进错误会话） | `test/chat-actions.test.mjs :: a composer send queued for a chat that changed before it runs is rejected and never reaches the host` |
 | 会话未变时排队发送恰好触达宿主一次，文本原样送达 | `test/chat-actions.test.mjs :: a composer send queued for the still-current chat reaches the host exactly once with the sent text` |
 | 生成型操作独占串行通道直到生成结束，之后才放行下一个任务 | `test/chat-actions.test.mjs :: generation holds the serialized host lane until it stops, then releases the next queued task` |
@@ -144,44 +157,96 @@
 ## 7. 消息动作参数（adapter/messages）
 
 传错参数就是删错内容。这一节把传给宿主的参数矩阵钉死。DOM-DECOUPLING.md Tier 1
-（2026-07-19，2026-07-19 复审后修订）：copy / branch / checkpoint / hide / delete
-（仅删 swipe 分支）改为按 id 直调，不再要求存活的 `.mes` 节点。
+（2026-07-19，2026-07-19 复审后修订）：copy / branch / checkpoint / hide 改为按 id
+直调，不再要求存活的 `.mes` 节点。
 
-复审三项高危发现的根因修复（详见 src/adapter/messages.ts 对应函数的文档注释）：
+Tier 2（2026-07-19）：delete（整条）也分叉为薄分叉，DOM-*容忍*而非 DOM 门卫——不
+再调用 ST 的 `deleteMessage()`，也不再要求存活的 `.mes` 节点（chat_truncation=1
+下唯一常驻渲染的是末条消息，非末条消息必须依然能删）。确认弹窗与「删哪一部分」
+的编排整体上移到 store/chat-actions.ts（见 §2 新增行）；adapter 层因此拆成三块纯
+接口：
 
-1. **`_deleteSwipeById` 从「直调 ST `deleteSwipe()`」升级为完整 mini-fork**：ST 自
-   身 `deleteSwipe()` 在删除活跃 swipe 分支内部会调用其 `swipe()`，后者在自己的
-   DOM 门卫前先把模块级 `swipeState` 置为 SWIPING，且该变量无任何导出的重置口
-   子——未渲染消息会把 `swipeState` 卡死，app 全局的发送与后续 swipe 全部静默失
-   效。由于本文件的资格判定策略保证仅删 swipe 分支删除的必是当前活跃 swipe，走
-   ST 的 `deleteSwipe()` 会让这条损坏路径每次必现，因此彻底不再调用 ST 的
-   `deleteSwipe`/`swipe`：直接对 `chat[]` 活对象复刻其纯函数体（splice
-   swipes/swipe_info、重算 swipe_id、`chat_metadata.tainted`、`MESSAGE_SWIPE_
-   DELETED`、`syncSwipeToMes`、`saveChatConditional`）。
-2. **恢复删除确认弹窗**：仅删 swipe 分支不再绕开确认弹窗——`getContext()` 已经通
-   过既有映射的 `@st/st-context` 模块重导出 `callGenericPopup`/`POPUP_TYPE`/
-   `POPUP_RESULT`/`t`（`public/scripts/st-context.js`），无需新增 `@st/*` 映射。
-   取消（含转义）零改动中止；「Delete Message」自定义按钮升级为整条删除（仍走
-   DOM 门卫，不二次弹窗）——完整复刻 ST 原生措辞与三态行为。
-3. **整条删除分支恢复显式 DOM 门卫**：`_deleteFullMessageById` 在目标 `.mes` 节
-   点缺失时抛出说明「Tier 2 落地前维持门卫」原因的描述性错误，而不是让 ST 内部
-   门卫静默 no-op；仅删 swipe 分支保持无门卫。`triggerMessageActionById` 自身不
-   下判——只有读到消息记录后的 `deleteMessage()` 才能分辨两个子分支，门卫因此放
-   在 `deleteMessage()` 内部而非分发入口。
+- `getDeleteEligibility(mesId)`：结构性资格判定（非用户消息 + 多 swipe + 末条 +
+  已选 swipe），完全不含 `confirm_message_delete` ——是否要问用户是调用方
+  （store）的事。
+- `getConfirmMessageDeleteSetting()`：只读一个强制布尔化的设置值，不触发任何 UI。
+- `deleteMessageWithIntent(mesId, intent, swipeId?)`：意图显式的纯执行——调用方已
+  经决定好删「swipe」还是「message」，这个函数从不读设置、从不弹窗、从不问。
 
-edit / regen / swipe（候选切换）本 tier 不变，仍要求存活元素。
+`_deleteFullMessageById`（`deleteMessageWithIntent` 的 'message' 分支）逐字复刻
+ST 原生 `deleteMessage()` 门后本体（script.js:1618-1673）的可观测顺序：splice
+`chat[]`→（若有）移除 `.mes` 节点→`chat_metadata.tainted=true`→
+`deleteItemizedPromptForMessage(id)`（新增 `@st/itemized-prompts` 映射，
+`public/scripts/itemized-prompts.js`，与 `@st/utils` 同款 up-3 模式）→
+`_renumberRenderedRowsAfterDelete(id)`（**自有重编号，不再委托原生
+`updateViewMessageIds`**，见下）→`saveChatDebounced()`（注意不是
+`saveChatConditional`，两者是原生两个不同函数各自的选择，仅删 swipe 的
+mini-fork 用后者）→`this_edit_mes_id` 重置（见下）→`refreshSwipeButtons()`→
+`eventSource.emit(MESSAGE_DELETED, chat.length)`。
+
+**重编号陷阱（2026-07-19 复审发现并修复）**：早期实现按原生
+`updateViewMessageIds(startIndex)` 的 `[0, minId].includes(id) ? id : null` 公式
+算 `startIndex` 后直接调用原生函数（`script.js:9407-9419`）代劳重编号，理由是
+「它自身对 DOM 容忍，且正是 DOM-DECOUPLING.md 认可的『写回受遮罩原生窗口以维持宿主
+一致性』」——这个理由不成立：原生 `updateViewMessageIds` 的 `null` 分支会重新扫描
+**当前** DOM 算 `minId = getFirstDisplayedMessageId()`，其正确性默默依赖原生
+`deleteMessage()` 自身的前提——被删行自己的 `.mes` 节点原本在 DOM 里、且刚刚被
+物理 `.remove()`（`script.js:1633-1636` 的门卫正是为此存在）。Tier 2 恰恰打破了
+这个前提：一旦被删 id 本身从未渲染而更晚的行已渲染（chat_truncation 截断窗口的
+典型形态），DOM 的最小值根本没变，原生的重新扫描就悄悄退化成空操作——每一个仍在
+渲染的行都保留了它删除前的 `mesid`，尽管 `chat.splice(deletedId, 1)` 刚把它之后
+每一条的数组下标都减了 1。用逐字复刻的原生 `updateViewMessageIds`/
+`getFirstDisplayedMessageId` 函数体对着真实 DOM 复现过（该复审轮次的 scratch
+repro，未纳入本仓库）：删除未渲染的 id 5、仅 6-9 已渲染时，「编辑消息 7」会静默
+落到 `chat[7]`（此刻已是原消息 8 的内容）；chat_truncation=1（仅末条渲染）下删除
+更早的未渲染 id，剩下那唯一渲染行的 `mesid` 会指向越界的 `chat[]` 槽位。
+
+修复：`_renumberRenderedRowsAfterDelete`（`src/adapter/messages.ts`）自己拥有
+重编号规则，不再从 DOM 重新推导任何基准值——只拿每一行**自己删除前**的
+`mesid` 属性跟被删 id 直接比较，对任何渲染/未渲染组合都按构造正确：
+`mesid === deletedId` 的行此刻已不存在（若曾渲染，其元素已被上一步
+`.remove()`）；`mesid > deletedId` 的行 `mesid` 恰好减 1（因为它对应的
+`chat[]` 条目恰好被 splice 顶了一格）；`mesid < deletedId` 的行原样不动。同时
+复刻原生 `updateViewMessageIds` 对同一批行产生的其余逐行可观测效果——
+`.mesIDDisplay` 文本镜像、`last_mes` class 移交给 DOM 序上新的末行——并在最后
+无条件调用原生 `updateEditArrowClasses()`（`script.js:9427`，已导出，直接调用
+未重新实现：它从不从 DOM 重新推导基准，只是把真实的 `this_edit_mes_id`
+（经 `setEditedMessageId()` 保持同步，见下）跟*此刻*的 `mesid` 属性比较——而
+此刻的属性已经被本函数改对了，所以委托是安全的）。`.mes` 行读取走
+`#chat` 的直接 `.children` 加一个纯 classList 树遍历（`_findDescendantByClass`），
+不用复合 CSS 选择器——这正是单测假 DOM（`test/helpers/fake-st-host.mjs`）能
+真正验证这条重编号规则的原因，见 §7 的四条新测试。
+
+**`this_edit_mes_id` 影子变量**：ST 的 `this_edit_mes_id`
+（script.js:610）模块私有，只导出了 setter `setEditedMessageId()`
+（script.js:7101），没有任何 getter——分叉要复刻原生 `if (this_edit_mes_id ===
+id)` 条件重置，却读不到真实值。`src/adapter/messages.ts` 用模块私有的
+`_shadowEditedMessageId` 精确镜像它：ChatUI 自有编辑 UI（进入编辑模式是纯本地
+Preact 状态，从不碰 `this_edit_mes_id`）唯一会触碰真实值的路径是
+`saveMessageEditById()`（经 `messageEdit()` 设值、经完成的 `.mes_edit_done` 点击
+间接经 ST 自己的 `messageEditDone()` 清空），而 ChatUI 的每次编辑保存与每次删除
+都经同一条全局串行宿主队列（不会交叠）——影子对每一条 ChatUI 可达路径都精确，唯
+一已知缺口（未通过 ChatUI 遮罩、直接操作原生 DOM）见 §16。
+
+edit（保存）/ regen / swipe（候选切换）本 tier 不变，仍要求存活元素——delete 不再
+经共享 `triggerMessageActionById` 分发（同步 switch 语句容不下「先读设置、按需等
+弹窗」的异步编排），改由 store/chat-actions.ts 直接调用上面三个新接口（见 §2）。
 
 | 不变量 | 验证 |
 | --- | --- |
-| 仅当「确认删除 + 非用户消息 + 多 swipe + 末条」四条件齐备才走仅删 swipe 分支（背后弹确认弹窗、结果 AFFIRMATIVE 时才调用 mini-fork）；否则整条删除分支才调 DOM 门卫后的 stDeleteMessage | `test/messages.test.mjs :: deleteMessage: full {confirm} x {is_user} x {swipes>1} x {isLast} matrix routes to the swipe-only mini-fork (behind a confirm popup) or the DOM-gated full-message path exactly as ST's own policy would` |
-| 缺失 swipe_id 时即使其余条件齐备也回退为整条删除（DOM 门卫下必须显式抛错，不凭空传索引也不静默 no-op） | `test/messages.test.mjs :: deleteMessage: an undefined swipe_id blocks swipe-only delete even when every other condition aligns` |
-| confirm 设置强制转严格布尔（非布尔真值仍能触发仅删 swipe 分支的确认弹窗）且缺失时视为无需确认（跳过弹窗，落到 DOM 门卫） | `test/messages.test.mjs :: deleteMessage: confirm_message_delete is coerced to a strict boolean before gating the swipe-only branch on, not forwarded as-is` |
-| 非法消息 id 在触达宿主删除接口前抛错 | `test/messages.test.mjs :: deleteMessage: rejects a negative or non-integer message id before touching the host` |
-| 找不到消息记录时抛错且绝不调用宿主删除 | `test/messages.test.mjs :: deleteMessage: throws when the message record cannot be found at that id` |
-| 整条删除的 DOM 门卫错误必须说明「Tier 2 未落地」的原因，而非仅报「未找到」，让后续读者理解这一不对称 | `test/messages.test.mjs :: deleteMessage: the full-message DOM gate error explains the Tier 2 asymmetry, not just "not found"` |
-| 用户在确认弹窗点击取消（或转义）时零变更、零宿主调用，弹窗措辞与按钮文案与 ST 原生 askConfirmation 分支逐字一致 | `test/messages.test.mjs :: deleteMessage: swipe-only branch aborts with zero mutation and no host call when the user cancels the confirm popup` |
-| 用户在确认弹窗点击「Delete Message」自定义按钮时升级为整条删除（仍受 DOM 门卫约束），且绝不二次弹窗 | `test/messages.test.mjs :: deleteMessage: swipe-only branch escalates to the DOM-gated full-message delete when the user picks "Delete Message" in the popup, with no second confirmation` |
-| 仅删 swipe 分支从不调用 ST 的 deleteSwipe/swipe，宿主级 swipeState 全程不受触碰——堵死 swipeState 卡死损坏路径 | `test/messages.test.mjs :: deleteMessage: swipe-only branch never calls ST's deleteSwipe/swipe internals and leaves swipeState untouched (closes the swipeState-lockout corruption path)` |
+| `getDeleteEligibility` 的 {is_user} x {swipes>1} x {isLast} x {swipe_id 已选} 四维矩阵与 ST 原生 `.mes_edit_delete` 处理器的结构性判定逐一对应，且完全不含 confirm_message_delete | `test/messages.test.mjs :: getDeleteEligibility: {is_user} x {swipes>1} x {isLast} x {swipe_id defined} matrix matches ST's own structural check (script.js:11922-11928) exactly, excluding confirm_message_delete — that gate is the caller's job now (store/chat-actions.ts)` |
+| 非法消息 id 在读取聊天记录前抛错 | `test/messages.test.mjs :: getDeleteEligibility: rejects a negative or non-integer message id before reading the chat` |
+| 找不到消息记录时抛错 | `test/messages.test.mjs :: getDeleteEligibility: throws when the message record cannot be found at that id` |
+| confirm_message_delete 强制转严格布尔，缺失/空的 powerUserSettings 视为 false 且绝不抛错 | `test/messages.test.mjs :: getConfirmMessageDeleteSetting: coerces a truthy non-boolean setting to strict true, and a missing/empty powerUserSettings to false without throwing` |
+| deleteMessageWithIntent 在非法消息 id 前先抛错，绝不触达宿主 | `test/messages.test.mjs :: deleteMessageWithIntent: rejects a negative or non-integer message id before touching the host` |
+| intent='swipe' 缺失 swipeId 时先抛错，零变更、零宿主调用 | `test/messages.test.mjs :: deleteMessageWithIntent: "swipe" intent without a swipeId throws before mutating anything or calling the host` |
+| intent='swipe' 原样转发到 _deleteSwipeById，绝不触碰整条删除分叉专属的宿主调用 | `test/messages.test.mjs :: deleteMessageWithIntent: "swipe" intent forwards mesId/swipeId straight to _deleteSwipeById, never touching the full-delete host calls` |
+| intent='message'（整条删除薄分叉）复刻原生门后本体的完整可观测序列——splice、tainted、itemized-prompt 失效、DOM 容忍的重编号、debounced 保存、this_edit_mes_id 重置、refreshSwipeButtons、MESSAGE_DELETED 载荷——严格按原生顺序，且全程没有渲染的 `.mes` 节点 | `test/messages.test.mjs :: deleteMessageWithIntent: "message" intent (the full-message fork) reproduces the exact native post-gate sequence — splice, tainted, itemized-prompt invalidation, DOM-tolerant renumber, debounced save, this_edit_mes_id reset, refreshSwipeButtons, MESSAGE_DELETED payload — in ST's exact order, entirely without a rendered .mes node` |
+| 重编号陷阱修复：被删 id 本身未渲染、更晚的行已渲染时（chat_truncation 截断窗口的典型形态，也覆盖「被删 id 恰是删除前渲染最小值」——因为两者留下的残余行集合在 DOM 上无法区分），已渲染行的 mesid 全部恰好减 1，mesIDDisplay 文本与 last_mes class 同步跟随 | `test/messages.test.mjs :: deleteMessageWithIntent: "message" intent — rendered-row renumber (mesid-renumber trap fix): unrendered-deleted + later-rendered rows all shift down by exactly one (the truncation core case; also covers "deleted id === the pre-delete rendered minimum", since a still-rendered row's own DOM state after a delete cannot distinguish "this id was rendered and just got removed" from "this id was never rendered at all" — both leave an identical residual row set, which is exactly why comparing against the deleted id is the only correct rule)` |
+| 重编号陷阱修复：中间位置渲染行被删（其自身节点已被上一步移除）时，被删 id 以下的行原样不动，以上的行 mesid 恰好减 1，last_mes 移交给新的末行 | `test/messages.test.mjs :: deleteMessageWithIntent: "message" intent — rendered-row renumber: rows below the deleted id are left untouched, only rows above it shift down (post-removal DOM shape a rendered mid-list delete leaves behind — mesEl.remove() itself is a real-browser-only concern here, see the module doc comment)` |
+| 重编号陷阱修复：chat_truncation=1 下删除唯一渲染的末行（其自身节点已被移除）后无行可重编号，且仍不抛错、仍调用 updateEditArrowClasses | `test/messages.test.mjs :: deleteMessageWithIntent: "message" intent — rendered-row renumber: deleting the sole rendered row under chat_truncation=1 (its own element already removed) leaves nothing to renumber, without throwing` |
+| 重编号陷阱修复：删除未渲染的 id 0（旧 startIndex 公式的特判分支，但该特判只在原生自身 DOM 门卫下才安全）时，已渲染行同样全部恰好减 1 | `test/messages.test.mjs :: deleteMessageWithIntent: "message" intent — rendered-row renumber: deleting id 0 while it is itself unrendered still shifts every rendered row down by one (the id===0 edge case the old startIndex formula special-cased, but which is only ever safe under native's own DOM gate)` |
+| this_edit_mes_id 影子仅在其等于被删 id 时才触发 setEditedMessageId(undefined)，追踪另一条消息时绝不触碰 | `test/messages.test.mjs :: deleteMessageWithIntent: "message" intent resets the this_edit_mes_id shadow and calls setEditedMessageId(undefined) only when the shadow equals the deleted id, never for a different message` |
 | 删除的 swipe 恰是消息当前活跃 swipe 时，mini-fork 必须原地 splice swipes/swipe_info、重算 swipe_id、标记 chat_metadata.tainted、发出 MESSAGE_SWIPE_DELETED，并经 syncSwipeToMes 强制重同步 mes | `test/messages.test.mjs :: _deleteSwipeById: splices the deleted swipe out of the live chat entry, reassigns swipe_id, marks chat_metadata tainted, emits MESSAGE_SWIPE_DELETED, and resyncs mes via syncSwipeToMes when the deleted swipe was the message's active swipe` |
 | 删除的 swipe 不是当前活跃 swipe 时，护栏绝不多余触发 syncSwipeToMes，但仍持久化并广播事件 | `test/messages.test.mjs :: _deleteSwipeById: leaves mes untouched (no syncSwipeToMes call) when the deleted swipe was not the message's active swipe` |
 | 仅剩一个 swipe 时拒绝删除且不产生任何变更（镜像 ST「不能删最后一个 swipe」的警告） | `test/messages.test.mjs :: _deleteSwipeById: throws without mutating when the message has only one swipe left` |
@@ -199,8 +264,8 @@ edit / regen / swipe（候选切换）本 tier 不变，仍要求存活元素。
 | 已隐藏消息只调 unhide，绝不同时触发 hide | `test/messages.test.mjs :: toggleHideMessage: is_system true delegates to unhideChatMessage(mesId) only` |
 | 可见消息只调 hide，绝不同时触发 unhide | `test/messages.test.mjs :: toggleHideMessage: is_system false delegates to hideChatMessage(mesId) only` |
 | 隐藏切换在消息 id 非法时先抛错 | `test/messages.test.mjs :: toggleHideMessage: rejects a negative or non-integer message id before touching the host` |
-| 共享按 id 分发入口对 copy/branch/checkpoint/hide/delete（仅删 swipe 子分支）撤销了「必须存在 `.mes` 节点」的一票否决门卫，DOM 全无时仍能全部成功 | `test/messages.test.mjs :: triggerMessageActionById: copy/branch/checkpoint/hide/delete(仅 swipe) all resolve with no #chat .mes element present in the DOM (Tier 1)` |
-| delete 的整条删除子分支在共享分发入口下仍保留门卫，DOM 缺失时抛出「未找到」而非静默 no-op（Tier 2 前维持不对称） | `test/messages.test.mjs :: triggerMessageActionById: delete throws "Message element not found" for the full-message sub-case when no #chat .mes element is present (stays DOM-gated this tier)` |
+| 共享按 id 分发入口对 copy/branch/checkpoint/hide 撤销了「必须存在 `.mes` 节点」的一票否决门卫，DOM 全无时仍能全部成功 | `test/messages.test.mjs :: triggerMessageActionById: copy/branch/checkpoint/hide all resolve with no #chat .mes element present in the DOM (Tier 1)` |
+| delete 不再经共享分发入口执行（Tier 2）：一个运行期传入的 'delete' 字符串落到显式安全的 default no-op 分支，零变更、零宿主调用——真正的编排在 store/chat-actions.ts | `test/messages.test.mjs :: triggerMessageActionById: "delete" is not dispatched here at all (Tier 2) — a silent no-op, zero mutation, zero host calls; orchestration lives in store/chat-actions.ts now` |
 | 共享按 id 分发入口对 edit / regen 两个动作保留「必须存在 `.mes` 节点」门卫，本 tier 不变 | `test/messages.test.mjs :: triggerMessageActionById: edit and regen still throw when no #chat .mes element is present (unchanged this tier)` |
 | 委托点击无可等待结果时以描述性错误拒绝，绝不返回永久挂起的 Promise | `test/messages.test.mjs :: _dispatchClickAndWait rejects with a descriptive error instead of hanging forever when the delegated handler returns no awaitable result` |
 | 委托处理器正常结算时以其值 resolve | `test/messages.test.mjs :: _dispatchClickAndWait resolves with the delegated handler's settled value when it returns a real promise` |
@@ -347,7 +412,29 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 | 停用恢复镜像自愈的守卫哲学：当前值已不是覆盖哨兵（用户经 ST 原生设置手动改过）时，手动值权威，停用恢复按兵不动，只清掉过期备份 | `test/native-window-guard.test.mjs :: restoreForDisable leaves a manually-changed live value alone (the user's own setting is authoritative) and clears the now-stale backup instead of stomping it` |
 | 「本次会话是否已激活覆盖」的查询与 nativeTruncationOverrideEnabled 标志的后续取值解耦：激活后即使标志被翻回 false 也不回退会话在场状态，直到停用恢复真正跑过 | `test/native-window-guard.test.mjs :: isNativeTruncationGuardLive reflects whether the override actually applied this session, independent of the enabled flag on later calls` |
 
-## 15. 未覆盖缺口（❌ 补测待办）
+## 15. 删除确认对话框（store/confirm-store）
+
+ChatUI 自有确认对话框存储（DOM-DECOUPLING.md 决策 #3 的 Tier 2 落地：不再直调 ST
+原生 `callGenericPopup`）。仿 toast-store.ts 的写法：单值 createStore + 一组纯函数，
+promise 化的 request/resolve API。同一时刻至多一个待答请求——挂载在 app 根的对话
+框宿主组件只能同时渲染一个弹窗；更晚的请求会抢占更早、尚未回答的请求（把它的
+promise 用 'cancel' 结算，绝不留空悬 promise），这是钉死的设计而非偶然状态。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 两态请求往返：待答期间 getChatuiConfirmRequest() 能读到它，resolveChatuiConfirm 结算其 promise 并清空存储；cancelLabel/danger 缺省值正确，二态请求绝不带 escalateLabel | `test/confirm-store.test.mjs :: a two-way request round-trips: getChatuiConfirmRequest() reflects it while pending, resolveChatuiConfirm settles its promise and clears the store` |
+| 三态请求带着 escalateLabel，三种结果都精确结算 promise | `test/confirm-store.test.mjs :: a three-way request carries its escalateLabel through, and each of the three outcomes settles the promise with exactly that value` |
+| variant='two-way' 请求会丢弃调用方误传的 escalateLabel | `test/confirm-store.test.mjs :: a variant: "two-way" request drops any escalateLabel the caller mistakenly passes — the dialog host must never render a third button for it` |
+| cancelChatuiConfirm 与 resolveChatuiConfirm(id,'cancel') 行为一致 | `test/confirm-store.test.mjs :: cancelChatuiConfirm settles the promise with "cancel" and clears the store, same as resolveChatuiConfirm(id, "cancel")` |
+| 待答期间的新请求抢占旧请求：旧请求的 promise 以 'cancel' 结算（不留空悬），存储立即只反映新请求 | `test/confirm-store.test.mjs :: a second request while one is still pending pre-empts it: the first promise resolves "cancel" (never left dangling), and the store immediately reflects only the newer request` |
+| 用过期 id（已回答或已被抢占）调用 resolve 是静默空操作，绝不误伤当前在场的新请求 | `test/confirm-store.test.mjs :: resolving a stale id (already answered, or pre-empted by a newer request) is a silent no-op — it must never resolve a different, newer pending request out from under it` |
+| 用从未请求过的 id 调用 resolve/cancel 是静默空操作，不抛错 | `test/confirm-store.test.mjs :: resolving an id that was never requested at all is a silent no-op, not a throw` |
+| 整体重置（teardown）会把在场的待答请求以 'cancel' 结算并清空存储 | `test/confirm-store.test.mjs :: resetChatuiConfirmStore resolves any outstanding pending request with "cancel" and clears the store` |
+| 无待答请求时整体重置是无害空操作 | `test/confirm-store.test.mjs :: resetChatuiConfirmStore with nothing pending is a harmless no-op` |
+| 订阅在请求发起时收到该请求、回答后收到 null；取消订阅后不再收到通知 | `test/confirm-store.test.mjs :: subscribeChatuiConfirm notifies with the request on request and with null once answered; unsubscribing stops further notifications` |
+| 连续多轮请求各自拿到独一无二的 id | `test/confirm-store.test.mjs :: sequential requests each get a distinct id, even across many round trips` |
+
+## 16. 未覆盖缺口（❌ 补测待办）
 
 2026-07-19 第一批六个单元层缺口已全部补齐（§3、§4 新增行），滚动中编辑的浏览器
 验收已入 §13。当前剩余：
@@ -376,31 +463,48 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 需要 src 级注入口子或只能在浏览器层验证：
 
 - DOM-DECOUPLING.md Tier 1（2026-07-19，2026-07-19 复审后修订）已把
-  `triggerMessageActionById` 对 copy/branch/checkpoint/hide/delete（仅删 swipe
-  子分支）的 `#chat .mes[mesid="X"]` 依赖撤除，这四个动作加 delete 的仅删 swipe
-  子分支（连同其 mini-fork `_deleteSwipeById` 与确认弹窗 `_confirmSwipeOnly
-  Delete`）现在完全在单测层覆盖。**delete 的整条删除子分支不在此列**：复审发现
-  该子分支必须保留 DOM 门卫（Tier 2 前不能整体撤除），门卫**拒绝**路径（`.mes`
-  缺失时抛出「Tier 2 未落地」错误）已单测覆盖，但门卫**放行后**的成功路径（真
-  实存在 `.mes` 节点、`stDeleteMessage()` 实际执行完整删除）与 edit/regen/swipe
-  同样受限于假 DOM 不支持复合选择器，只能由 Chromium e2e 覆盖——归入下面这条。
+  `triggerMessageActionById` 对 copy/branch/checkpoint/hide 的
+  `#chat .mes[mesid="X"]` 依赖撤除，这四个动作现在完全在单测层覆盖。
+- **DOM-DECOUPLING.md Tier 2（2026-07-19）之后，delete（整条）的核心逻辑本身也已
+  下沉到单测**（`deleteMessageWithIntent`/`_deleteFullMessageById`，§7）——它不再
+  依赖 `.mes` 节点存在与否，假 DOM 的「无法解析复合选择器」限制不再是它的阻碍，
+  这条湮灭的缺口不再登记。**2026-07-19 复审曾在此发现一个真实数据损坏缺陷**（被
+  删 id 本身未渲染、更晚的行已渲染时，旧实现委托的原生 `updateViewMessageIds`
+  会静默把重编号变成空操作——见 §7 上方「重编号陷阱」段落），已用自有的
+  `_renumberRenderedRowsAfterDelete` 修复，且该函数改走 `#chat` 直接 `.children`
+  加纯 classList 树遍历（不用复合选择器），所以修复后的重编号规则本身**已经**
+  被假 DOM 单测真正练习到（§7 的四条新测试直接断言仍渲染行的 `mesid`/
+  `mesIDDisplay`/`last_mes` 被改对，不再只是断言「调用时传了对的参数」）。仍留在
+  浏览器层的，是分叉里唯一真正依赖真实 DOM、且假 DOM 结构性做不到的一步：目标消
+  息**确实渲染**时，`mesEl?.remove()` 是否真把那个节点从真实 `#chat` 移走（假
+  DOM 里 `getMessageElementById` 永远解析不出复合选择器，这一步在单测里天然是空
+  对象分支，从未被真正练习过——§7 的新测试改用「直接不渲染被删 id 对应的行」来
+  模拟移除后的 DOM 形态，绕开了这个限制去验证重编号本身，但没有、也不能验证移除
+  这一步的真实发生）。
+- **新增（Tier 2）：ChatUI 自有确认对话框（ConfirmDialogHost + ConfirmDialog 的
+  三态渲染）目前零浏览器级驱动**——store/confirm-store.ts 的状态机本身有完整单测
+  （§15），store/chat-actions.ts 的编排逻辑经假宿主有完整单测（§2），但组件本身
+  （挂载位置、三个按钮是否真的渲染在正确的 variant 下、Escape/背景点击是否真的
+  触发 cancel、`resolveChatuiConfirm` 是否真的把 store 状态清空进而让对话框消
+  失）从未在真实浏览器里点击过。同理，「点击 UI 上的删除 → 真弹窗出现 → 点击真
+  按钮 → ST 真实 `chat`/`#chat` DOM 发生预期变化」这条端到端路径也是空白——这是
+  比上一条「mesEl?.remove() 的真实效果」更外层、更贴近用户可感知行为的一层缺口，
+  没有便宜地折进现有任何一道浏览器门禁（`e2e/smoke.spec.mjs`、
+  `scripts/e2e/measure-chat-switch.mjs`），需要专门补一条 Chromium 场景。
 - 仍然依赖 `#chat .mes[mesid="X"]` 复合选择器与 jQuery 委托、假 DOM 不支持、
   只能由 Chromium e2e 覆盖的：`saveMessageEditById`、`swipeMessageById`（含
-  `triggerMessageActionById` 里的 `edit`/`regen` 分支）、delete 整条删除子分支
-  在 DOM 门卫**放行后**的成功路径——即 edit（保存）、swipe（候选切换）、
-  full-delete 本身（不只是其 DOM 定位前置步骤）；若要下沉到单测需给元素查找加
-  注入 seam。DOM-DECOUPLING.md Tier 2/3 将分叉 delete（整条）与 edit（保存）本
-  身的门后逻辑，但其入口的元素解析仍是 DOM 层动作，预计仍留在此清单。
-- **2026-07-19 复审 meta-finding**：现有两道真实 Chromium 门禁（`e2e/smoke.spec.mjs`、
-  `scripts/e2e/measure-chat-switch.mjs`）均未驱动任何消息动作分发路径——前者只验证
-  会话渲染 + 一次消息**编辑**往返，后者只做切换性能测量；对
-  `triggerMessageActionById`/`copyMessage`/`deleteMessage`/`branchChat`/
-  `createNewBookmark`/`hideChatMessage` 等符号的 grep 结果为零命中。也就是说
-  copy/branch/checkpoint/hide/delete 五个动作的浏览器级驱动目前完全是空白——
-  §13 的「消息编辑往返」是这批动作里唯一被真实 Chromium 验收过的一个。本节
-  「delete 整条删除成功路径」之外，copy/branch/checkpoint/hide 四个动作本身
-  （连同 delete 仅删 swipe 子分支的确认弹窗真实点击）也还没有任何浏览器级驱动，
-  是比「需要 src 级注入口子」更基础的一层缺口，记在此处防止随时间被忽略。
+  `triggerMessageActionById` 里的 `edit`/`regen` 分支）——即 edit（保存）、
+  swipe（候选切换）本身；若要下沉到单测需给元素查找加注入 seam。
+  DOM-DECOUPLING.md Tier 3 将分叉 edit（保存）本身的门后逻辑，但其入口的元素解
+  析仍是 DOM 层动作，预计仍留在此清单。
+- **2026-07-19 复审 meta-finding（Tier 2 后现状更新）**：现有两道真实 Chromium
+  门禁（`e2e/smoke.spec.mjs`、`scripts/e2e/measure-chat-switch.mjs`）均未驱动任
+  何消息动作分发路径——前者只验证会话渲染 + 一次消息**编辑**往返，后者只做切换
+  性能测量；对 `triggerMessageActionById`/`copyMessage`/`deleteMessageWithIntent`/
+  `branchChat`/`createNewBookmark`/`hideChatMessage` 等符号的 grep 结果为零命
+  中。也就是说 copy/branch/checkpoint/hide/delete 五个动作的浏览器级驱动目前完
+  全是空白——§13 的「消息编辑往返」是这批动作里唯一被真实 Chromium 验收过的一
+  个。是比「需要 src 级注入口子」更基础的一层缺口，记在此处防止随时间被忽略。
 
 低价值备忘：
 

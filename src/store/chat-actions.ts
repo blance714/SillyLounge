@@ -12,6 +12,8 @@ import {
     HostOperationCancelledError,
 } from './host-operation-queue.js';
 import { pushToast, dismissToast } from './toast-store.js';
+import { requestChatuiConfirm } from './confirm-store.js';
+import type { ChatuiConfirmOutcome } from './confirm-store.js';
 
 export type ChatuiMessageAction = 'copy' | 'regen' | 'edit' | 'delete' | 'branch' | 'checkpoint' | 'hide';
 export type ChatuiSelectorKind = 'preset' | 'model' | 'persona';
@@ -210,6 +212,86 @@ export function isChatuiLifecycleCancellation(error: unknown): boolean {
     return error instanceof HostOperationCancelledError;
 }
 
+// ST's own wording (script.js:1638-1647's askConfirmation branch / the
+// .mes_edit_delete handler's popup options) -- kept in English on purpose,
+// matching DOM-DECOUPLING.md decision #3: "措辞...与 ST 原生...逐字一致,
+// 不需要新增任何 @st/* 模块映射" (now no longer even a direct ST popup call,
+// but the wording stays the same because users already know it).
+const DELETE_CONFIRM_TITLE = 'Are you sure you want to delete this message?';
+const DELETE_SWIPE_LABEL = 'Delete Swipe';
+const DELETE_MESSAGE_LABEL = 'Delete Message';
+const DELETE_CANCEL_LABEL = 'Cancel';
+
+/**
+ * Message delete needs its own orchestration, unlike every other action
+ * triggerChatuiMessageAction below dispatches generically: it must read
+ * confirm_message_delete and (conditionally) await the user's own choice in a
+ * ChatUI-owned confirm dialog *before* the mutation may run at all, and which
+ * mutation to run (swipe-only vs full) depends on that choice. This mirrors
+ * ST's own `.mes_edit_delete` handler policy exactly (script.js:11920-11928):
+ *
+ *   - confirm_message_delete === false: skip straight to a full-message
+ *     delete, no dialog at all (ST's own eligibility check itself requires
+ *     confirm_message_delete to be true, so a swipe-only delete is never
+ *     reachable when it's off).
+ *   - confirm_message_delete === true and the message is swipe-eligible
+ *     (getDeleteEligibility().canDeleteSwipe): a three-way dialog -- "Delete
+ *     Swipe" (default), "Delete Message" (escalate), "Cancel".
+ *   - confirm_message_delete === true and not swipe-eligible: a plain
+ *     two-way "Delete Message" / "Cancel" confirm.
+ *
+ * The confirm dialog is awaited *outside* the shared host-operation queue
+ * (store/host-operation-queue.ts) -- an indefinite wait on the user must not
+ * hold up every other queued chat mutation (copy, branch, checkpoint, ...);
+ * only the actual execution, after a decision is made, is enqueued.
+ *
+ * DOM-DECOUPLING.md decision #3's Tier 2 resolution: the adapter itself never
+ * shows any UI or reads settings for this -- getConfirmMessageDeleteSetting()
+ * / getDeleteEligibility() are pure reads, and deleteMessageWithIntent() only
+ * executes an already-decided intent.
+ */
+function deleteChatuiMessage(messageId: number | string, expectedChatKey: string): void {
+    void (async () => {
+        try {
+            const confirmMessageDelete = chatuiAdapter.messageActions.getConfirmMessageDeleteSetting();
+            const eligibility = chatuiAdapter.messageActions.getDeleteEligibility(messageId);
+
+            let intent: 'swipe' | 'message' = 'message';
+            if (confirmMessageDelete) {
+                let outcome: ChatuiConfirmOutcome;
+                if (eligibility.canDeleteSwipe) {
+                    outcome = await requestChatuiConfirm({
+                        title: DELETE_CONFIRM_TITLE,
+                        variant: 'three-way',
+                        confirmLabel: DELETE_SWIPE_LABEL,
+                        escalateLabel: DELETE_MESSAGE_LABEL,
+                        cancelLabel: DELETE_CANCEL_LABEL,
+                        danger: true,
+                    });
+                } else {
+                    outcome = await requestChatuiConfirm({
+                        title: DELETE_CONFIRM_TITLE,
+                        variant: 'two-way',
+                        confirmLabel: DELETE_MESSAGE_LABEL,
+                        cancelLabel: DELETE_CANCEL_LABEL,
+                        danger: true,
+                    });
+                }
+                if (outcome === 'cancel') return;
+                intent = (eligibility.canDeleteSwipe && outcome === 'confirm') ? 'swipe' : 'message';
+            }
+
+            await enqueueChatBoundOperation(
+                expectedChatKey,
+                () => chatuiAdapter.messageActions.deleteMessageWithIntent(messageId, intent, eligibility.swipeId),
+            );
+        } catch (error) {
+            if (isChatuiLifecycleCancellation(error)) return;
+            reportChatBoundFailure('delete message', error);
+        }
+    })();
+}
+
 /**
  * @param {number|string} messageId
  * @param {'copy'|'regen'|'edit'|'delete'|'branch'|'checkpoint'|'hide'} action
@@ -220,6 +302,11 @@ export function triggerChatuiMessageAction(
     action: ChatuiMessageAction,
     expectedChatKey: string,
 ): void {
+    if (action === 'delete') {
+        deleteChatuiMessage(messageId, expectedChatKey);
+        return;
+    }
+
     const operation = action === 'regen'
         ? enqueueGenerationOperation(
             expectedChatKey,

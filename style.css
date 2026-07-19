@@ -873,6 +873,18 @@ body.chatui-active .cui-root-dialog-confirm.is-danger:hover {
     background-color: var(--cui-color-danger-hover);
 }
 
+/* Optional third ("escalate") button — e.g. message delete's "Delete Message"
+   upgrade path from the default "Delete Swipe". Same shape as the plain
+   .cui-root-dialog-btn, just visually between cancel and the primary confirm. */
+body.chatui-active .cui-root-dialog-escalate {
+    border-color: color-mix(in srgb, var(--cui-color-danger) 45%, var(--cui-color-border));
+    color: var(--cui-color-danger);
+}
+
+body.chatui-active .cui-root-dialog-escalate:hover {
+    background-color: color-mix(in srgb, var(--cui-color-danger) 12%, transparent);
+}
+
 body.chatui-active .cui-root-convlist-note {
     padding: 0.6rem;
     opacity: 0.6;
