@@ -35,6 +35,7 @@ declare module '@st/script' {
     export function stopGeneration(): boolean;
     export const swipe: any;
     export const swipeState: string;
+    export const syncSwipeToMes: any;
 }
 
 declare module '@st/slash-commands' {
