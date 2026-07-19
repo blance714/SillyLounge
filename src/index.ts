@@ -15,11 +15,18 @@ import { extension_settings } from '@st/extensions';
 import { saveSettingsDebounced, eventSource, event_types } from '@st/script';
 import { CHATUI_DISABLE_EVENT } from './store/chat-actions.js';
 import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
-import { initConfigStore } from './store/config-store.js';
+import { getConfig, initConfigStore } from './store/config-store.js';
 import { initTempChatStore } from './store/temp-chat-store.js';
+import { enqueueHostTask, sealHostOperationQueueForReload } from './store/host-operation-queue.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 import { finalizePendingCharacterChatDeletion } from './adapter/chats.js';
+import {
+    activateNativeTruncationGuard,
+    isNativeTruncationGuardLive,
+    restoreForDisable as restoreNativeTruncationForDisable,
+    selfHealNativeTruncation,
+} from './adapter/native-window-guard.js';
 
 // ── Module constants ──────────────────────────────────────────────────────────
 
@@ -98,6 +105,11 @@ function setup() {
         initChatuiStore();
         initChatuiRoot();
         initStDomShield();
+        // Only force ST's native chat_truncation once the full replacement UI
+        // is confirmed live (all three layers above succeeded) — see
+        // adapter/native-window-guard.ts's module doc for why the override
+        // itself is still gated behind a config flag that defaults OFF.
+        activateNativeTruncationGuard(getConfig().nativeTruncationOverrideEnabled);
 
         isSetup = true;
     } catch (error) {
@@ -118,6 +130,49 @@ function setup() {
 function teardown() {
     isSetup = false;
     cleanupLifecycle('teardown');
+}
+
+/**
+ * Disable ChatUI. When the native-truncation guard is actually live *this
+ * session* (DOM-DECOUPLING.md 停用恢复 row), an in-place teardown() is not
+ * enough: `power_user.chat_truncation` still sits at the override sentinel
+ * in memory, and it may already have been flushed into the user's
+ * persisted settings by some unrelated ST saveSettingsDebounced() call.
+ * Restore the real value, persist it, and hard-reload through the exact
+ * same terminal reloadRequired machinery the sidebar chat transactions use
+ * (store/host-operation-queue.ts's sealHostOperationQueueForReload +
+ * enqueueHostTask — see store/sidebar-actions.ts's deleteChatuiChat), so the
+ * restore-then-reload only runs once every in-flight host operation has
+ * drained, and every module-level ChatUI singleton also resets cleanly on
+ * reload instead of needing its own manual rollback. If the debounced
+ * settings save loses the race against the reload, boot self-heal
+ * (selfHealNativeTruncation(), called unconditionally at the top of init())
+ * finishes the job on the very next load — see native-window-guard.ts.
+ *
+ * Branches on `isNativeTruncationGuardLive()` — whether
+ * activateNativeTruncationGuard() actually applied the override this
+ * session — rather than on `getConfig().nativeTruncationOverrideEnabled`
+ * (the config flag's *current* value). The flag has no live UI toggle yet,
+ * but once one exists, flipping it off mid-session must not divert this
+ * path away from a still-live override with no restore attempt and no
+ * reload; session state, not the flag, is what actually determines whether
+ * `power_user.chat_truncation` needs restoring.
+ *
+ * When the guard was never live this session, nothing native was ever
+ * touched: the existing in-place teardown() (no reload) is unchanged.
+ *
+ * @returns {void}
+ */
+function disableChatuiLayers(): void {
+    if (!isNativeTruncationGuardLive()) {
+        teardown();
+        return;
+    }
+    enqueueHostTask(async () => {
+        restoreNativeTruncationForDisable();
+        sealHostOperationQueueForReload();
+        window.location.reload();
+    });
 }
 
 /** Keep the persisted toggle honest when activation cannot be completed. */
@@ -205,7 +260,7 @@ function injectSettingsUI() {
         if (settings.enabled) {
             setupOrDisable(enabledCb);
         } else {
-            teardown();
+            disableChatuiLayers();
         }
     });
 }
@@ -229,7 +284,7 @@ function disableFromUi() {
     const enabledCb = document.getElementById('chatui_enabled') as HTMLInputElement | null;
     if (enabledCb) enabledCb.checked = false;
 
-    teardown();
+    disableChatuiLayers();
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -240,6 +295,16 @@ function disableFromUi() {
  * @returns {void}
  */
 function init() {
+    // Must run before anything else, in EVERY mode — including bootstrap
+    // (settings.enabled === false below) and regardless of this session's
+    // nativeTruncationOverrideEnabled flag. A previous session's crash or
+    // force-closed tab can leave ST's native chat_truncation permanently
+    // pinned at the override sentinel in the user's own persisted settings
+    // even though that session's flag/enabled state has since changed — see
+    // adapter/native-window-guard.ts's module doc for the exact signature
+    // this repairs.
+    selfHealNativeTruncation();
+
     const settings = getSettings();
     // Hydrate the config store once, eagerly: it backs the always-present settings
     // panel as well as the (conditionally-mounted) Preact root, so it lives for the

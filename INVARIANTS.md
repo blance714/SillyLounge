@@ -308,7 +308,46 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   归因 + 楼层标尺功能验收。⚠️ 不在任何 CI 门内——楼层标尺的浏览器级窗口断言目前
   只能靠手动运行。
 
-## 14. 未覆盖缺口（❌ 补测待办）
+## 14. 原生截断窗口守卫（adapter/native-window-guard）
+
+`power_user.chat_truncation` 覆盖机制（DOM-DECOUPLING.md「停用恢复」行，2026-07-19
+拍板：reload 方案）。ST 把 `chat_truncation === 0` 解读为「无限制」而非零，覆盖值恒为
+1、绝不为 0；覆盖绝不能永久污染用户真实设置（写一次的备份 + 每次开机自愈）。这些测
+试直接经假宿主驱动编译后的 `adapter/native-window-guard.js`，不涉及 index.ts 的 DOM
+接线（后者见下方「未覆盖缺口」）。默认关闭：机制被 store/config-store.ts 的
+`nativeTruncationOverrideEnabled` 标志整体门控，等 DOM-DECOUPLING.md Tier 2/3
+（edit 保存 / 整条删除分叉）落地后才能翻开。
+
+复审（2026-07-19，见下方「未覆盖缺口」之前的接线路径复审）补上三层此前缺失的守卫：
+(1) `restoreForDisable()` 镜像 `selfHealNativeTruncation()` 的守卫哲学——只有当前值仍
+是覆盖哨兵才写回备份，若用户已经过 ST 原生的 `#AdvancedFormatting` 抽屉手动改过
+`chat_truncation`（该抽屉不受 st-dom-shield.ts 遮罩），手动值权威，停用恢复按兵不动、
+只清掉过期备份；(2) `backupOnce()` 返回三态结果（`established` / `already-present` /
+`unreadable`），`activateNativeTruncationGuard()` 只有存在有效恢复点时才应用覆盖，读不
+出真实值时拒绝激活并 `console.warn`，绝不裸奔——没有性能收益的会话总好过永久搁浅哨兵
+值、无路可退的会话；(3) 新增 `isNativeTruncationGuardLive()` 查询「本次会话覆盖是否真
+的在生效」，与 `nativeTruncationOverrideEnabled` 标志的当前取值解耦——`src/index.ts` 的
+`disableChatuiLayers()` 现在按这个会话态分叉，而非按标志值分叉，未来标志接出 UI 开关后
+半途翻掉也不会把停用路径错误地导向裸 `teardown()`。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 备份对真实值 0（无限制）保真，随后覆盖把内存值精确改写为哨兵值 1 | `test/native-window-guard.test.mjs :: backupOnce takes a value-faithful backup of a real chat_truncation of 0 (unlimited), and applyOverride then flips the live value to the sentinel` |
+| 备份写一次：备份存在期间的第二次激活绝不能用覆盖值顶替真实值 | `test/native-window-guard.test.mjs :: backupOnce is write-once: a second activation cannot clobber an existing backup with the override value` |
+| 无法读出有限数字时备份拒绝捏造数值 | `test/native-window-guard.test.mjs :: backupOnce refuses to fabricate a backup when the live chat_truncation cannot be read as a finite number` |
+| 标志关闭时绝不触碰 power_user，也绝不写入任何持久化记录 | `test/native-window-guard.test.mjs :: activateNativeTruncationGuard(false) never touches power_user or persists anything` |
+| 激活失败闭合：读不出有限数字时拒绝覆盖，不捏造备份，返回值体现拒绝 | `test/native-window-guard.test.mjs :: activateNativeTruncationGuard fails closed when the live chat_truncation is unreadable: no override applied, no backup fabricated, return value reflects the refusal` |
+| 已有备份（already-present）本身就是有效恢复点，激活照常应用覆盖，不重复写备份 | `test/native-window-guard.test.mjs :: activateNativeTruncationGuard applies the override when a valid restore point already exists (already-present outcome)` |
+| 自愈在崩溃留下覆盖值的现场下，对真实值 0（无限制）照样保真还原并清空备份 | `test/native-window-guard.test.mjs :: selfHealNativeTruncation restores a backed-up real chat_truncation of 0 (unlimited) after a crash left the override persisted, and clears the backup` |
+| 无备份时自愈直接空操作 | `test/native-window-guard.test.mjs :: selfHealNativeTruncation no-ops without a backup` |
+| 备份存在但当前值不是覆盖哨兵时，自愈绝不覆盖用户手动设的活值，并把过期备份作废（防再激活时借尸还魂） | `test/native-window-guard.test.mjs :: selfHealNativeTruncation keeps a manually-changed live value authoritative and discards the stale backup` |
+| 崩溃残留备份 + 手动改值 + 再激活 + 停用的完整链路里，最终恢复的必须是用户手动值，绝不是崩溃年代的旧备份 | `test/native-window-guard.test.mjs :: a stale backup surviving a crash-after-manual-change is never resurrected across reactivation and disable` |
+| 停用恢复：写回真实值、持久化，并清空备份记录 | `test/native-window-guard.test.mjs :: restoreForDisable restores the backup, persists it, and clears the backup record` |
+| 本次会话从未激活过（无备份）时停用恢复是空操作 | `test/native-window-guard.test.mjs :: restoreForDisable is a no-op when the guard was never activated this session` |
+| 停用恢复镜像自愈的守卫哲学：当前值已不是覆盖哨兵（用户经 ST 原生设置手动改过）时，手动值权威，停用恢复按兵不动，只清掉过期备份 | `test/native-window-guard.test.mjs :: restoreForDisable leaves a manually-changed live value alone (the user's own setting is authoritative) and clears the now-stale backup instead of stomping it` |
+| 「本次会话是否已激活覆盖」的查询与 nativeTruncationOverrideEnabled 标志的后续取值解耦：激活后即使标志被翻回 false 也不回退会话在场状态，直到停用恢复真正跑过 | `test/native-window-guard.test.mjs :: isNativeTruncationGuardLive reflects whether the override actually applied this session, independent of the enabled flag on later calls` |
+
+## 15. 未覆盖缺口（❌ 补测待办）
 
 2026-07-19 第一批六个单元层缺口已全部补齐（§3、§4 新增行），滚动中编辑的浏览器
 验收已入 §13。当前剩余：
@@ -317,6 +356,18 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 
 - 滚动往返后的**保存**路径（当前浏览器验收只走取消路径以保证练习自包含；保存的
   草稿清除语义已有单测背书）。
+- native-window-guard 的两条 index.ts 接线路径（当前只在假宿主里直接调用了编译后的
+  `adapter/native-window-guard.js`，没有驱动 index.ts 本身的 setup()/disableChatuiLayers()
+  接线——后者现在按 `isNativeTruncationGuardLive()` 的会话态分叉，而不是按
+  `nativeTruncationOverrideEnabled` 标志的当前取值分叉；`nativeTruncationOverrideEnabled`
+  目前默认关闭、也未接出任何 UI 开关，两条路径在真实产品中尚不可达，故未强行拼凑覆盖）：
+  - **停用即刷新**：真实 ST + 真实 Chromium 下把标志翻开、激活 ChatUI，再走「关闭
+    ChatUI」（原生复选框或应用内按钮）→ 断言 `power_user.chat_truncation` 刷新后等于
+    刷新前的真实值、`extensionSettings.chatui_composer.nativeTruncationBackup` 已清空、
+    `#chat` 重新是完整（非截断）的原生消息集。
+  - **bootstrap 自愈**：人为把覆盖值（1）连同一条备份记录一起持久化进
+    `extensionSettings`，以 `enabled: false`（bootstrap 模式）启动，断言开机自愈在
+    ChatUI 从未激活的这次会话里，仍把 `power_user.chat_truncation` 写回原值并清空备份。
 - character 角色消息的编辑入口藏在溢出菜单里，同一滚动往返场景未在浏览器层驱动
   （实现对角色无分支逻辑，风险有限）。
 - 双滚动系统（useAutoScroll 与 virtualizer 内建 end-anchoring）的一致性——待合并为

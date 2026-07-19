@@ -49,6 +49,7 @@ export type ChatuiConfig = {
     headerSolo: MessageHeaderValue;
     composerLines: ComposerLinesValue;
     plusPinned: PlusToolId[];
+    nativeTruncationOverrideEnabled: boolean;
 };
 
 const PLUS_TOOL_ID_SET = new Set<string>(PLUS_TOOL_IDS);
@@ -72,6 +73,14 @@ const DEFAULT_CONFIG: ChatuiConfig = {
     // message-selection UI (ST's delete mode checkboxes live in the parked #chat),
     // so 续写 stands in until that lands.
     plusPinned: ['regenerate', 'continue'],
+    // Gates adapter/native-window-guard.ts's power_user.chat_truncation=1
+    // override (DOM-DECOUPLING.md 停用恢复 row, 2026-07-19 拍板). Defaults OFF:
+    // edit-save and full-message delete are still DOM-gated (Tier 1 keeps a
+    // `.mes` lookup for those two paths — see DOM-DECOUPLING.md's action-by-
+    // action table) until DOM-DECOUPLING.md Tier 2/3 land, so truncating the
+    // native render window to 1 message would break them for every message
+    // that isn't the last one. Flip once Tier 2/3 ship.
+    nativeTruncationOverrideEnabled: false,
 };
 
 const _store = createStore(DEFAULT_CONFIG);
@@ -187,6 +196,9 @@ export function initConfigStore() {
         headerSolo: pick(MESSAGE_HEADERS, persisted.headerSolo, DEFAULT_CONFIG.headerSolo),
         composerLines: pick(COMPOSER_LINES, persisted.composerLines, DEFAULT_CONFIG.composerLines),
         plusPinned: normalizePlusPinned(persisted.plusPinned),
+        nativeTruncationOverrideEnabled: typeof persisted.nativeTruncationOverrideEnabled === 'boolean'
+            ? persisted.nativeTruncationOverrideEnabled
+            : DEFAULT_CONFIG.nativeTruncationOverrideEnabled,
     };
 
     _store.setState(normalized);

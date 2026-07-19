@@ -30,7 +30,7 @@ Tier 1 的门卫撤除误伤，静默 no-op 而非报错）。
 | edit（保存） | 分叉 + 契约测试（已拍板） | `updateMessage()` 依赖的纯函数均有导出（getRegexedString / substituteParams / extractMessageBias / removeMacros / ensureSwipes）；分叉复刻其 ~15 行编排，用契约测试钉死行为，ST 升 pin 时 CI 大声失败而非静默漂移 |
 | edit（取消） | 无需任何 ST 调用 | SillyLounge 草稿在自己手里，取消即丢弃本地状态（可选清 `setEditedMessageId(undefined)`，script.js:7101 有导出） |
 | swipe（切换候选） | 无限期推迟（已拍板） | 成功路径本身 DOM 驱动（`addOneMessage` type='swipe' 原地更新节点，script.js:2513/10233）；但 ST 自身限制仅末条可 swipe（isMessageSwipeable，script.js:9136），截断留 1 条恰好保住末条 |
-| 停用恢复 | 前置工作，独立实现 | 目前 src 中**尚无任何代码**覆盖 `chat_truncation`（只存在于测量工具）；上线顺序：激活时临时覆盖 → 停用时恢复真值 → shield 遮蔽下 `printMessages()`（script.js:1475）重建原生 DOM → 揭幕 |
+| 停用恢复 | **2026-07-19 机制已落地并复审修订（`adapter/native-window-guard.ts`），单测背书；标志默认关闭，浏览器级验收待补** | reload 方案：停用时尝试写回真值 → 经既有事务层 `reloadRequired` 终局机制（`sealHostOperationQueueForReload` + `enqueueHostTask`，`src/index.ts::disableChatuiLayers`）→ `location.reload()`，顺带清干净全部模块级残留状态（含无复位口的 `swipeState`）。覆盖值绝不永久污染用户配置的四层防线均已实现并单测：(a) 激活时先把真实 `chat_truncation` 写一次性备份进 SillyLounge 自有 `extensionSettings`（`backupOnce`，三态返回 `established`/`already-present`/`unreadable`），仅当存在有效恢复点（前两态之一）才做内存覆盖（`applyOverride`，值为 1——ST 把 0 解读为「无限制」，覆盖值绝不能是 0）——`unreadable`（读不出有限数字）时 `activateNativeTruncationGuard()` 拒绝激活并 `console.warn`，绝不裸奔覆盖；(b) 备份存在期间的再次激活绝不覆写（写一次语义）；(c) 每次启动（含 bootstrap / 标志关闭模式）在 `index.ts::init()` 最前面无条件跑自愈检查（`selfHealNativeTruncation`），发现「存有备份且当前仍是覆盖哨兵值」即写回并清空备份——防崩溃/强关标签页、也防停用时的 `saveSettingsDebounced` 与 `location.reload()` 赛跑；(d) `restoreForDisable()` 镜像 (c) 的守卫哲学：只有当前值仍是覆盖哨兵才真正写回备份，若用户已经过 ST 原生 `#AdvancedFormatting` 抽屉（不受 st-dom-shield.ts 遮罩）手动改过 `chat_truncation`，手动值权威，停用恢复按兵不动、只清掉过期备份，绝不用陈旧备份覆盖用户刚做的选择。激活被 `store/config-store.ts` 的 `nativeTruncationOverrideEnabled` 标志整体门控，默认 OFF——edit（保存）/delete（整条）在 Tier 2/3 前仍是 DOM 门卫，截断到 1 会打断非末条消息的这两个动作；但 `disableChatuiLayers()` 的停用分叉按 `isNativeTruncationGuardLive()` 报告的「本次会话覆盖是否真的在生效」分叉，而非按标志的当前取值分叉，故标志未来接出 UI 开关后半途翻掉也不会把仍在生效的覆盖错误地导向裸 `teardown()`（无写回、无 reload）。单测见 INVARIANTS.md §14；index.ts 接线本身（真实「停用即刷新」往返、真实 bootstrap 自愈）尚无浏览器级驱动，见 INVARIANTS.md §15 |
 
 ## 已拍板决策（2026-07-19）
 
@@ -61,8 +61,12 @@ Tier 1 的门卫撤除误伤，静默 no-op 而非报错）。
    的修订）；整条删除分支的 `getMessageElementById` 门卫并未撤除——`triggerMessageActionById`
    分发入口无法区分 delete 的两个子分支，门卫下沉到 `deleteMessage()` 内部按子
    分支显式判定。
-2. **停用恢复机制**：`chat_truncation` 覆盖 + 恢复 + `printMessages()` 重建；它阻塞
-   整个截断上线，独立于任何动作层选择。
+2. **停用恢复机制**（reload 方案，见上表 2026-07-19 修订）：真值备份 + 内存覆盖 +
+   开机自愈 + 停用时写回并 `location.reload()`；它阻塞整个截断上线，独立于任何
+   动作层选择。**2026-07-19：机制已实现并接线（`adapter/native-window-guard.ts` +
+   `src/index.ts`），但仍挡在 Tier 2/3 之前**——`nativeTruncationOverrideEnabled`
+   标志默认关闭，因为 edit（保存）/delete（整条）在 Tier 2/3 落地前仍依赖非末条消息
+   的 `.mes` 节点存在，截断到 1 会当场打断它们；标志翻开仍需等下面两条落地。
 3. **Tier 2：delete 薄分叉** + 自实现确认 UI + 契约测试。delete（仅 swipe）的 mini-fork
    已在 Tier 1 提前完成并需要同等契约测试对待（见下）；Tier 2 剩下的范围收窄为
    delete（整条）本身的分叉、以及用 ChatUI 自有确认组件替换 Tier 1 过渡期直调
@@ -88,7 +92,9 @@ Tier 1 的门卫撤除误伤，静默 no-op 而非报错）。
   唯一路径。
 - `this_edit_mes_id` 生命周期：异步编辑/删除前后成对调用 `setEditedMessageId`，
   保住原生 beforeunload 守卫与 swipe 门的诚实性。
-- 停用恢复 smoke：ChatUI 卸载后 `#chat` 含完整（非截断）原生消息集，真 Chromium 验收。
+- 停用恢复 smoke（按 reload 方案改写）：真 Chromium 验收——停用并刷新后
+  `chat_truncation` 恢复为用户原值、`#chat` 含完整（非截断）原生消息集；另需
+  自愈用例：人为把覆盖值持久化后以 bootstrap 模式启动，断言开机守卫写回原值。
 
 ## 附带发现与残留风险
 
