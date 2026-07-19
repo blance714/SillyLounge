@@ -22,6 +22,7 @@
 //   <tmp>/public/scripts/{extensions,chats,slash-commands,personas,
 //                          st-context,utils,bookmarks,RossAscends-mods,
 //                          itemized-prompts}.js
+//   <tmp>/public/scripts/extensions/regex/engine.js
 //   <tmp>/public/scripts/extensions/third-party/SillyLounge/   <- dist/runtime, copied (not symlinked)
 //   <tmp>/public/scripts/extensions/third-party/SillyLounge/dist/root-app.mjs
 //   <tmp>/package.json                                         <- {"type":"module"}, so the
@@ -84,6 +85,10 @@ const DEFAULT_MAX_TIMER_INVOCATIONS = 1000;
 // separately below.)
 const BRIDGE_FROM_SCRIPTS_SIBLING = './extensions/third-party/SillyLounge/' + BRIDGE_FILENAME;
 const BRIDGE_FROM_PUBLIC_ROOT = './scripts/extensions/third-party/SillyLounge/' + BRIDGE_FILENAME;
+// public/scripts/extensions/regex/engine.js sits one level deeper than the
+// public/scripts/*.js siblings above (@st/regex-engine, scripts/build.mjs's
+// `{ up: 3, file: 'extensions/regex/engine.js' }` mapping).
+const BRIDGE_FROM_REGEX_ENGINE = '../third-party/SillyLounge/' + BRIDGE_FILENAME;
 
 // The full set of `stEventKeys` names dist/runtime/adapter/internals.js
 // resolves through `event_types`, plus APP_READY (the one event index.js
@@ -262,6 +267,15 @@ export const context = {
     // host function: unconfigured calls throw "stub not configured", never
     // silently resolve.
     callGenericPopup: makeStub('callGenericPopup'),
+    // DOM-DECOUPLING.md Tier 3: adapter/messages.ts's saveMessageEditById
+    // fork calls this (getContext().updateMessageBlock, re-exported from
+    // public/script.js's own updateMessageBlock — see st-context.js) to heal
+    // a currently-rendered native row after mutating chat[] directly,
+    // guarded to only fire when the row actually exists (see
+    // _healRenderedMessageRow's doc comment in messages.ts for why real
+    // updateMessageBlock is *not* safe to call unconditionally).
+    // Registry-backed like callGenericPopup above.
+    updateMessageBlock: makeStub('updateMessageBlock'),
 };
 `;
 }
@@ -276,6 +290,8 @@ export const saveSettingsDebounced = makeStub('saveSettingsDebounced');
 export const stopGeneration = makeStub('stopGeneration');
 export const extractMessageBias = makeStub('extractMessageBias');
 export const removeMacros = makeStub('removeMacros');
+export const substituteParams = makeStub('substituteParams');
+export const ensureSwipes = makeStub('ensureSwipes');
 export const sendTextareaMessage = makeStub('sendTextareaMessage');
 export const isGenerating = makeStub('isGenerating');
 export const getCurrentChatDetails = makeStub('getCurrentChatDetails');
@@ -314,6 +330,26 @@ export const refreshSwipeButtons = makeStub('refreshSwipeButtons');
 // registry-backed stub here: tests can assert it *was* called, not what it
 // would have done to the DOM.
 export const updateEditArrowClasses = makeStub('updateEditArrowClasses');
+
+// Real ST enum values (public/scripts/system-messages.js) — kept exact so
+// contract tests can assert against the same constants dist code compares
+// against (e.g. \`mes.extra?.type === system_message_types.NARRATOR\` inside
+// adapter/messages.ts's saveMessageEditById fork).
+export const system_message_types = Object.freeze({
+    HELP: 'help',
+    WELCOME: 'welcome',
+    EMPTY: 'empty',
+    GENERIC: 'generic',
+    NARRATOR: 'narrator',
+    COMMENT: 'comment',
+    SLASH_COMMANDS: 'slash_commands',
+    FORMATTING: 'formatting',
+    HOTKEYS: 'hotkeys',
+    MACROS: 'macros',
+    WELCOME_PROMPT: 'welcome_prompt',
+    ASSISTANT_NOTE: 'assistant_note',
+    ASSISTANT_MESSAGE: 'assistant_message',
+});
 
 // Plain-value ST exports (read without calling) — live bindings, mutated
 // only through the private setters below.
@@ -403,6 +439,26 @@ function itemizedPromptsJsSource() {
 import { makeStub } from '${BRIDGE_FROM_SCRIPTS_SIBLING}';
 
 export const deleteItemizedPromptForMessage = makeStub('deleteItemizedPromptForMessage');
+`;
+}
+
+function regexEngineJsSource() {
+    return `// Generated stub for @st/regex-engine (public/scripts/extensions/regex/engine.js).
+import { makeStub } from '${BRIDGE_FROM_REGEX_ENGINE}';
+
+export const getRegexedString = makeStub('getRegexedString');
+
+// Real ST enum values (public/scripts/extensions/regex/engine.js) — kept
+// exact so contract tests can assert against the same constants dist code
+// compares against (e.g. \`placement === regex_placement.USER_INPUT\`).
+export const regex_placement = Object.freeze({
+    MD_DISPLAY: 0,
+    USER_INPUT: 1,
+    AI_OUTPUT: 2,
+    SLASH_COMMAND: 3,
+    WORLD_INFO: 5,
+    REASONING: 6,
+});
 `;
 }
 
@@ -829,6 +885,8 @@ export async function createFakeStHost(options = {}) {
     await fs.writeFile(path.join(scriptsDir, 'bookmarks.js'), bookmarksJsSource());
     await fs.writeFile(path.join(scriptsDir, 'RossAscends-mods.js'), rossAscendsModsJsSource());
     await fs.writeFile(path.join(scriptsDir, 'itemized-prompts.js'), itemizedPromptsJsSource());
+    await fs.mkdir(path.join(scriptsDir, 'extensions', 'regex'), { recursive: true });
+    await fs.writeFile(path.join(scriptsDir, 'extensions', 'regex', 'engine.js'), regexEngineJsSource());
 
     function toFileUrl(absPath) {
         return pathToFileURL(absPath).href;

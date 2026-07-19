@@ -24,6 +24,7 @@ const ALLOWED_ST_EXTERNAL_TARGETS = new Set([
     '../../../bookmarks.js',
     '../../../chats.js',
     '../../../itemized-prompts.js',
+    '../../../extensions/regex/engine.js',
     '../../../personas.js',
     '../../../slash-commands.js',
     '../../../../scripts/RossAscends-mods.js',

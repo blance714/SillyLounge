@@ -3,26 +3,28 @@
  */
 
 import {
+    ensureSwipes,
     eventSource,
     event_types,
+    extractMessageBias,
     isGenerating,
-    messageEdit,
     refreshSwipeButtons,
+    removeMacros,
     saveChatConditional,
     saveChatDebounced,
-    setEditedMessageId,
+    substituteParams,
     swipe as stSwipe,
     syncSwipeToMes,
+    system_message_types,
     updateEditArrowClasses,
 } from '@st/script';
+import { getRegexedString, regex_placement } from '@st/regex-engine';
 import { copyText } from '@st/utils';
 import { branchChat, createNewBookmark } from '@st/bookmarks';
 import { hideChatMessage, unhideChatMessage } from '@st/chats';
 import { deleteItemizedPromptForMessage } from '@st/itemized-prompts';
 import {
     _dispatchClick,
-    _dispatchClickAndWait,
-    _getJQueryMessage,
     _getMessageId,
     getContext,
     getCurrentChat,
@@ -33,7 +35,7 @@ import {
 import { parseMessageRecord } from './schema.js';
 
 type MessageId = number | string;
-export type MessageAction = 'copy' | 'regen' | 'edit' | 'branch' | 'checkpoint' | 'hide';
+export type MessageAction = 'copy' | 'regen' | 'branch' | 'checkpoint' | 'hide';
 export type SwipeDirection = 'left' | 'right';
 export type DeleteIntent = 'swipe' | 'message';
 
@@ -123,64 +125,245 @@ export function regenerateLast() {
     regenerateMessage();
 }
 
-export function editMessage(mesEl: Element): void {
-    const $mes = _getJQueryMessage(mesEl);
-    if ($mes) {
-        $mes.find('.mes_edit').trigger('click');
-        return;
-    }
-    const edit = mesEl.querySelector('.mes_edit');
-    if (edit) _dispatchClick(edit);
-}
+// editMessage()/this_edit_mes_id-shadow used to live here. DOM-DECOUPLING.md
+// Tier 3 (2026-07-19) removed both:
+//
+// - editMessage() dispatched a click on native `.mes_edit` to *open* ST's
+//   editor. Nothing in this repo ever called it through a real user action:
+//   ChatUI's own "enter edit mode" is purely local Preact state
+//   (app.tsx's `editingMessage`, wired via MessageActions.tsx's `onEdit`
+//   prop, never `triggerChatuiMessageAction(id, 'edit', ...)`) — grepped,
+//   zero callers of the `'edit'` action string anywhere in src/ui or
+//   src/store. Its only reachable caller was triggerMessageActionById's own
+//   now-removed `'edit'` case below.
+// - `_shadowEditedMessageId` mirrored ST's module-private `this_edit_mes_id`
+//   (script.js:610, setter-only export, no getter — script.js:7101) so the
+//   delete fork could reproduce native deleteMessage()'s conditional reset
+//   without read access to the real variable. Its entire justification was
+//   "saveMessageEditById() is the only ChatUI path that ever sets the real
+//   this_edit_mes_id" (via the old synthetic click into native messageEdit()
+//   below) — Tier 3's saveMessageEditById never opens a native edit session
+//   at all anymore, so that write site is gone, and with it the one case the
+//   shadow ever tracked correctly. Keeping a permanently-`undefined` shadow
+//   variable and its now-always-false delete-fork guard around would be
+//   exactly the "two contradictory mechanisms" this tier was asked to
+//   reconcile, not simplify — removed instead. See _deleteFullMessageById's
+//   doc comment for what replaces step 8 there, and DOM-DECOUPLING.md/
+//   INVARIANTS.md §16 for the one residual gap this can no longer even
+//   partially cover (a user bypassing ChatUI's shield to open a *native*
+//   edit session directly, then deleting that same message through ChatUI —
+//   already out of scope pre-Tier-3 too, since the shadow could never
+//   observe a shield-bypass write in the first place).
+
+/** Loosely-typed live `chat[]` entry shape this fork reads/writes directly —
+ * mirrors exactly the fields ST's own updateMessage() (script.js:8080-8134)
+ * touches, no more. */
+type EditableMessageRecord = {
+    mes?: string;
+    name?: string;
+    is_user?: boolean;
+    is_system?: boolean;
+    swipe_id?: number;
+    swipes?: unknown[];
+    extra?: { type?: string; bias?: unknown; [key: string]: unknown } | null;
+};
 
 /**
- * Shadow of ST's module-private `this_edit_mes_id` (script.js:610). script.js
- * exports only a setter for it (`setEditedMessageId`, script.js:7101) — there
- * is no exported getter anywhere in the pinned checkout (grepped). The
- * full-message delete fork below (`_deleteFullMessageById`) needs to
- * reproduce native `deleteMessage()`'s own `if (this_edit_mes_id === id)`
- * conditional reset (script.js:1663-1665) without being able to read the
- * real value, so this module tracks its own shadow instead.
- *
- * This is exact, not a heuristic, for every path reachable through ChatUI:
- * ChatUI's own edit UI (ui/components/message/MessageEditor.tsx) never opens
- * ST's native editor until the moment it *saves* — entering "edit mode" is
- * purely local Preact state (app.tsx's `editingMessage`) that never touches
- * this_edit_mes_id. saveMessageEditById() below is the only ChatUI path that
- * ever sets the real this_edit_mes_id (via messageEdit()) or clears it (via
- * the completed `.mes_edit_done` click, which runs ST's own
- * messageEditDone() and resets it internally as its last step,
- * script.js:8372) — and every ChatUI-triggered save/delete funnels through
- * the single serialized host-operation queue (store/host-operation-queue.ts),
- * so a save and a delete can never interleave. That leaves exactly one gap:
- * if saveMessageEditById() throws between messageEdit() (which already set
- * this_edit_mes_id) and the completed done-click (element/button missing,
- * dispatch rejects/times out), the shadow is deliberately left dangling at
- * normalizedId — exactly mirroring how the real this_edit_mes_id would also
- * stay dangling in that same failure. The one thing this cannot see is
- * direct interaction with ST's *native* DOM bypassing ChatUI's shield
- * (src/shield/st-dom-shield.ts); see DOM-DECOUPLING.md/INVARIANTS.md §15 for
- * that documented, bounded gap.
+ * Find message `id`'s currently-rendered `.mes` row, if any, by walking
+ * `#chat`'s direct `.children` — the same approach
+ * `_renumberRenderedRowsAfterDelete` below already uses (see its doc comment
+ * for the full rationale), reused here instead of the compound CSS selector
+ * `getMessageElementById` uses elsewhere in this file. Two reasons: (1) the
+ * unit-test fake DOM (test/helpers/fake-st-host.mjs) can build a real `#chat`
+ * tree via document.createElement but cannot resolve compound selectors, so
+ * this is the only way _healRenderedMessageRow's "was this row actually
+ * rendered" branch is unit-testable at all, matching the precedent already
+ * set for the delete fork's renumber step; (2) `.mes` rows are always direct
+ * children of `#chat` in real ST too (native only ever `.append()`/
+ * `.prepend()`s them straight onto `chatElement = $('#chat')` —
+ * script.js:1457/1481/1520/2530), so this is not a weaker check against a
+ * real browser DOM either.
  */
-let _shadowEditedMessageId: number | undefined;
-
-/** Test-only: seed the this_edit_mes_id shadow without driving a real edit
- * flow (saveMessageEditById needs a live `#chat .mes[mesid=X]` compound
- * selector the unit-test fake DOM deliberately doesn't support — see
- * test/helpers/fake-st-host.mjs's module doc comment). Pass undefined to
- * clear it. */
-export function __setShadowEditedMessageIdForTesting(value: number | undefined): void {
-    _shadowEditedMessageId = value;
+function _findRenderedMessageRow(id: number): HTMLElement | null {
+    const chatContainer = document.getElementById('chat');
+    if (!chatContainer) return null;
+    for (const child of Array.from(chatContainer.children)) {
+        if (!(child instanceof HTMLElement)) continue;
+        if (!child.classList.contains('mes')) continue;
+        if (Number(child.getAttribute('mesid')) === id) return child;
+    }
+    return null;
 }
 
 /**
- * Saves a ChatUI-owned edit through SillyTavern's native editor pipeline.
- * This preserves ST's regex, macro, bias, swipe, save, and message update logic
- * while keeping the visible edit surface owned by ChatUI.
+ * Heals a currently-rendered native `.mes` row after saveMessageEditById
+ * below mutates `chat[]` directly, without ever going through native's own
+ * messageEditDone() DOM update. The shield only CSS-hides the native
+ * window — its `.mes` rows stay mounted — so for any message inside the
+ * native truncation window this healing branch is the COMMON live path
+ * (empirically confirmed: the CI smoke edit round-trip invokes it and the
+ * row's `.mes_text` reads back the edited text on every run), and it is
+ * what keeps a flag-off in-place teardown from ever revealing stale
+ * pre-edit text.
  *
- * @param {number|string} mesId
- * @param {string} text
- * @returns {Promise<void>}
+ * Uses ST's own exported `updateMessageBlock(messageId, message)`
+ * (script.js:1974, reachable through `getContext()` — re-exported by
+ * st-context.js, no new `@st/*` mapping needed) instead of reimplementing
+ * its DOM bundle: it re-renders `.mes_text` from the message's *current*
+ * `mes`/`extra.display_text`, refreshes reasoning UI, re-adds
+ * copy-to-codeblock buttons, and re-appends media in one call — exactly the
+ * "write back to the masked native window to keep host consistency" idiom
+ * DOM-DECOUPLING.md already establishes for other actions.
+ *
+ * updateMessageBlock is deliberately called *guarded*, never relied on for
+ * its own DOM tolerance the way delete's helpers are: verified against the
+ * pinned checkout, `updateMessageBlock` hands its *jQuery selection*
+ * (`chatElement.find(...)`, possibly empty) straight to
+ * `updateReasoningUI(messageElement)` (script.js:1981), which forwards
+ * into `ReasoningHandler#initHandleMessage` (reasoning.js:236,319). That
+ * function only special-cases a raw `number` or `HTMLElement` input
+ * (reasoning.js:321-325) — a jQuery object (even an empty one) falls through
+ * to `$(messageIdOrElement)[0]`, and wrapping an already-empty selection in
+ * `$()` again is still empty, so `[0]` is `undefined`. The very next line
+ * unconditionally calls `messageElement.getAttribute(...)`
+ * (reasoning.js:326) on that `undefined` — a TypeError, not a silent no-op.
+ * So unlike `deleteItemizedPromptForMessage`/`refreshSwipeButtons`/
+ * `updateEditArrowClasses` elsewhere in this file, `updateMessageBlock` is
+ * NOT safe to call unconditionally on an unrendered message — this function
+ * exists specifically to gate it.
+ *
+ * characterOverride/display-name derivation: saveMessageEditById's own
+ * mutation step below reads `mes.name` directly (matching native
+ * updateMessage()'s own `characterOverride: ... mes.name`, script.js:8104 —
+ * *not* the module-private `this_edit_mes_chname`, which updateMessage()
+ * never references at all), and updateMessageBlock's own rendering also
+ * reads `message.name` directly (script.js:1978) — so there is no
+ * `this_edit_mes_chname` staleness to reconcile here, in solo or group chats
+ * alike; that variable only ever mattered to messageEditDone/
+ * messageEditCancel/messageEditAuto's own DOM rendering, none of which this
+ * fork calls. One narrow, pre-existing divergence for the *rendered label
+ * only* (never the persisted `chat[]` data): native's messageEditDone()
+ * rendering uses `this_edit_mes_chname`, computed with a `name1`/`name2`
+ * fallback for a falsy `.name` (script.js:8194,
+ * `editMessage.name || (editMessage.is_user ? name1 : name2)`);
+ * updateMessageBlock, like updateMessage() itself, does not apply that
+ * fallback. Every ChatUI-reachable message record already has `.name`
+ * populated at creation time, and native's own *mutation* path already
+ * carries this same un-fallbacked read — this fork inherits an existing
+ * native quirk rather than introducing a new one.
+ */
+function _healRenderedMessageRow(id: number, mes: EditableMessageRecord): void {
+    if (!_findRenderedMessageRow(id)) return;
+    const ctx = getContext() as { updateMessageBlock?: (messageId: number, message: unknown) => void };
+    ctx.updateMessageBlock?.(id, mes);
+}
+
+/**
+ * Full DOM-free fork of ST's `updateMessage()` + `messageEditDone()`
+ * (script.js:8080-8134 and script.js:8337-8375, the latter minus its own DOM
+ * gate at the very top and every DOM-rendering step) — reimplemented
+ * directly against the live `chat[]` entry instead of ever driving native's
+ * `.mes_edit`/`.mes_edit_done` buttons or opening a native edit session at
+ * all. DOM-DECOUPLING.md Tier 3 (2026-07-19). This is the change that
+ * finally unblocks the native-truncation-window flag: unlike Tier 2's
+ * delete fork (already DOM-tolerant), edit-save through Tier 1/2 still
+ * required a live `#chat .mes[mesid=X]` node end to end (see the old
+ * synthetic-click implementation this replaced), which chat_truncation=1
+ * would break for every non-last message.
+ *
+ * Reproduces every observable data effect of native's `updateMessage()` body,
+ * in the exact same order (native line numbers from the pinned checkout):
+ *
+ *  1. Look up `chat[id]` (native's `mes = chat[mesElement.attr('mesid')]`,
+ *     script.js:8085) — missing/non-object throws here (unlike native, which
+ *     assumes its own DOM-gated caller already validated this).
+ *  2. `mes.extra ??= {}` (script.js:8088).
+ *  3. regexPlacement selection — the exact 3-branch `is_user` /
+ *     `extra.type === 'narrator'` / else `AI_OUTPUT` switch (script.js:8091-
+ *     8097), copied branch-for-branch.
+ *  4. `getRegexedString(text, regexPlacement, { characterOverride, isEdit:
+ *     true })` (script.js:8100-8107, imported from the regex engine module
+ *     directly — `@st/regex-engine`, a new mapping alongside the existing
+ *     `@st/*` set; script.js itself imports but never re-exports
+ *     `getRegexedString`/`regex_placement`, so `getContext()` and the
+ *     existing `@st/script` mapping both dead-end here — verified by
+ *     grepping the pinned checkout's `export { ... }` compat block at the
+ *     bottom of script.js, which does not list either name).
+ *     `characterOverride` is `mes.name` (undefined when narrator), never
+ *     `this_edit_mes_chname` — see _healRenderedMessageRow's doc comment for
+ *     why that has no bearing on group-chat correctness.
+ *  5. `if (power_user.trim_spaces) text = text.trim()` (script.js:8110-8112)
+ *     — read via `getContext().powerUserSettings` (the same live reference
+ *     `getConfirmMessageDeleteSetting()` below already reads from), not a
+ *     new mapping.
+ *  6. `bias = substituteParams(extractMessageBias(text))` — bias extracted
+ *     from the *pre-substitution* text, matching native's exact order
+ *     (script.js:8114); `text = substituteParams(text)` (script.js:8115);
+ *     `if (bias) text = removeMacros(text)` (script.js:8116-8118).
+ *  7. `mes.mes = text` (script.js:8119). `if (mes.swipe_id !== undefined) {
+ *     ensureSwipes(mes); mes.swipes[mes.swipe_id] = text; }`
+ *     (script.js:8120-8123) — `ensureSwipes` strictly before the write,
+ *     matching native exactly, including native's own footgun this fork
+ *     deliberately does not paper over: `ensureSwipes` is a no-op for
+ *     `is_user`/`isSmallSys` messages (script.js:6787), so a malformed
+ *     record with `swipe_id` set on a message `ensureSwipes` refuses to
+ *     touch would throw on the write in native too — byte-identical
+ *     behavior, not a bug this fork introduces.
+ *  8. `mes.extra.bias = bias ?? null` when `is_system || is_user ||
+ *     extra.type === system_message_types.NARRATOR`, else `mes.extra.bias =
+ *     null` (script.js:8125-8129).
+ *  9. `chat_metadata.tainted = true` (script.js:8131), via
+ *     `getContext().chatMetadata` — the same live-reference pattern
+ *     `_deleteSwipeById`/`_deleteFullMessageById` already use.
+ *
+ * Then reproduces messageEditDone()'s post-`updateMessage()` orchestration,
+ * again in the exact same order:
+ *
+ * 10. `await eventSource.emit(MESSAGE_EDITED, id)` (script.js:8345) — strictly
+ *     before MESSAGE_UPDATED below, matching native exactly.
+ * 11. `_healRenderedMessageRow(id, mes)` in place of native's own inline DOM
+ *     rebuild (script.js:8346-8369 — mesBlock swap, `messageFormatting`,
+ *     bias re-render, `appendMediaToMessage`, `addCopyToCodeBlocks`, the
+ *     conditional `.mes_reasoning_edit_done` click). Passing the *same* live
+ *     `mes` reference this function already mutated reproduces native's own
+ *     `text = chat[this_edit_mes_id]?.mes ?? text` re-read
+ *     (script.js:8346) for free — there is no separate local `text` copy to
+ *     go stale, because updateMessageBlock reads `message.mes` fresh off the
+ *     object we hand it, same as native re-reading `chat[id].mes` after the
+ *     event. The reasoning-edit-done click has no ChatUI equivalent: this
+ *     fork never opens a native reasoning-edit UI session, so there is
+ *     nothing to close (see the reasoning-auto-commit-cascade note below).
+ * 12. `await eventSource.emit(MESSAGE_UPDATED, id)` (script.js:8371).
+ * 13. `this_edit_mes_id = undefined` (script.js:8372) — intentionally
+ *     **not** reproduced. This fork never opens a native edit session, so it
+ *     never sets the real `this_edit_mes_id` to begin with (see the removed
+ *     `_shadowEditedMessageId` comment above `_findRenderedMessageRow`); an
+ *     unconditional reset here would be *more* than native does (native only
+ *     resets when the variable already equals this id) and, without a
+ *     getter, there is no way to check that condition safely — an
+ *     unconditional call could stomp an unrelated, legitimately in-progress
+ *     native edit session opened by directly bypassing ChatUI's shield. That
+ *     shield-bypass scenario was already the shadow's one documented,
+ *     unfixable gap (it could never observe a shield-bypass write either);
+ *     Tier 3 does not make it worse, it just stops half-pretending to guard
+ *     against it.
+ * 14. `await saveChatConditional()` (script.js:8373).
+ * 15. `showSwipeButtons()` (script.js:8374) — reproduced as a direct
+ *     `refreshSwipeButtons()` call instead, matching the precedent already
+ *     set by `_deleteFullMessageById` below. `showSwipeButtons()`'s only
+ *     substantive job beyond that is resetting the module-private
+ *     `swipesHidden = false` (script.js:9254) — a flag this fork's own
+ *     call graph never sets `true` in the first place (no ChatUI path calls
+ *     native `hideSwipeButtons()`), so the reset would be a no-op even under
+ *     native itself here.
+ *
+ * Known accepted no-op, not attempted: the reasoning auto-commit cascade
+ * (script.js:8366 <-> reasoning.js:1271, triggered by the
+ * `.mes_reasoning_edit_done:visible` click in step 11 above) has no non-DOM
+ * entry point and nothing in ChatUI today opens a native reasoning-edit UI
+ * session for it to ever fire against — already documented in
+ * DOM-DECOUPLING.md's "附带发现与残留风险" as out of scope until a future
+ * native-reasoning-edit UI is built.
  */
 export async function saveMessageEditById(mesId: MessageId, text: string): Promise<void> {
     const normalizedId = Number(mesId);
@@ -188,36 +371,61 @@ export async function saveMessageEditById(mesId: MessageId, text: string): Promi
         throw new Error(`[ChatUI/adapter] Invalid message id for edit: ${mesId}`);
     }
 
-    const mesEl = getMessageElementById(normalizedId);
-    if (!mesEl) {
-        throw new Error(`[ChatUI/adapter] Message element not found for edit: ${normalizedId}`);
+    const mes = getMessageById(normalizedId) as EditableMessageRecord | null;
+    if (!mes || typeof mes !== 'object') {
+        throw new Error(`[ChatUI/adapter] Message record not found for edit: ${normalizedId}`);
     }
 
-    await messageEdit(normalizedId);
-    // messageEdit() sets the real this_edit_mes_id synchronously, before any
-    // await inside it (verified against the pinned checkout) — mirrored here
-    // the moment our own await returns.
-    _shadowEditedMessageId = normalizedId;
+    mes.extra ??= {};
 
-    const textarea = mesEl.querySelector('.edit_textarea') as HTMLTextAreaElement | null;
-    if (!textarea) {
-        throw new Error(`[ChatUI/adapter] Native edit textarea not found for message: ${normalizedId}`);
+    let placement: number;
+    if (mes.is_user) {
+        placement = regex_placement.USER_INPUT;
+    } else if (mes.extra?.type === 'narrator') {
+        placement = regex_placement.SLASH_COMMAND;
+    } else {
+        placement = regex_placement.AI_OUTPUT;
     }
 
-    textarea.value = text;
+    let nextText = getRegexedString(text, placement, {
+        characterOverride: mes.extra?.type === 'narrator' ? undefined : mes.name,
+        isEdit: true,
+    });
 
-    const done = mesEl.querySelector('.mes_edit_done');
-    if (!done) {
-        throw new Error(`[ChatUI/adapter] Native edit done button not found for message: ${normalizedId}`);
+    const powerUserCtx = getContext() as { powerUserSettings?: { trim_spaces?: unknown } };
+    if (powerUserCtx.powerUserSettings?.trim_spaces) {
+        nextText = nextText.trim();
     }
 
-    // ST emits MESSAGE_UPDATED before its async save finishes. Await the actual
-    // delegated jQuery handler promise so the shared host-operation lane stays
-    // occupied through both the in-memory update and durable save.
-    await _dispatchClickAndWait(done as HTMLElement);
-    // The completed click ran ST's own messageEditDone() to completion, which
-    // resets the real this_edit_mes_id as its last step — mirrored here.
-    _shadowEditedMessageId = undefined;
+    const bias = substituteParams(extractMessageBias(nextText));
+    nextText = substituteParams(nextText);
+    if (bias) {
+        nextText = removeMacros(nextText);
+    }
+
+    mes.mes = nextText;
+    if (mes.swipe_id !== undefined) {
+        ensureSwipes(mes);
+        (mes.swipes as unknown[])[mes.swipe_id] = nextText;
+    }
+
+    if (mes.is_system || mes.is_user || mes.extra?.type === system_message_types.NARRATOR) {
+        mes.extra.bias = bias ?? null;
+    } else {
+        mes.extra.bias = null;
+    }
+
+    const chatMetaCtx = getContext() as { chatMetadata?: { tainted?: boolean } };
+    if (chatMetaCtx.chatMetadata) chatMetaCtx.chatMetadata.tainted = true;
+
+    await eventSource.emit(event_types.MESSAGE_EDITED, normalizedId);
+
+    _healRenderedMessageRow(normalizedId, mes);
+
+    await eventSource.emit(event_types.MESSAGE_UPDATED, normalizedId);
+
+    await saveChatConditional();
+    refreshSwipeButtons();
 }
 
 export async function createBranch(mesId: MessageId): Promise<void> {
@@ -435,12 +643,15 @@ function _findDescendantByClass(root: Element, className: string): HTMLElement |
  * row is now last in DOM order, and a call to native `updateEditArrowClasses`
  * (script.js:9427) — delegated to native unmodified. That delegation is
  * provably safe, unlike `updateViewMessageIds`'s: `updateEditArrowClasses`
- * never re-derives an offset baseline from the DOM, it only compares the
- * *real* native `this_edit_mes_id` (kept in sync via `setEditedMessageId()`
- * below, a genuine write to that module-private variable, not just this
- * fork's own `_shadowEditedMessageId` mirror) against whatever `mesid`
- * attributes are on the row set *right now* — which, by the time this call
- * happens, this function has already made correct.
+ * never re-derives an offset baseline from the DOM, it only compares
+ * whatever the *real* native `this_edit_mes_id` happens to be (Tier 3:
+ * ChatUI itself never writes that module-private variable at all anymore —
+ * see `_deleteFullMessageById`'s doc comment for why — so in every
+ * ChatUI-only session it stays permanently `undefined`) against whatever
+ * `mesid` attributes are on the row set *right now* — which, by the time
+ * this call happens, this function has already made correct. Safe either
+ * way, because the safety property was never "the variable is kept in
+ * sync", it was "this function never derives its own baseline from the DOM".
  *
  * `.mes` rows are always direct children of `#chat` (native only ever
  * `.append()`/`.prepend()`s them straight onto `chatElement = $('#chat')` —
@@ -515,11 +726,30 @@ function _renumberRenderedRowsAfterDelete(deletedId: number): void {
  *     the *conditional* save instead, matching deleteSwipe()'s own choice —
  *     these are deliberately different saves for deliberately different ST
  *     functions.)
- *  8. this_edit_mes_id reset (script.js:1663-1665) via the exported
- *     setEditedMessageId() (script.js:7101) — see _shadowEditedMessageId's
- *     doc comment above saveMessageEditById for how this fork reproduces the
- *     exact `this_edit_mes_id === id` conditional without read access to the
- *     real (module-private, getter-less) variable.
+ *  8. this_edit_mes_id reset (script.js:1663-1665) — **not reproduced as of
+ *     Tier 3** (2026-07-19). Through Tier 2, this called the exported
+ *     `setEditedMessageId(undefined)` (script.js:7101) whenever a module-
+ *     private `_shadowEditedMessageId` mirror equalled the deleted id, since
+ *     saveMessageEditById() back then drove native's real editor and was the
+ *     only ChatUI path that ever set the real (getter-less)
+ *     `this_edit_mes_id`. Tier 3 forked saveMessageEditById into a DOM-free
+ *     reimplementation that never opens a native edit session at all (see
+ *     its own doc comment) — so there is no longer any ChatUI-reachable path
+ *     that sets the real `this_edit_mes_id` to begin with, and the shadow
+ *     variable (along with this reset) was removed rather than kept around
+ *     as a permanently-false, misleading guard. The residual gap this
+ *     leaves is a user bypassing ChatUI's shield to open a *native* edit
+ *     session directly, then deleting that same message through ChatUI:
+ *     native's real `this_edit_mes_id` would dangle at the deleted id.
+ *     Already out of scope pre-Tier-3 too — the shadow could never observe a
+ *     shield-bypass write in the first place, so this was never actually
+ *     covered; Tier 3 removes a mechanism that only pretended to, it does
+ *     not newly break anything that worked. An unconditional
+ *     `setEditedMessageId(undefined)` call here would be *unsafe*, not just
+ *     redundant: without a getter there is no way to check whether the real
+ *     variable currently points at *this* id or an unrelated one, and
+ *     resetting unconditionally could stomp a legitimate, unrelated
+ *     shield-bypass edit session on a different, still-existing message.
  *  9. `refreshSwipeButtons()` (script.js:1667) — DOM-tolerant (bails out on
  *     an empty chat; its own internal jQuery selection degrades to zero
  *     iterations when nothing is rendered, verified against the pinned
@@ -540,11 +770,6 @@ async function _deleteFullMessageById(id: number): Promise<void> {
     deleteItemizedPromptForMessage(id);
     _renumberRenderedRowsAfterDelete(id);
     saveChatDebounced();
-
-    if (_shadowEditedMessageId === id) {
-        setEditedMessageId(undefined);
-        _shadowEditedMessageId = undefined;
-    }
 
     refreshSwipeButtons();
 
@@ -656,11 +881,18 @@ export async function swipeMessage(mesEl: Element, direction: SwipeDirection): P
  * dispatcher's synchronous-switch shape can't accommodate — see
  * store/chat-actions.ts's dedicated delete orchestration, which calls
  * getDeleteEligibility() / getConfirmMessageDeleteSetting() /
- * deleteMessageWithIntent() directly instead. `edit` and `regen` still
- * resolve and require the live element explicitly right here (edit clicks
- * `.mes_edit`; regen is unaffected by the id but keeps its historical DOM
- * precondition unchanged this tier) — see DOM-DECOUPLING.md §「推进顺序」for
- * what stays DOM-gated and why.
+ * deleteMessageWithIntent() directly instead. `edit` is no longer dispatched
+ * through here either as of Tier 3, and was never actually reachable through
+ * it in the first place — ChatUI's own "enter edit mode" has always been
+ * local Preact state (see the removed-code note above `saveMessageEditById`)
+ * — so its DOM gate is gone along with the case itself; an `'edit'` string
+ * reaching this function at runtime (not TypeScript-representable — `MessageAction`
+ * no longer includes it — but nothing stops a raw string at the compiled-JS
+ * boundary) falls through to the same safe `default: return;` `'delete'`
+ * already uses. `regen` still resolves and requires the live element
+ * explicitly right here — this tier leaves it untouched, it is a
+ * generation-menu path, not an edit/delete concern — see DOM-DECOUPLING.md
+ * §「推进顺序」for what stays DOM-gated and why.
  */
 export async function triggerMessageActionById(mesId: MessageId, action: MessageAction): Promise<void> {
     const normalizedId = Number(mesId);
@@ -673,14 +905,12 @@ export async function triggerMessageActionById(mesId: MessageId, action: Message
         case 'branch':     await createBranch(normalizedId);      return;
         case 'checkpoint': await createCheckpoint(normalizedId);  return;
         case 'hide':       await toggleHideMessage(normalizedId); return;
-        case 'regen':
-        case 'edit': {
+        case 'regen': {
             const mesEl = getMessageElementById(normalizedId);
             if (!mesEl) {
                 throw new Error(`[ChatUI/adapter] Message element not found for ${action}: ${normalizedId}`);
             }
-            if (action === 'regen') regenerateMessage();
-            else editMessage(mesEl);
+            regenerateMessage();
             return;
         }
         default:

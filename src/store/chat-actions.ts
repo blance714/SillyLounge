@@ -15,7 +15,7 @@ import { pushToast, dismissToast } from './toast-store.js';
 import { requestChatuiConfirm } from './confirm-store.js';
 import type { ChatuiConfirmOutcome } from './confirm-store.js';
 
-export type ChatuiMessageAction = 'copy' | 'regen' | 'edit' | 'delete' | 'branch' | 'checkpoint' | 'hide';
+export type ChatuiMessageAction = 'copy' | 'regen' | 'delete' | 'branch' | 'checkpoint' | 'hide';
 export type ChatuiSelectorKind = 'preset' | 'model' | 'persona';
 export type ChatuiSwipeDirection = 'left' | 'right';
 export type ChatuiToastKind = 'info' | 'success' | 'error';
@@ -294,7 +294,7 @@ function deleteChatuiMessage(messageId: number | string, expectedChatKey: string
 
 /**
  * @param {number|string} messageId
- * @param {'copy'|'regen'|'edit'|'delete'|'branch'|'checkpoint'|'hide'} action
+ * @param {'copy'|'regen'|'delete'|'branch'|'checkpoint'|'hide'} action
  * @returns {void}
  */
 export function triggerChatuiMessageAction(

@@ -219,17 +219,16 @@ test('a queued operation that throws does not poison the lane for the next queue
         let onAcceptedCalls = 0;
 
         // Task 1: saveEditedChatuiMessage for a message id with no corresponding
-        // live DOM element. This harness intentionally has no full DOM (see
-        // test/helpers/fake-st-host.mjs's module doc comment), so
-        // getMessageElementById() always returns null here and the adapter
-        // throws "Message element not found for edit: 0" — a genuine failure
-        // from the real adapter code, not a contrived one.
+        // chat[] entry at all (host.context.chat is empty above) — the
+        // DOM-free Tier 3 edit fork (src/adapter/messages.ts's
+        // saveMessageEditById) throws "Message record not found for edit: 0"
+        // — a genuine failure from the real adapter code, not a contrived one.
         const failingTask = actions.saveEditedChatuiMessage(0, 'edited text', chatKeyA);
 
         // Task 2: queued right behind it, on the very same host-operation lane.
         const okTask = actions.sendChatuiComposerMessage('still works', chatKeyA, () => { onAcceptedCalls += 1; });
 
-        await assert.rejects(failingTask, /Message element not found for edit: 0/);
+        await assert.rejects(failingTask, /Message record not found for edit: 0/);
         await okTask;
 
         assert.deepEqual(calls, ['still works'], 'a later queued operation must still run after an earlier one throws');

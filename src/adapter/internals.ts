@@ -95,78 +95,20 @@ export function _dispatchClick(button: any) {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
 }
 
-/** Diagnostic snapshot of a button for the error paths below — never the live node itself. */
-function _describeButton(button: HTMLElement): { tag: string; id: string; classes: string } {
-    return {
-        tag: button.tagName ?? '(unknown)',
-        id: button.id ?? '',
-        classes: button.className ?? '',
-    };
-}
-
-/**
- * Trigger a delegated jQuery click and await the async handler's return value.
- * ST's message-edit completion handler returns the `messageEditDone()` promise;
- * a plain DOM dispatch discards it and would release ChatUI's host queue before
- * the durable save finishes.
- *
- * saveMessageEditById() funnels through the single serialized host-operation
- * queue (see store/host-operation-queue.ts), so this must never resolve into a
- * permanently-pending promise: that would wedge the queue for every future host
- * operation with no diagnostics. Every path below either resolves/rejects with
- * the real outcome or rejects with a descriptive Error — the queue already
- * isolates a rejected task from the next queued one, so surfacing the failure
- * is strictly safer than failing open.
- */
-export function _dispatchClickAndWait(button: HTMLElement, timeoutMs = 15000): Promise<unknown> {
-    if (typeof window.$ !== 'function' || typeof window.$.Event !== 'function') {
-        throw new Error('[ChatUI/adapter] jQuery event completion is unavailable');
-    }
-    const event = window.$.Event('click');
-    window.$(button).trigger(event);
-    const result = event.result;
-    if (!result || typeof result.then !== 'function') {
-        const context = _describeButton(button);
-        console.error(
-            '[ChatUI/adapter] delegated click handler returned no awaitable result; the host-operation queue would hang forever without this diagnostic',
-            context,
-        );
-        return Promise.reject(new Error(
-            `[ChatUI/adapter] delegated click handler for <${context.tag} id="${context.id}"> did not return an awaitable result`,
-        ));
-    }
-
-    return new Promise((resolve, reject) => {
-        let settled = false;
-        const timer = setTimeout(() => {
-            if (settled) return;
-            settled = true;
-            const context = _describeButton(button);
-            console.error(
-                `[ChatUI/adapter] delegated click handler did not settle within ${timeoutMs}ms`,
-                context,
-            );
-            reject(new Error(
-                `[ChatUI/adapter] delegated click handler for <${context.tag} id="${context.id}"> timed out after ${timeoutMs}ms`,
-            ));
-        }, timeoutMs);
-
-        Promise.resolve(result).then(
-            (value) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                resolve(value);
-            },
-            (error) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                reject(error);
-            },
-        );
-    });
-}
+// _dispatchClickAndWait() used to live here — a delegated-jQuery-click-and-
+// await-the-handler's-promise helper whose only caller was the old
+// synthetic-click saveMessageEditById() (drove ST's native .mes_edit /
+// .mes_edit_done buttons directly). DOM-DECOUPLING.md Tier 3
+// (2026-07-19) forked saveMessageEditById into a DOM-free reimplementation
+// of updateMessage()/messageEditDone()'s post-gate body (src/adapter/
+// messages.ts) that never opens a native edit session at all, so nothing in
+// this repo calls a native button and awaits its delegated handler anymore
+// (grepped: zero remaining callers of _dispatchClickAndWait, in src/ or
+// test/). Removed along with its four dedicated unit tests
+// (test/messages.test.mjs) rather than left as unreachable exported dead
+// code — _dispatchClick above (fire-and-forget, no awaited return value) is
+// unrelated and still has real callers (menu.ts, media.ts, qr.ts,
+// messages.ts's own triggerOverflowAction).
 
 function _isHiddenLiveElement(element: HTMLElement) {
     return element.classList.contains('qr--hidden')
