@@ -139,24 +139,24 @@ test('native truncation guard flags are orthogonal to extension mode and land in
     const plain = await generate(t, 'truncation-plain');
     const plainSettings = JSON.parse(await fs.readFile(plain.paths.settings, 'utf8'));
     assert.deepEqual(plain.manifest.nativeTruncation, {
-        overrideEnabled: false,
+        overrideEnabled: true,
         pollution: false,
         originalChatTruncation: 100,
         overrideSentinel: 1,
     });
     assert.equal(plainSettings.power_user.chat_truncation, 100);
-    assert.equal(plainSettings.extension_settings.chatui_composer.config, undefined);
+    assert.equal(plainSettings.extension_settings.chatui_composer.config.nativeTruncationOverrideEnabled, true);
     assert.equal(plainSettings.extension_settings.chatui_composer.nativeTruncationBackup, undefined);
 
-    const activeFlagOn = await generate(t, 'truncation-active-flag-on', {
+    const explicitFlagOff = await generate(t, 'truncation-explicit-flag-off', {
         extensionMode: 'active',
-        nativeTruncationOverrideEnabled: true,
+        nativeTruncationOverrideEnabled: false,
     });
-    const activeFlagOnSettings = JSON.parse(await fs.readFile(activeFlagOn.paths.settings, 'utf8'));
-    assert.equal(activeFlagOn.manifest.nativeTruncation.overrideEnabled, true);
-    assert.equal(activeFlagOnSettings.extension_settings.chatui_composer.enabled, true);
-    assert.equal(activeFlagOnSettings.extension_settings.chatui_composer.config.nativeTruncationOverrideEnabled, true);
-    assert.equal(activeFlagOnSettings.power_user.chat_truncation, 100);
+    const explicitFlagOffSettings = JSON.parse(await fs.readFile(explicitFlagOff.paths.settings, 'utf8'));
+    assert.equal(explicitFlagOff.manifest.nativeTruncation.overrideEnabled, false);
+    assert.equal(explicitFlagOffSettings.extension_settings.chatui_composer.enabled, true);
+    assert.equal(explicitFlagOffSettings.extension_settings.chatui_composer.config.nativeTruncationOverrideEnabled, false);
+    assert.equal(explicitFlagOffSettings.power_user.chat_truncation, 100);
 
     const bootstrapPolluted = await generate(t, 'truncation-bootstrap-polluted', {
         extensionMode: 'bootstrap',

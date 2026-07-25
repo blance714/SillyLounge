@@ -493,9 +493,10 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 拍板：reload 方案）。ST 把 `chat_truncation === 0` 解读为「无限制」而非零，覆盖值恒为
 1、绝不为 0；覆盖绝不能永久污染用户真实设置（写一次的备份 + 每次开机自愈）。这些测
 试直接经假宿主驱动编译后的 `adapter/native-window-guard.js`，不涉及 index.ts 的 DOM
-接线（后者见下方「未覆盖缺口」）。默认关闭：机制被 store/config-store.ts 的
-`nativeTruncationOverrideEnabled` 标志整体门控，等 DOM-DECOUPLING.md Tier 2/3
-（edit 保存 / 整条删除分叉）落地后才能翻开。
+接线（后者见 §13 的浏览器验收）。机制被 store/config-store.ts 的
+`nativeTruncationOverrideEnabled` 标志整体门控；DOM-DECOUPLING.md Tier 2/3
+（edit 保存 / 整条删除分叉）落地并通过真实浏览器验收后，该标志已于 2026-07-19
+默认开启。
 
 复审（2026-07-19，见下方「未覆盖缺口」之前的接线路径复审）补上三层此前缺失的守卫：
 (1) `restoreForDisable()` 镜像 `selfHealNativeTruncation()` 的守卫哲学——只有当前值仍
@@ -567,19 +568,21 @@ reload 摧毁页面上下文的时机必然早于该窗口，导致 `enabled: fa
 笔落盘写入必然丢失、ChatUI 在下次开机又整套重新激活，原生 `#chat` 因此钉死在
 截断哨兵计数上。已在 `src/index.ts` 修复（reload 前 `await` 真实 `saveSettings()`，
 不再依赖防抖），详见本节场景 A 描述与 DOM-DECOUPLING.md「停用恢复」行的时序缺
-陷补充说明；两个场景现已全绿。**`nativeTruncationOverrideEnabled`
-标志本身依旧默认关闭、也未接出任何 UI 开关，因此该脚本本轮**未接入任何 CI 门
-禁**——是否翻开标志、进而让这两条路径在真实产品中可达，是后续由所有者基于这批
-验收证据拍板的独立决定，不随脚本落地自动发生。当前剩余：
+陷补充说明；两个场景现已全绿。`nativeTruncationOverrideEnabled` 已于 2026-07-19
+经 owner 显式决策默认开启，`verify-truncation-guard.mjs` 同日接入 CI 发布门禁。
+
+2026-07-22 又闭合了翻默认值后遗留的主门禁固件缺口：数据根生成器、Playwright
+smoke、chat-switch 与 perf 默认都走 flag-on；生成器始终把请求的布尔值显式写入
+`chatui_composer.config`，因此显式 flag-off 不会因缺键而回退到产品默认 true。
+Playwright smoke 直接断言 live `chat_truncation`、备份与原生 `.mes` 数量为
+`1 / 100 / 1`，并在原生只挂最后一行时保存编辑历史消息；chat-switch 默认按产品
+flag 断言原生只挂 1 行。性能对照仍可用 `--truncation-guard off` 显式请求，不再让
+默认门禁暗中覆盖产品路径；该 off 路径会在任何可选工具级截断改写之前断言持久配置
+为 `false`、live 值仍是用户原值且不存在守卫备份，避免测试自己把误激活的守卫覆盖
+回 100 后洗绿。当前剩余：
 
 浏览器层：
 
-- **主门禁固件尚未迁移到新默认（2026-07-19 翻开关后遗留）**：`smoke` /
-  `chat-switch` / 两个 perf 样张的生成器仍显式写
-  `nativeTruncationOverrideEnabled: false`，即这些门禁验证的是 flag-off 配置，而
-  产品默认已是 flag-on（flag-on 的门禁覆盖目前仅来自 `verify-truncation-guard`
-  的两个场景与基线测量时的一次性 flag-on 运行）。待办：把主门禁固件翻到新默认，
-  并按 flag-on 语义复核其原生行数断言（预期 `#chat` 挂载 1 行而非 100 行）。
 - 滚动往返后的**保存**路径（当前浏览器验收只走取消路径以保证练习自包含；保存的
   草稿清除语义已有单测背书）。
 - character 角色消息的编辑入口藏在溢出菜单里，同一滚动往返场景未在浏览器层驱动

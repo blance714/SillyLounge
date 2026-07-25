@@ -264,16 +264,16 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions, exten
         ...(existing && typeof existing === 'object' ? existing : {}),
         enabled: extensionMode === 'active',
     };
-    if (truncationGuard.overrideEnabled) {
-        // src/store/config-store.ts reads this from extensionSettings via
-        // src/adapter/config.ts::read() — `chatui_composer.config`, a sibling
-        // of `.enabled`/`.nativeTruncationBackup`, not nested under either.
-        const existingConfig = settings.extension_settings.chatui_composer.config;
-        settings.extension_settings.chatui_composer.config = {
-            ...(existingConfig && typeof existingConfig === 'object' ? existingConfig : {}),
-            nativeTruncationOverrideEnabled: true,
-        };
-    }
+    // Always persist the requested boolean. Omitting `false` is not equivalent
+    // to flag-off now that the product default is true: initConfigStore() would
+    // fill the missing key from DEFAULT_CONFIG and silently exercise flag-on.
+    // Keeping both values explicit makes fixture manifests and runtime behavior
+    // describe the same test mode.
+    const existingConfig = settings.extension_settings.chatui_composer.config;
+    settings.extension_settings.chatui_composer.config = {
+        ...(existingConfig && typeof existingConfig === 'object' ? existingConfig : {}),
+        nativeTruncationOverrideEnabled: truncationGuard.overrideEnabled,
+    };
     if (truncationGuard.pollution) {
         // src/adapter/native-window-guard.ts reads/writes this at
         // `chatui_composer.nativeTruncationBackup` directly (sibling of
@@ -687,7 +687,9 @@ export async function generateStDataRoot({
     // bootstrap + pollution for the self-heal crash signature) without a
     // combinatorial explosion of named modes — see
     // scripts/e2e/verify-truncation-guard.mjs and INVARIANTS.md §16.
-    nativeTruncationOverrideEnabled = false,
+    // Main fixtures follow the product default. Callers that need a control
+    // baseline must opt out explicitly with `false`.
+    nativeTruncationOverrideEnabled = true,
     nativeTruncationPollution = false,
 }) {
     if (!targetRoot || !stRoot || !runtimeRoot) {
