@@ -3,9 +3,8 @@
  *
  * Browser-level acceptance for the native truncation guard (DOM-DECOUPLING.md
  * 停用恢复 row; adapter/native-window-guard.ts; store/config-store.ts's
- * nativeTruncationOverrideEnabled flag, still default OFF). Closes
- * INVARIANTS.md §16's two "need src-level injection or only verifiable in a
- * browser" gaps:
+ * default-ON nativeTruncationOverrideEnabled flag). Closes INVARIANTS.md §16's
+ * two "need src-level injection or only verifiable in a browser" gaps:
  *
  *   Scenario A — flag-on activate + the real disable-reload round trip
  *     (gap 1: index.ts's two wiring paths had zero browser drive).
@@ -17,11 +16,9 @@
  * data root via generate-data-root.mjs, disposable ST via st-process.mjs,
  * structural assertions over wall-clock thresholds) and scripts/e2e/smoke-st.mjs's
  * disposable-run bookkeeping. This is an acceptance script, not a performance
- * measurement — it is not wired into any CI gate this round (see
- * INVARIANTS.md §13/§16 and DOM-DECOUPLING.md's 停用恢复 row): the
- * nativeTruncationOverrideEnabled flag stays default OFF; flipping it is a
- * deliberate follow-up decision by the owner, informed by this script's
- * evidence, not a side effect of this script existing.
+ * measurement. Its evidence supported the explicit 2026-07-19 decision to
+ * enable the product flag by default, and it now runs in the CI publish gate
+ * alongside the default-ON smoke and chat-switch fixtures.
  */
 
 import assert from 'node:assert/strict';

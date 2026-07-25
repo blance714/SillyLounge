@@ -26,7 +26,7 @@ const DURATION_METRICS = Object.freeze([
 ]);
 
 function parseArgs(argv) {
-    const values = { repetitions: 1, warmups: 0, fixture: DEFAULT_FIXTURE, regex: 'active', 'truncation-guard': 'off' };
+    const values = { repetitions: 1, warmups: 0, fixture: DEFAULT_FIXTURE, regex: 'active', 'truncation-guard': 'on' };
     for (let index = 0; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--') continue;
@@ -66,8 +66,8 @@ function fixturePath(fixture) {
     return path.join(FIXTURE_ROOT, fixture, 'fixture.json');
 }
 
-function defaultOutput(fixture, regexMode, truncationGuardFlag = false) {
-    const suffix = `${regexMode === 'active' ? '' : '-regex-disabled'}${truncationGuardFlag ? '-truncation-guard' : ''}`;
+function defaultOutput(fixture, regexMode, truncationGuardFlag = true) {
+    const suffix = `${regexMode === 'active' ? '' : '-regex-disabled'}${truncationGuardFlag ? '' : '-truncation-guard-off'}`;
     return path.join(PROJECT_ROOT, 'test-results', 'performance', `${fixture}${suffix}.json`);
 }
 
@@ -457,7 +457,7 @@ export async function measureLongChat({
     repetitions = 1,
     warmups = 0,
     output,
-    truncationGuardFlag = false,
+    truncationGuardFlag = true,
 }) {
     if (!stRoot) throw new Error('stRoot is required (pass --st or SILLYTAVERN_TEST_ROOT)');
     if (!/^[a-z0-9-]+$/i.test(fixture)) throw new Error('fixture must be one safe directory name');

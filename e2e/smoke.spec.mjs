@@ -26,7 +26,10 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
         return context
             && Number(context.characterId) >= 0
             && context.chatId === 'smoke'
-            && context.chat?.length === 4;
+            && context.chat?.length === 4
+            && context.powerUserSettings?.chat_truncation === 1
+            && context.extensionSettings?.chatui_composer?.nativeTruncationBackup === 100
+            && document.querySelectorAll('#chat > .mes').length === 1;
     });
 
     const hostState = await page.evaluate(async () => {
@@ -43,6 +46,11 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
                 text: message.mes,
             })),
             enabled: context.extensionSettings.chatui_composer?.enabled,
+            nativeTruncationOverrideEnabled:
+                context.extensionSettings.chatui_composer?.config?.nativeTruncationOverrideEnabled,
+            liveChatTruncation: context.powerUserSettings?.chat_truncation,
+            nativeTruncationBackup: context.extensionSettings.chatui_composer?.nativeTruncationBackup,
+            nativeMessageCount: document.querySelectorAll('#chat > .mes').length,
             disabledExtensions: context.extensionSettings.disabledExtensions,
             globalExtensions: discoveredExtensions
                 .filter(extension => extension.type === 'global')
@@ -60,6 +68,10 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
         characterAvatar: 'Lounge Test Character.png',
         chatId: 'smoke',
         enabled: true,
+        nativeTruncationOverrideEnabled: true,
+        liveChatTruncation: 1,
+        nativeTruncationBackup: 100,
+        nativeMessageCount: 1,
         messages: [
             { isUser: true, text: '第一条测试消息。' },
             { isUser: false, text: '第一条测试回复。' },

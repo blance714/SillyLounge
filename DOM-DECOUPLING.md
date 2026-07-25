@@ -132,7 +132,7 @@ Tier 3 落地一并移除的：Tier 2 的 `this_edit_mes_id` 影子变量（其�
 2. **停用恢复机制**（reload 方案，见上表 2026-07-19 修订）：真值备份 + 内存覆盖 +
    开机自愈 + 停用时写回并 `location.reload()`；它阻塞整个截断上线，独立于任何
    动作层选择。**2026-07-19：机制已实现并接线（`adapter/native-window-guard.ts` +
-   `src/index.ts`）**——`nativeTruncationOverrideEnabled` 标志默认关闭；
+   `src/index.ts`）**——接线落地时 `nativeTruncationOverrideEnabled` 标志保持关闭；
    **2026-07-19 Tier 3 落地后，delete（整条）与 edit（保存）都已摆脱对 `.mes`
    节点的依赖，动作层不再有任何理由挡住标志翻开**。**2026-07-19：独立的浏览器级
    验收（真实「停用即刷新」往返、真实 bootstrap 自愈，`scripts/e2e/
@@ -141,9 +141,11 @@ Tier 3 落地一并移除的：Tier 2 的 `this_edit_mes_id` 影子变量（其�
    `saveSettingsDebounced()` 的防抖窗口之前跑，导致停用状态与截断恢复值必然丢
    失，见上表「停用恢复」行 2026-07-19 时序缺陷补充说明）。**2026-07-19：基线
    重测完成后（切换 content ready -22%、long task 归零，PERFORMANCE.md），owner
-   显式拍板，默认值已翻为开启；验收脚本同日接入 CI 发布门禁。** 后续待办：主门禁
-   （smoke / chat-switch / perf）的固件仍显式写 flag-off，尚未迁移到新默认，见
-   INVARIANTS.md §16。
+   显式拍板，默认值已翻为开启；验收脚本同日接入 CI 发布门禁。**
+   **2026-07-22：主门禁固件也已迁移**——数据根、Playwright smoke、chat-switch
+   与 perf 默认都走产品 flag-on，显式 flag-off 对照会把 `false` 真正写入设置而非
+   依赖缺键；smoke 与 chat-switch 均直接断言原生窗口只挂 1 行，见 INVARIANTS.md
+   §13/§16。
 3. **Tier 2：delete 薄分叉** + 自实现确认 UI + 契约测试。**2026-07-19 已落地**：
    delete（仅 swipe）的 mini-fork 已在 Tier 1 提前完成（同等契约测试对待，见
    下）；delete（整条）本身的薄分叉（`_deleteFullMessageById`，DOM 门卫已撤除，

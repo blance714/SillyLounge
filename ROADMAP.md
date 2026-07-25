@@ -255,9 +255,10 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
 
 当前开发分支为 `main`;桌面楼层导航纳入当前功能基线。
 2026-07-10/11 hardening、Manuscript Flow 视觉复归、new-chat quarantine 修复与楼层导航均已
-进入提交历史;本地 validated runtime 也已发布并通过 assembled-tree 检查。仓库仍没有
-远端 CI / 自动发布,所以“已提交、已通过本地发布门”不等于已自动同步到 installable
-`dist` branch。
+进入提交历史;本地 validated runtime 也已发布并通过 assembled-tree 检查。仓库现已由
+`.github/workflows/publish-dist.yml` 在每次推送 `main` 后执行完整验证、固定版本的真实
+SillyTavern Chromium 门禁与可安装树检查，并自动更新默认的 `dist` 分支；具体发布契约
+见 README「自动发布 `dist`」。
 
 **五大区主干已闭环,settings 已转为 two-pane mode swap,独立配置面已解锁 §7,
 侧栏已迁移到 TanStack Query,全源码已 TypeScript 化(Vite 构建)。**

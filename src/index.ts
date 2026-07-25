@@ -108,7 +108,7 @@ function setup() {
         // Only force ST's native chat_truncation once the full replacement UI
         // is confirmed live (all three layers above succeeded) — see
         // adapter/native-window-guard.ts's module doc for why the override
-        // itself is still gated behind a config flag that defaults OFF.
+        // itself is gated behind a config flag that defaults ON.
         activateNativeTruncationGuard(getConfig().nativeTruncationOverrideEnabled);
 
         isSetup = true;

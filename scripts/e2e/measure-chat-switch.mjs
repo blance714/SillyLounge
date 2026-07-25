@@ -369,21 +369,21 @@ export async function measureChatSwitch({
     output,
     evidenceRoot,
     nativeTruncation,
-    truncationGuardFlag = false,
+    truncationGuardFlag = true,
 }) {
     if (!stRoot) throw new Error('stRoot is required (set SILLYTAVERN_TEST_ROOT)');
     if (!/^[a-z0-9-]+$/i.test(fixture)) throw new Error('fixture must be one safe directory name');
-    if (truncationGuardFlag && nativeTruncation !== undefined) {
-        throw new Error('nativeTruncation and truncationGuardFlag are mutually exclusive');
-    }
     // Tool-level `--native-truncation` still validates eagerly even in flag
     // mode so a bad combination fails before a browser launches; the value
     // itself is unused once the real flag is live (see below).
     const resolvedNativeTruncation = normalizeNativeTruncation(nativeTruncation);
+    if (truncationGuardFlag && nativeTruncation !== undefined) {
+        throw new Error('nativeTruncation and truncationGuardFlag are mutually exclusive');
+    }
 
-    const resolvedOutput = path.resolve(output ?? defaultOutput(fixture, truncationGuardFlag ? '-truncation-guard' : ''));
+    const resolvedOutput = path.resolve(output ?? defaultOutput(fixture, truncationGuardFlag ? '' : '-truncation-guard-off'));
     const resolvedEvidenceRoot = path.resolve(
-        evidenceRoot ?? defaultEvidenceRoot(truncationGuardFlag ? `${fixture}-truncation-guard` : fixture),
+        evidenceRoot ?? defaultEvidenceRoot(truncationGuardFlag ? fixture : `${fixture}-truncation-guard-off`),
     );
     const runRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'sillylounge-switch-'));
     const dataRoot = path.join(runRoot, 'data');
@@ -482,21 +482,43 @@ export async function measureChatSwitch({
         await waitForConversation(page, expected(first, second), allFileNames);
         await assertConversationEdges(page, expected(first, second));
         await assertSmoothConversationEdges(page, expected(first, second));
-        // Flag mode: the real activateNativeTruncationGuard() already applied
-        // and is already live from boot (src/index.ts's setup() runs on
-        // APP_READY, before this script ever touches the page) — poking
-        // power_user.chat_truncation here would just overwrite that product
-        // code's effect with the tool-level experiment value instead of
-        // measuring it.
+        // Product flag-on: activateNativeTruncationGuard() already applied at
+        // boot. Product flag-off: prove the persisted false stayed authoritative
+        // at runtime before any optional tool experiment can touch the value.
+        // In particular, a mistakenly-live guard would leave both sentinel=1
+        // and a backup; checking this first prevents the tool poke from washing
+        // that product regression green.
         if (!truncationGuardFlag) {
+            const flagOffState = await page.evaluate(() => {
+                const context = globalThis.SillyTavern?.getContext?.();
+                const composerSettings = context?.extensionSettings?.chatui_composer;
+                return {
+                    configured: composerSettings?.config?.nativeTruncationOverrideEnabled,
+                    liveChatTruncation: context?.powerUserSettings?.chat_truncation,
+                    backupPresent: typeof composerSettings?.nativeTruncationBackup === 'number',
+                };
+            });
+            assert.deepEqual(flagOffState, {
+                configured: false,
+                liveChatTruncation: generated.manifest.nativeTruncation.originalChatTruncation,
+                backupPresent: false,
+            });
+        }
+        // `--native-truncation` is a separate, explicitly requested experiment.
+        // With no such argument, flag-off leaves the user's generated setting
+        // untouched and the browser measures that real product-off path.
+        if (!truncationGuardFlag && nativeTruncation !== undefined) {
             await page.evaluate(async count => {
                 const { power_user: powerUser } = await import('/scripts/power-user.js');
                 powerUser.chat_truncation = count;
             }, toStNativeTruncation(resolvedNativeTruncation));
         }
-        const expectedNativeMessages = truncationGuardFlag
+        const requestedNativeMessages = truncationGuardFlag
             ? generated.manifest.nativeTruncation.overrideSentinel
-            : resolvedNativeTruncation;
+            : nativeTruncation !== undefined
+                ? resolvedNativeTruncation
+                : generated.manifest.nativeTruncation.originalChatTruncation;
+        const expectedNativeMessages = Math.min(requestedNativeMessages, primaryConversation.messageCount);
         const initial = {
             chatId: first.fileName,
             ...await captureCollectedBrowserState(page, cdp),
@@ -546,7 +568,11 @@ export async function measureChatSwitch({
             browser: 'chromium',
             viewport: DESKTOP_VIEWPORT,
             nativeTruncation: expectedNativeMessages,
-            nativeTruncationMode: truncationGuardFlag ? 'product-flag' : 'tool-override',
+            nativeTruncationMode: truncationGuardFlag
+                ? 'product-flag'
+                : nativeTruncation !== undefined
+                    ? 'tool-override'
+                    : 'product-flag-off',
             truncationGuardFlag,
             fixture: {
                 id: generated.manifest.fixture,
