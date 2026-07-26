@@ -212,8 +212,13 @@ async function exerciseFloorRail(page, expected) {
     ));
     const title = (await rail.locator('.cui-root-floor-popover-title').textContent())?.trim();
     const preview = (await rail.locator('.cui-root-floor-popover-preview').textContent())?.trim();
-    if (!title || !preview) {
-        throw new Error(`empty first-floor preview: ${JSON.stringify({ title, preview })}`);
+    const firstFloorNumber = (await rail.locator('.cui-root-floor-popover-number').textContent())?.trim();
+    if (!title || !preview || firstFloorNumber !== '第 1 楼') {
+        throw new Error(`invalid first-floor preview: ${JSON.stringify({
+            title,
+            preview,
+            floorNumber: firstFloorNumber,
+        })}`);
     }
     if (expected.firstFloor) {
         if (title !== expected.firstFloor.title) throw new Error(`unexpected first-floor title: ${title}`);
@@ -223,6 +228,10 @@ async function exerciseFloorRail(page, expected) {
     await page.waitForFunction(userTurns => (
         document.querySelector('[aria-label="快速跳转用户回合"]')?.getAttribute('aria-valuenow') === String(userTurns)
     ), expected.userTurns);
+    const lastFloorNumber = (await rail.locator('.cui-root-floor-popover-number').textContent())?.trim();
+    if (lastFloorNumber !== `第 ${expected.userTurns} 楼`) {
+        throw new Error(`unexpected last-floor number: ${lastFloorNumber}`);
+    }
     await page.waitForTimeout(150);
     const gaps = await page.evaluate(() => {
         globalThis.__sillyLoungeRafSample.active = false;

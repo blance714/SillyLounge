@@ -1338,6 +1338,18 @@ body.chatui-active .cui-root-floor-popover-preview {
     -webkit-line-clamp: 3;
 }
 
+body.chatui-active .cui-root-floor-popover-number {
+    align-self: flex-end;
+    color: var(--cui-color-muted);
+    font-family: var(--cui-font-ui);
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    font-weight: 400;
+    letter-spacing: 0.08em;
+    line-height: 1;
+    opacity: 0.58;
+}
+
 @media (max-width: 768px) {
     body.chatui-active .cui-root-floor-rail {
         display: none;

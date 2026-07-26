@@ -125,6 +125,7 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
     await page.mouse.move(railBox.x + 4, railBox.y + 1);
     await expect(rail.locator('.cui-root-floor-popover-title')).toHaveText('第一条测试消息。');
     await expect(rail.locator('.cui-root-floor-popover-preview')).toHaveText('第一条测试回复。');
+    await expect(rail.locator('.cui-root-floor-popover-number')).toHaveText('第 1 楼');
     await page.mouse.move(railBox.x + railBox.width + 80, railBox.y + railBox.height + 80);
     await expect(rail.locator('.cui-root-floor-popover')).toHaveCount(0);
 
