@@ -387,5 +387,8 @@ Escape — both worked, no console errors beyond the pre-existing
 "TavernHelper is not defined" from JS-Slash-Runner not being installed in the
 test environment). No longer owed.
 
-Still owed: the broader mobile/sidebar regression pass and the bounded,
-variable-height message-window implementation diagnosed in `PERFORMANCE.md`.
+Still owed: the broader mobile/sidebar regression pass, unifying the remaining
+dual scroll ownership (`useAutoScroll` and virtualizer end anchoring), and
+browser-driving the remaining destructive/message-action paths. The bounded,
+variable-height message window and its historical-user/character edit acceptance
+are now CI-gated in `measure-chat-switch.mjs`.

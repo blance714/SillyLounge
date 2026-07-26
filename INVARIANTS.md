@@ -441,11 +441,16 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   400 楼会话经真实侧栏 A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表
   声明 800 条但只挂载有界窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、
   无控制台错误；`materializedMessages` 恒低于索引总量（DTO 缓存有界性的浏览器级
-  背书）。每次切换样本还各跑一遍**滚动中编辑验收**：对靠底部消息开编辑并输入
-  marker → Home 跳顶后编辑行仍挂载（rangeExtractor 钉行）且 textarea 保有
-  marker → 除钉住行外其余挂载行仍是紧邻视口的有界连续块 → End 返回后草稿完整
-  （message-edit-draft-store）→ 取消后渲染文本与底层 `chat[id].mes` 与编辑前完全
-  一致。
+  背书）。两次性能样本及其 DOM/heap 采集全部结束后，再在最终 A 会话跑独立的
+  **编辑验收**，避免把超长富文本保存成短 marker 后污染性能数据：(1) 先采集未编辑
+  时真实的顶部虚拟窗口，再对靠底部的历史用户消息开编辑并输入 marker；Home 跳顶后
+  编辑行仍挂载（rangeExtractor 钉行）且 textarea 保有 marker，除钉住行外其余挂载
+  行必须与编辑前基线逐项一致——不再用固定「相隔 50 条」阈值，因此同一规则也适用
+  10 楼对照样张；End 返回后真实点击 Save，断言底层 `chat[id].mes`、渲染文本和
+  message-edit-draft-store 的草稿清除状态；再 Home/End 一次，证明钉行释放后的普通
+  卸载/重挂载仍读回保存结果。(2) 对 character 角色消息真实点击 `⋯ → Edit`，
+  保存后同样回读 ST 状态、DOM 与草稿清除状态。JSON 报告 schema v3 的
+  `editAcceptance` 记录目标消息、基线/钉行窗口计数及上述结果。
 - **`scripts/e2e/measure-long-chat.mjs`**（`test:perf`，手动）：400 楼样张三态性能
   归因 + 楼层标尺功能验收。⚠️ 不在任何 CI 门内——楼层标尺的浏览器级窗口断言目前
   只能靠手动运行。
@@ -552,7 +557,9 @@ promise 用 'cancel' 结算，绝不留空悬 promise），这是钉死的设计
 ## 16. 未覆盖缺口（❌ 补测待办）
 
 2026-07-19 第一批六个单元层缺口已全部补齐（§3、§4 新增行），滚动中编辑的浏览器
-验收已入 §13。同日第二批：native-window-guard 的两条 index.ts 接线路径浏览器层
+验收已入 §13；2026-07-26 又把原先只取消的路径升级为真实保存、草稿清除和普通
+卸载/重挂载读回，并补齐 character 角色消息的 `⋯ → Edit` 入口。同日第二批：
+native-window-guard 的两条 index.ts 接线路径浏览器层
 缺口**已闭合**——`scripts/e2e/verify-truncation-guard.mjs`（§13）新增两个真实
 Chromium 场景，直接驱动 index.ts 本身的 `setup()`/`disableChatuiLayers()` 接线
 （而不再只在假宿主里调用编译后的 `adapter/native-window-guard.js`）：场景 A 覆盖
@@ -583,10 +590,6 @@ flag 断言原生只挂 1 行。性能对照仍可用 `--truncation-guard off` �
 
 浏览器层：
 
-- 滚动往返后的**保存**路径（当前浏览器验收只走取消路径以保证练习自包含；保存的
-  草稿清除语义已有单测背书）。
-- character 角色消息的编辑入口藏在溢出菜单里，同一滚动往返场景未在浏览器层驱动
-  （实现对角色无分支逻辑，风险有限）。
 - 双滚动系统（useAutoScroll 与 virtualizer 内建 end-anchoring）的一致性——待合并为
   单一机制后补断言，当前为已知重构待办。
 

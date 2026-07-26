@@ -17,6 +17,7 @@ const RUNTIME_ROOT = path.join(PROJECT_ROOT, '.runtime', 'SillyTavern-ChatUI');
 const FIXTURE_ROOT = path.join(PROJECT_ROOT, 'test', 'e2e', 'fixtures');
 const DEFAULT_FIXTURE = 'long-rich-switch';
 const CHAT_STORE_BROWSER_MODULE = '/scripts/extensions/third-party/SillyLounge/store/chat-store.js';
+const MESSAGE_EDIT_DRAFT_BROWSER_MODULE = '/scripts/extensions/third-party/SillyLounge/store/message-edit-draft-store.js';
 
 function defaultOutput(fixture, suffix = '') {
     return path.join(PROJECT_ROOT, 'test-results', 'performance', `${fixture}${suffix}.json`);
@@ -172,61 +173,26 @@ async function assertSmoothConversationEdges(page, expected) {
 }
 
 /**
- * Exercises the rangeExtractor pin (src/ui/app.tsx) and the message edit
- * draft store (src/store/message-edit-draft-store.ts) together: open an
- * editor near the bottom of a 400-floor chat, scroll far away with Home,
- * confirm the editing row is still mounted and still holds the typed draft,
- * scroll back with End, confirm the draft survived the round trip, then
- * cancel so the message text and virtual window are left exactly as the
- * rest of the per-sample assertion flow expects.
+ * The editing-row pin may add the one offscreen editor to the virtualizer's
+ * ordinary top window, but it must not widen that ordinary window. Comparing
+ * against a real unedited baseline is valid for both long chats and short
+ * controls: a fixed "50 messages away" threshold incorrectly rejects the
+ * 10-floor fixture even when its top window is perfectly bounded.
  */
-async function assertScrollDuringEditSurvivesPin(page, target) {
-    // An interior *user* turn a few floors before the last one: user messages
-    // tile the Edit action inline (no overflow menu to open first -- see
-    // MessageActions.tsx's canShowUserMenu branch), the text is short (fast
-    // to diff), and it stays clear of the marker text baked into message 0
-    // and message (messageCount - 1) by applyConversationMarker.
-    const editMessageId = target.messageCount - 4;
-    const rail = page.locator('[aria-label="快速跳转用户回合"]');
-    const article = page.locator(`[data-cui-message-id="${editMessageId}"]`);
-    await article.waitFor({ state: 'visible', timeout: 30_000 });
+export function assertPinnedWindowMatchesBaseline(baselineRowIndexes, pinnedRowIndexes, editMessageId) {
     assert.equal(
-        await article.getAttribute('data-cui-message-role'),
-        'user',
-        'scroll-during-edit target must be a user turn (fixture role layout drifted)',
+        pinnedRowIndexes.includes(editMessageId),
+        true,
+        'editing row must stay mounted while scrolled far away (rangeExtractor pin)',
     );
-    const originalMes = await page.evaluate(editMessageId => (
-        globalThis.SillyTavern?.getContext?.()?.chat?.[editMessageId]?.mes
-    ), editMessageId);
-    const originalBodyText = await article.locator('.cui-root-message-body').textContent();
+    assert.deepEqual(
+        pinnedRowIndexes.filter(index => index !== editMessageId),
+        baselineRowIndexes.filter(index => index !== editMessageId),
+        'editing-row pin must not widen the ordinary virtual window',
+    );
+}
 
-    await article.hover();
-    await article.getByRole('button', { name: 'Edit' }).click();
-    const editor = article.locator('.cui-root-edit-textarea');
-    await editor.waitFor({ state: 'visible', timeout: 30_000 });
-    // MessageEditor's mount effect (src/ui/components/message/MessageEditor.tsx)
-    // focuses the textarea and collapses the cursor to the end exactly once,
-    // asynchronously after mount. Racing Locator.fill()'s own focus+select-all
-    // against that effect lets the effect's setSelectionRange win *after*
-    // fill() has already selected the text, collapsing the selection back to a
-    // point and turning the "replace" into an append. Waiting for the effect
-    // to finish focusing/positioning the cursor first makes fill() land on a
-    // settled element, matching how a real user would never observe this race
-    // (they do not select-all and replace in one atomic native action).
-    await page.waitForFunction(editMessageId => {
-        const textarea = document.querySelector(
-            `[data-cui-message-id="${editMessageId}"] .cui-root-edit-textarea`,
-        );
-        return textarea instanceof HTMLTextAreaElement
-            && document.activeElement === textarea
-            && textarea.selectionStart === textarea.value.length
-            && textarea.selectionEnd === textarea.value.length;
-    }, editMessageId, { timeout: 5_000 });
-    const marker = `SCROLL-DURING-EDIT-DRAFT::${target.fileName}::${editMessageId}`;
-    await editor.fill(marker);
-    assert.equal(await editor.inputValue(), marker);
-
-    await rail.press('Home');
+async function waitForTopEdge(page, target) {
     await page.waitForFunction(target => {
         const railElement = document.querySelector('[aria-label="快速跳转用户回合"]');
         const firstMessage = document.querySelector('[data-cui-message-id="0"]');
@@ -237,12 +203,104 @@ async function assertScrollDuringEditSurvivesPin(page, target) {
     await page.waitForFunction(() => (
         performance.now() - (globalThis.__sillyLoungeSwitchPerf?.lastMutation ?? 0) >= 200
     ), null, { timeout: 30_000 });
+}
 
-    // (a) the editing row must stay mounted while scrolled far away from it
-    // (the rangeExtractor union in app.tsx), still holding the typed draft,
-    // and the rest of the mounted window must stay a small block near the
-    // top -- i.e. the pin adds exactly the one editing row, it does not
-    // widen virtualization into mounting everything in between.
+async function waitForBottomEdge(page, target) {
+    await page.waitForFunction(target => {
+        const railElement = document.querySelector('[aria-label="快速跳转用户回合"]');
+        const lastMessage = document.querySelector(`[data-cui-message-id="${target.messageCount - 1}"]`);
+        return railElement?.getAttribute('aria-valuenow') === String(target.userTurns)
+            && lastMessage?.textContent?.includes(target.marker)
+            && !lastMessage?.textContent?.includes(target.otherMarker);
+    }, target, { timeout: 30_000 });
+    await page.waitForFunction(() => (
+        performance.now() - (globalThis.__sillyLoungeSwitchPerf?.lastMutation ?? 0) >= 200
+    ), null, { timeout: 30_000 });
+}
+
+async function mountedVirtualRowIndexes(page) {
+    return page.locator('.cui-root-virtual-message-row').evaluateAll(rows => (
+        rows
+            .map(row => Number(row.getAttribute('data-index')))
+            .sort((left, right) => left - right)
+    ));
+}
+
+async function waitForSettledEditorFocus(page, editMessageId) {
+    // MessageEditor's mount effect focuses the textarea and collapses the
+    // cursor to the end asynchronously. Wait for that real user-visible state
+    // before Locator.fill() performs its focus + select-all replacement.
+    await page.waitForFunction(editMessageId => {
+        const textarea = document.querySelector(
+            `[data-cui-message-id="${editMessageId}"] .cui-root-edit-textarea`,
+        );
+        return textarea instanceof HTMLTextAreaElement
+            && document.activeElement === textarea
+            && textarea.selectionStart === textarea.value.length
+            && textarea.selectionEnd === textarea.value.length;
+    }, editMessageId, { timeout: 5_000 });
+}
+
+async function readEditDraftState(page, messageId) {
+    return page.evaluate(async ({ modulePath, messageId }) => {
+        const context = globalThis.SillyTavern?.getContext?.();
+        const drafts = await import(modulePath);
+        return {
+            mes: context?.chat?.[messageId]?.mes,
+            remainingDrafts: Object.keys(drafts.getMessageEditDraftStoreSnapshot().drafts),
+        };
+    }, { modulePath: MESSAGE_EDIT_DRAFT_BROWSER_MODULE, messageId });
+}
+
+/**
+ * Drives the full historical-user-message path in a real browser: establish
+ * the ordinary top virtual window, open an editor near the bottom, carry its
+ * draft through a far-away scroll using the rangeExtractor pin, save, prove
+ * the external draft was cleared, then unmount/remount the saved row and read
+ * the committed text back from both ST state and rendered DOM.
+ */
+async function assertHistoricalUserEditPersists(page, target) {
+    // An interior *user* turn a few floors before the last one: user messages
+    // tile the Edit action inline (no overflow menu to open first -- see
+    // MessageActions.tsx's canShowUserMenu branch), the text is short (fast
+    // to diff), and it stays clear of the marker text baked into message 0
+    // and message (messageCount - 1) by applyConversationMarker.
+    const editMessageId = target.messageCount - 4;
+    const rail = page.locator('[aria-label="快速跳转用户回合"]');
+    const article = page.locator(`[data-cui-message-id="${editMessageId}"]`);
+
+    await rail.press('Home');
+    await waitForTopEdge(page, target);
+    const baselineRowIndexes = await mountedVirtualRowIndexes(page);
+    assert.equal(baselineRowIndexes.length > 0, true);
+    await rail.press('End');
+    await waitForBottomEdge(page, target);
+
+    await article.waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(
+        await article.getAttribute('data-cui-message-role'),
+        'user',
+        'scroll-during-edit target must be a user turn (fixture role layout drifted)',
+    );
+    const originalMes = await page.evaluate(editMessageId => (
+        globalThis.SillyTavern?.getContext?.()?.chat?.[editMessageId]?.mes
+    ), editMessageId);
+    assert.equal(typeof originalMes, 'string');
+
+    await article.hover();
+    await article.getByRole('button', { name: 'Edit' }).click();
+    const editor = article.locator('.cui-root-edit-textarea');
+    await editor.waitFor({ state: 'visible', timeout: 30_000 });
+    await waitForSettledEditorFocus(page, editMessageId);
+    const marker = `SAVED-HISTORICAL-USER-EDIT::${target.fileName}::${editMessageId}`;
+    await editor.fill(marker);
+    assert.equal(await editor.inputValue(), marker);
+
+    await rail.press('Home');
+    await waitForTopEdge(page, target);
+
+    // The editor remains mounted with its draft, while every other row exactly
+    // matches the ordinary top window captured before editing.
     const farState = await page.evaluate(editMessageId => {
         const rowIndexes = Array.from(document.querySelectorAll('.cui-root-virtual-message-row'))
             .map(row => Number(row.getAttribute('data-index')))
@@ -256,34 +314,13 @@ async function assertScrollDuringEditSurvivesPin(page, target) {
             editorValue: editorTextarea instanceof HTMLTextAreaElement ? editorTextarea.value : null,
         };
     }, editMessageId);
-    assert.equal(
-        farState.editorPresent,
-        true,
-        'editing row must stay mounted while scrolled far away (rangeExtractor pin)',
-    );
+    assert.equal(farState.editorPresent, true);
     assert.equal(farState.editorValue, marker, 'pinned editor must retain the typed draft while far away');
-    assert.equal(farState.rowIndexes.includes(editMessageId), true);
-    const otherRowIndexes = farState.rowIndexes.filter(index => index !== editMessageId);
-    assert.equal(otherRowIndexes.length > 0, true);
-    assert.equal(
-        otherRowIndexes.every(index => index < editMessageId - 50),
-        true,
-        'bounded mount window: aside from the one pinned editing row, only the near-top block should be mounted',
-    );
+    assertPinnedWindowMatchesBaseline(baselineRowIndexes, farState.rowIndexes, editMessageId);
 
     await rail.press('End');
-    await page.waitForFunction(target => {
-        const railElement = document.querySelector('[aria-label="快速跳转用户回合"]');
-        const lastMessage = document.querySelector(`[data-cui-message-id="${target.messageCount - 1}"]`);
-        return railElement?.getAttribute('aria-valuenow') === String(target.userTurns)
-            && lastMessage?.textContent?.includes(target.marker)
-            && !lastMessage?.textContent?.includes(target.otherMarker);
-    }, target, { timeout: 30_000 });
-    await page.waitForFunction(() => (
-        performance.now() - (globalThis.__sillyLoungeSwitchPerf?.lastMutation ?? 0) >= 200
-    ), null, { timeout: 30_000 });
+    await waitForBottomEdge(page, target);
 
-    // (b) the draft must still hold the marker after returning.
     const editorAfterReturn = article.locator('.cui-root-edit-textarea');
     await editorAfterReturn.waitFor({ state: 'visible', timeout: 30_000 });
     assert.equal(
@@ -292,18 +329,91 @@ async function assertScrollDuringEditSurvivesPin(page, target) {
         'draft must survive the round trip back to the message unchanged',
     );
 
-    // (c) cancel and confirm the original message is untouched, so later
-    // samples/assertions in the harness are unaffected by this exercise.
-    await article.getByRole('button', { name: 'Cancel edit' }).click();
-    assert.equal(await article.locator('.cui-root-edit-textarea').count(), 0);
-    assert.equal(await article.locator('.cui-root-message-body').textContent(), originalBodyText);
-    const mesAfterCancel = await page.evaluate(editMessageId => (
-        globalThis.SillyTavern?.getContext?.()?.chat?.[editMessageId]?.mes
-    ), editMessageId);
-    assert.equal(mesAfterCancel, originalMes, 'cancel must not persist the discarded draft to the underlying message');
-    await page.waitForFunction(() => (
-        performance.now() - (globalThis.__sillyLoungeSwitchPerf?.lastMutation ?? 0) >= 200
-    ), null, { timeout: 30_000 });
+    await article.getByRole('button', { name: 'Save edit' }).click();
+    await page.waitForFunction(({ editMessageId, marker }) => {
+        const context = globalThis.SillyTavern?.getContext?.();
+        const editedArticle = document.querySelector(`[data-cui-message-id="${editMessageId}"]`);
+        return context?.chat?.[editMessageId]?.mes === marker
+            && editedArticle?.querySelector('.cui-root-edit-textarea') === null
+            && editedArticle?.querySelector('.cui-root-message-body')?.textContent?.includes(marker);
+    }, { editMessageId, marker }, { timeout: 30_000 });
+    const savedState = await readEditDraftState(page, editMessageId);
+    assert.equal(savedState.mes, marker, 'save must commit the historical edit to SillyTavern state');
+    assert.deepEqual(savedState.remainingDrafts, [], 'save must clear the external message-edit draft');
+
+    // Once save closes the editor, the special pin is gone. Scroll away and
+    // back once more so the final DOM assertion reads from a normal remount.
+    await rail.press('Home');
+    await waitForTopEdge(page, target);
+    if (!baselineRowIndexes.includes(editMessageId)) {
+        assert.equal(
+            await page.locator(`[data-cui-message-id="${editMessageId}"]`).count(),
+            0,
+            'saved historical row should unmount normally after its editing pin is released',
+        );
+    }
+    await rail.press('End');
+    await waitForBottomEdge(page, target);
+    await article.waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(
+        (await article.locator('.cui-root-message-body').textContent())?.includes(marker),
+        true,
+        'saved historical edit must survive a normal virtual-row unmount/remount',
+    );
+
+    return {
+        messageId: editMessageId,
+        baselineMountedRows: baselineRowIndexes.length,
+        pinnedMountedRows: farState.rowIndexes.length,
+        draftCleared: savedState.remainingDrafts.length === 0,
+        remountVerified: true,
+    };
+}
+
+/**
+ * Character messages expose Edit only through their portaled overflow menu.
+ * Drive that presentation rather than invoking local component state or the
+ * adapter directly, then prove the same save contract reaches ST and the DOM.
+ */
+async function assertCharacterOverflowEditPersists(page, target) {
+    const editMessageId = target.messageCount - 3;
+    const article = page.locator(`[data-cui-message-id="${editMessageId}"]`);
+    await article.waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(
+        await article.getAttribute('data-cui-message-role'),
+        'character',
+        'overflow-edit target must be a character turn (fixture role layout drifted)',
+    );
+
+    await article.hover();
+    await article.getByRole('button', { name: 'More actions' }).click();
+    const overflowMenu = page.locator('body > .cui-root-menu');
+    await overflowMenu.waitFor({ state: 'visible', timeout: 5_000 });
+    await overflowMenu.locator('.cui-root-menu-item').filter({ hasText: /^Edit$/ }).click();
+
+    const editor = article.locator('.cui-root-edit-textarea');
+    await editor.waitFor({ state: 'visible', timeout: 30_000 });
+    assert.equal(await overflowMenu.count(), 0, 'choosing Edit must close the portaled overflow menu');
+    await waitForSettledEditorFocus(page, editMessageId);
+    const marker = `SAVED-CHARACTER-OVERFLOW-EDIT::${target.fileName}::${editMessageId}`;
+    await editor.fill(marker);
+    await article.getByRole('button', { name: 'Save edit' }).click();
+    await page.waitForFunction(({ editMessageId, marker }) => {
+        const context = globalThis.SillyTavern?.getContext?.();
+        const editedArticle = document.querySelector(`[data-cui-message-id="${editMessageId}"]`);
+        return context?.chat?.[editMessageId]?.mes === marker
+            && editedArticle?.querySelector('.cui-root-edit-textarea') === null
+            && editedArticle?.querySelector('.cui-root-message-body')?.textContent?.includes(marker);
+    }, { editMessageId, marker }, { timeout: 30_000 });
+    const savedState = await readEditDraftState(page, editMessageId);
+    assert.equal(savedState.mes, marker, 'overflow-menu edit must commit the character message to SillyTavern state');
+    assert.deepEqual(savedState.remainingDrafts, [], 'character edit save must clear the external draft');
+
+    return {
+        messageId: editMessageId,
+        enteredThroughOverflowMenu: true,
+        draftCleared: savedState.remainingDrafts.length === 0,
+    };
 }
 
 async function captureBrowserState(page, cdp) {
@@ -349,7 +459,6 @@ async function switchConversation({ page, cdp, target, allFileNames, screenshotP
         globalThis.__sillyLoungeSwitchPerf.longTasks.filter(entry => entry.startTime >= started)
     ), browserStarted);
     await assertConversationEdges(page, target);
-    await assertScrollDuringEditSurvivesPin(page, target);
     await page.screenshot({ path: screenshotPath });
     const states = await captureCollectedBrowserState(page, cdp);
     return {
@@ -540,6 +649,15 @@ export async function measureChatSwitch({
                 screenshotPath: path.join(resolvedEvidenceRoot, 'after-b-to-a.png'),
             }),
         ];
+        // Keep mutation-heavy edit acceptance outside the timed transition
+        // samples above. The disposable final A conversation can now be edited
+        // without shrinking rich HTML or otherwise contaminating the switch
+        // report's DOM/heap measurements.
+        const editAcceptance = {
+            historicalUser: await assertHistoricalUserEditPersists(page, expected(first, second)),
+            characterOverflow: await assertCharacterOverflowEditPersists(page, expected(first, second)),
+        };
+        await page.screenshot({ path: path.join(resolvedEvidenceRoot, 'edit-acceptance.png') });
 
         assert.equal(transitions.every(transition => (
             transition.beforeGc.rootArticles > 0
@@ -562,7 +680,7 @@ export async function measureChatSwitch({
         assert.deepEqual(chatuiErrors, []);
 
         const report = {
-            schemaVersion: 2,
+            schemaVersion: 3,
             recordedAt: new Date().toISOString(),
             st: generated.manifest.st,
             browser: 'chromium',
@@ -580,6 +698,7 @@ export async function measureChatSwitch({
             },
             initial,
             transitions,
+            editAcceptance,
             errors: { page: pageErrors, chatui: chatuiErrors },
         };
         await fs.writeFile(resolvedOutput, `${JSON.stringify(report, null, 4)}\n`, 'utf8');
