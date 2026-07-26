@@ -241,6 +241,8 @@ export function MessageFloorRail({
     const railHeight = visibleTurns.length > 0
         ? visibleTurns.length * TICK_HEIGHT_PX + (visibleTurns.length - 1) * TICK_GAP_PX
         : 0;
+    const hasHiddenAbove = windowStart > 0;
+    const hasHiddenBelow = windowStart + visibleTurns.length < turns.length;
 
     useEffect(() => {
         setWindowStart(centerWindowStart(activeIndex, capacity, maxWindowStart));
@@ -340,6 +342,8 @@ export function MessageFloorRail({
             aria-valuemax={turns.length}
             aria-valuenow={activeIndex + 1}
             aria-valuetext={`第 ${activeIndex + 1} 个用户回合`}
+            data-cui-hidden-above={hasHiddenAbove ? '1' : '0'}
+            data-cui-hidden-below={hasHiddenBelow ? '1' : '0'}
             title="快速跳转用户回合"
             onPointerMove={event => {
                 scheduleHoveredTurn(turnFromClientY(event.clientY, event.currentTarget));

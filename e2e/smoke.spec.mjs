@@ -113,6 +113,8 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
     const rail = root.getByRole('slider', { name: '快速跳转用户回合' });
     await expect(rail).toBeVisible();
     await expect(rail).toHaveAttribute('aria-valuemax', '2');
+    await expect(rail).toHaveAttribute('data-cui-hidden-above', '0');
+    await expect(rail).toHaveAttribute('data-cui-hidden-below', '0');
     const ticks = rail.locator('.cui-root-floor-tick');
     await expect(ticks).toHaveCount(2);
     const tickTops = await ticks.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().top));
