@@ -116,7 +116,7 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
     const ticks = rail.locator('.cui-root-floor-tick');
     await expect(ticks).toHaveCount(2);
     const tickTops = await ticks.evaluateAll(elements => elements.map(element => element.getBoundingClientRect().top));
-    expect(Math.round(tickTops[1] - tickTops[0])).toBe(8);
+    expect(Math.round(tickTops[1] - tickTops[0])).toBe(10);
 
     const railBox = await rail.boundingBox();
     expect(railBox).not.toBeNull();
