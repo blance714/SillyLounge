@@ -194,7 +194,13 @@ function messagePreview(
         || (message.attachments.media.length > 0 ? '媒体消息' : fallback);
 }
 
-function TurnPreview({ turn }: { turn: UserTurn }): ComponentChild {
+function TurnPreview({
+    turn,
+    floorNumber,
+}: {
+    turn: UserTurn;
+    floorNumber: number;
+}): ComponentChild {
     const userMessage = useChatuiMessage(turn.userMessageId);
     const responseMessage = useChatuiMessage(turn.responseMessageId ?? -1);
     const title = messagePreview(userMessage, '空白消息');
@@ -204,6 +210,7 @@ function TurnPreview({ turn }: { turn: UserTurn }): ComponentChild {
         <div className="cui-root-floor-popover" aria-hidden="true">
             <span className="cui-root-floor-popover-title">{title}</span>
             <span className="cui-root-floor-popover-preview">{response}</span>
+            <span className="cui-root-floor-popover-number">第 {floorNumber} 楼</span>
         </div>
     );
 }
@@ -321,6 +328,7 @@ export function MessageFloorRail({
         ? windowStart + hovered.slot
         : (keyboardFocused ? activeIndex : null);
     const previewTurn = previewIndex === null ? null : turns[previewIndex];
+    const previewFloorNumber = previewIndex === null ? null : previewIndex + 1;
     const previewSlot = previewIndex === null
         ? 0
         : clamp(previewIndex - windowStart, 0, visibleTurns.length - 1);
@@ -427,12 +435,12 @@ export function MessageFloorRail({
                     </span>
                 </div>
             )}
-            {previewTurn && (
+            {previewTurn && previewFloorNumber !== null && (
                 <div
                     className="cui-root-floor-popover-anchor"
                     style={{ top: `${popoverTop}px` }}
                 >
-                    <TurnPreview turn={previewTurn} />
+                    <TurnPreview turn={previewTurn} floorNumber={previewFloorNumber} />
                 </div>
             )}
         </div>
