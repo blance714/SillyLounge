@@ -130,19 +130,37 @@ async function waitForConversation(page, expected, allFileNames) {
 
 async function assertConversationEdges(page, expected) {
     const rail = page.locator('[aria-label="快速跳转用户回合"]');
+    const ticks = rail.locator('.cui-root-floor-tick');
     await rail.press('Home');
     await page.waitForFunction(expected => {
         const railElement = document.querySelector('[aria-label="快速跳转用户回合"]');
         const firstMessage = document.querySelector('[data-cui-message-id="0"]');
+        const visibleTicks = railElement?.querySelectorAll('.cui-root-floor-tick').length ?? 0;
+        const isWindowed = visibleTicks < expected.userTurns;
         return railElement?.getAttribute('aria-valuenow') === '1'
+            && railElement?.getAttribute('data-cui-hidden-above') === '0'
+            && railElement?.getAttribute('data-cui-hidden-below') === (isWindowed ? '1' : '0')
             && firstMessage?.textContent?.includes(expected.marker)
             && !firstMessage?.textContent?.includes(expected.otherMarker);
     }, expected, { timeout: 30_000 });
+    const isWindowed = await ticks.count() < expected.userTurns;
+    if (isWindowed) {
+        await rail.press('PageDown');
+        await page.waitForFunction(() => {
+            const railElement = document.querySelector('[aria-label="快速跳转用户回合"]');
+            return railElement?.getAttribute('data-cui-hidden-above') === '1'
+                && railElement?.getAttribute('data-cui-hidden-below') === '1';
+        }, null, { timeout: 30_000 });
+    }
     await rail.press('End');
     await page.waitForFunction(expected => {
         const railElement = document.querySelector('[aria-label="快速跳转用户回合"]');
         const lastMessage = document.querySelector(`[data-cui-message-id="${expected.messageCount - 1}"]`);
+        const visibleTicks = railElement?.querySelectorAll('.cui-root-floor-tick').length ?? 0;
+        const isWindowed = visibleTicks < expected.userTurns;
         return railElement?.getAttribute('aria-valuenow') === String(expected.userTurns)
+            && railElement?.getAttribute('data-cui-hidden-above') === (isWindowed ? '1' : '0')
+            && railElement?.getAttribute('data-cui-hidden-below') === '0'
             && lastMessage?.textContent?.includes(expected.marker)
             && !lastMessage?.textContent?.includes(expected.otherMarker);
     }, expected, { timeout: 30_000 });

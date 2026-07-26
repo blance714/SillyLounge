@@ -1153,12 +1153,81 @@ body.chatui-active .cui-root-floor-rail {
 }
 
 body.chatui-active .cui-root-floor-ticks {
+    --cui-floor-fade-depth: min(30px, 45%);
     display: flex;
     height: 100%;
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
     padding: 0;
+}
+
+/* Fade only toward directions that still contain hidden turns. The labels and
+   pointer target live outside this masked child, so the hint never changes the
+   rail's hit geometry or obscures its transient range numbers. */
+body.chatui-active
+    .cui-root-floor-rail[data-cui-hidden-above="1"][data-cui-hidden-below="0"]
+    .cui-root-floor-ticks {
+    mask:
+        linear-gradient(
+            to bottom,
+            transparent 0,
+            #000 var(--cui-floor-fade-depth),
+            #000 100%
+        )
+        0 0 / 100% 100% no-repeat;
+    -webkit-mask:
+        linear-gradient(
+            to bottom,
+            transparent 0,
+            #000 var(--cui-floor-fade-depth),
+            #000 100%
+        )
+        0 0 / 100% 100% no-repeat;
+}
+
+body.chatui-active
+    .cui-root-floor-rail[data-cui-hidden-above="0"][data-cui-hidden-below="1"]
+    .cui-root-floor-ticks {
+    mask:
+        linear-gradient(
+            to bottom,
+            #000 0,
+            #000 calc(100% - var(--cui-floor-fade-depth)),
+            transparent 100%
+        )
+        0 0 / 100% 100% no-repeat;
+    -webkit-mask:
+        linear-gradient(
+            to bottom,
+            #000 0,
+            #000 calc(100% - var(--cui-floor-fade-depth)),
+            transparent 100%
+        )
+        0 0 / 100% 100% no-repeat;
+}
+
+body.chatui-active
+    .cui-root-floor-rail[data-cui-hidden-above="1"][data-cui-hidden-below="1"]
+    .cui-root-floor-ticks {
+    mask:
+        linear-gradient(
+            to bottom,
+            transparent 0,
+            #000 var(--cui-floor-fade-depth),
+            #000 calc(100% - var(--cui-floor-fade-depth)),
+            transparent 100%
+        )
+        0 0 / 100% 100% no-repeat;
+    -webkit-mask:
+        linear-gradient(
+            to bottom,
+            transparent 0,
+            #000 var(--cui-floor-fade-depth),
+            #000 calc(100% - var(--cui-floor-fade-depth)),
+            transparent 100%
+        )
+        0 0 / 100% 100% no-repeat;
 }
 
 body.chatui-active .cui-root-floor-tick {
