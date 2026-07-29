@@ -1339,7 +1339,7 @@ body.chatui-active .cui-root-floor-popover-preview {
 }
 
 body.chatui-active .cui-root-floor-popover-number {
-    align-self: flex-end;
+    align-self: flex-start;
     color: var(--cui-color-muted);
     font-family: var(--cui-font-ui);
     font-size: 0.625rem;
