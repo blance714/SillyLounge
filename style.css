@@ -24,16 +24,33 @@
     --cui-popup-z: 150;
     --cui-overlay-bg: rgba(0, 0, 0, 0.45);
 
-    /* Color roles: manuscript palette — warm ink ground, parchment text,
-       brass structural accent. Every consumer below reads these, so this
-       block alone repaints the whole app. */
-    --cui-color-ground: #1b1815;
+    /* Color roles: ink-theatre palette — deep ink ground, parchment text,
+       gold-brown accent. Every consumer below reads these, so this block
+       alone repaints the whole app. */
+    --cui-color-ground: #16130f;
     --cui-color-text: #e8dfce;
-    --cui-color-border: #39322a;
-    --cui-color-surface: #23201a;
-    --cui-color-accent: #a9814a;
-    --cui-color-shadow: rgba(0, 0, 0, 0.4);
-    --cui-color-user-mark: #8a5a44;
+    --cui-color-border: #2c2620;
+    --cui-color-surface: #1c1813;
+    --cui-color-accent: #c9a06a;
+    --cui-color-accent-hover: #e0bc85;
+    --cui-color-shadow: rgba(0, 0, 0, 0.55);
+    --cui-color-user-mark: #96633f;
+    --cui-color-user-mark-hover: #a8734c;
+
+    /* Two structural darks and two border weights the layout regions need.
+       Nothing consumes the spine ground yet — the character rail it belongs
+       to arrives with the sidebar split — but the value is part of this
+       palette, so it is defined here rather than reintroduced as a literal. */
+    --cui-color-spine: #0f0d0a;
+    --cui-color-border-strong: #3f372c;
+
+    /* Referenced by the floor rail's two numeric labels since they were
+       written, but never defined — so both `color` declarations were invalid
+       at computed-value time and silently dropped, leaving the labels on
+       whatever their parent inherited. Same failure mode as the host font
+       variable this pass removes, so it is defined rather than worked around
+       at the two call sites. */
+    --cui-color-muted: color-mix(in srgb, var(--cui-color-text) 55%, transparent);
 
     /* Manuscript rules have three distinct jobs. Faint rules organize the
        page, structural rules separate regions, and the rust/brass accent is
@@ -43,12 +60,31 @@
     --cui-rule-accent: color-mix(in srgb, var(--cui-color-user-mark) 72%, var(--cui-color-accent));
     --cui-color-seal: color-mix(in srgb, var(--cui-color-user-mark) 46%, var(--cui-color-accent));
 
+    /* Paper surface: the light popover/dialog ground and the ink that sits on
+       it. Deliberately unconsumed in this pass — the shared paper popover is
+       its own change — but the palette is one system, so the values live here
+       instead of being invented twice later. */
+    --cui-paper-top: #b9ab8c;
+    --cui-paper-bottom: #a89877;
+    --cui-paper-text: #1c140b;
+    --cui-paper-accent: #8a5636;
+    --cui-paper-accent-strong: #6e3f1f;
+    --cui-paper-btn-text: #f0e6d2;
+    --cui-paper-rule: rgba(120, 80, 45, 0.4);
+    --cui-paper-danger: #8c3a2a;
+    --cui-paper-danger-strong: #7a2f1f;
+
     /* Type roles: serif for read content (names, message/reasoning body,
        composer input), sans for chrome (buttons, labels, timestamps). Most
        chrome rules reference --cui-font-family, kept as an alias to
        --cui-font-ui so they didn't need touching one by one. */
     --cui-font-ui: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
     --cui-font-serif: "Noto Serif SC", "Songti SC", "STSong", "Source Han Serif SC", "Palatino Linotype", "Hoefler Text", Georgia, serif;
+    /* Third type role: code and any figure meant to be read as a count
+       (swipe counter, floor number). Previously the only mono consumer read
+       the host's --monoFontFamily directly, which is the same undefined-host-
+       variable exposure --cui-font-root removes for size. */
+    --cui-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     --cui-font-display: var(--cui-font-serif);
     --cui-font-body: var(--cui-font-serif);
     --cui-font-family: var(--cui-font-ui);
@@ -56,20 +92,56 @@
     /* Semantic/status colors: collapses 5 previously-unrelated hardcoded reds
        (composer stop button, toast error, sidebar row-act-danger + error
        text, settings-nav-disable hover) plus ConfirmDialog's danger pair and
-       the success toast green into one canonical set. Left as universal
-       functional reds/green — not part of the aesthetic identity. */
-    --cui-color-danger: #d84747;
-    --cui-color-danger-hover: #a93226;
+       the success toast green into one canonical set.
+       Danger is now two tokens, not one, because the palette uses two
+       different reds for two different jobs: a light cinnabar that stays
+       legible as *ink* on the dark ground, and a saturated fill for the rare
+       solid danger surface. The single old token was being used for both,
+       which is why adopting the light value alone would have dropped the
+       filled confirm button to ~2.3:1 against its own white label.
+       Success stays a universal functional green — not part of the
+       aesthetic identity. */
+    --cui-color-danger: #d47a6a;
+    --cui-color-danger-fill: #d43a2f;
+    --cui-color-danger-hover: #a04a38;
     --cui-color-success: #3fa45b;
     --cui-color-info: var(--cui-color-accent, var(--cui-color-border));
 
-    /* Type scale: replaces ad hoc calc(var(--mainFontSize) * N) multipliers
-       scattered across composer/sidebar/settings. */
-    --cui-font-2xs: calc(var(--mainFontSize) * 0.72);
-    --cui-font-xs: calc(var(--mainFontSize) * 0.8);
-    --cui-font-sm: calc(var(--mainFontSize) * 0.86);
-    --cui-font-tight: calc(var(--mainFontSize) * 0.93);
-    --cui-font-base: var(--mainFontSize);
+    /* Type scale root. ChatUI now owns its base size instead of reading the
+       host's --mainFontSize, for two reasons:
+
+       1. That variable scaled glyphs only. Every padding, gap, radius and the
+          floor rail's own pixel constants (see MessageFloorRail.tsx) stayed
+          fixed, so a large host setting burst the layout instead of enlarging
+          it — the "integration" never actually worked past a small range.
+       2. It failed unsafely. calc() with an undefined variable is invalid at
+          computed-value time, which drops the whole font-size declaration
+          rather than falling back to anything sensible, so a host that stops
+          publishing the variable silently unsizes the app.
+
+       15px is the design's body size; every tier is a ratio of it, so this
+       one line still rescales all type — it is just a knob we own. */
+    --cui-font-root: 15px;
+
+    /* Type scale: one tier per size the design actually uses, replacing the
+       18 distinct ad hoc multipliers that were scattered across
+       composer/sidebar/settings/messages. Ratios are the design's px over
+       --cui-font-root, so the comment values are what renders by default. */
+    --cui-font-2xs: calc(var(--cui-font-root) * 0.6);      /* 9px — dense meta, counts */
+    --cui-font-xs: calc(var(--cui-font-root) * 0.667);     /* 10px — meta, eyebrows */
+    --cui-font-sm: calc(var(--cui-font-root) * 0.733);     /* 11px — notes, action rows */
+    --cui-font-tight: calc(var(--cui-font-root) * 0.8);    /* 12px — buttons */
+    --cui-font-menu: calc(var(--cui-font-root) * 0.833);   /* 12.5px — menu items */
+    --cui-font-card: calc(var(--cui-font-root) * 0.9);     /* 13.5px — card titles */
+    --cui-font-base: var(--cui-font-root);                 /* 15px — body copy */
+    --cui-font-title: calc(var(--cui-font-root) * 1.333);  /* 20px — conversation title */
+
+    /* Tracking is a load-bearing part of this design, not a garnish: the
+       wide tiers are what make a bare label read as a caption or a stamp. */
+    --cui-tracking-title: 0.04em;
+    --cui-tracking-btn: 0.12em;
+    --cui-tracking-label: 0.16em;
+    --cui-tracking-stamp: 0.3em;
 
     /* Interaction tint scale: replaces hover/active color-mix() percentages
        hand-tuned per component (5%-22% scattered). Only for interactive
@@ -79,10 +151,14 @@
     --cui-tint-active: 13%;
     --cui-tint-strong: 18%;
 
-    /* Radius scale */
-    --cui-radius-sm: 0.45rem;
-    --cui-radius-md: 0.6rem;
-    --cui-radius-lg: 0.75rem;
+    /* Radius scale. The design corners much tighter than the old scale did:
+       paper is nearly square, controls take a small round, and only the dark
+       floating surfaces keep a visible radius. Fixed px rather than rem —
+       a corner is a constant of the drawing, not of the type size. */
+    --cui-radius-paper: 2px;
+    --cui-radius-sm: 5px;
+    --cui-radius-md: 8px;
+    --cui-radius-lg: 10px;
     --cui-radius-pill: 999px;
 
     /* A restrained reading column leaves a real manuscript gutter for the
@@ -144,6 +220,12 @@ body.chatui-active.chatui-root-visible #chatui-root {
     overflow: hidden;
     border-bottom: 1px solid var(--cui-color-border);
     background-color: var(--cui-color-ground);
+    /* The app's own base size. Nothing under here declared one before, so the
+       message body — the largest and most important text in the product —
+       silently inherited the host's body font-size. That made it a dependency
+       on --mainFontSize which no audit of calc() call sites could see. Anchor
+       it here, on the one element that contains every region. */
+    font-size: var(--cui-font-base);
 }
 
 /* Desktop: two-column layout (persistent sidebar | main), and give #sheld room
@@ -219,7 +301,7 @@ body.chatui-active .cui-root-topbar {
     width: min(100%, var(--cui-content-max-width));
     margin: 0 auto;
     padding: 0.45rem 0 0.75rem;
-    border-bottom: 1px solid var(--cui-rule-faint);
+    border-bottom: 1px dashed var(--cui-rule-faint);
 }
 
 body.chatui-active .cui-root-shell-toggle,
@@ -230,11 +312,11 @@ body.chatui-active .cui-root-shell-close {
     width: 2.15rem;
     height: 2.15rem;
     border: 1px solid transparent;
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
-    font-size: calc(var(--mainFontSize) * 0.95);
+    font-size: var(--cui-font-card);
 }
 
 body.chatui-active .cui-root-shell-toggle:hover,
@@ -265,7 +347,7 @@ body.chatui-active .cui-root-topbar-eyebrow {
     font-family: var(--cui-font-ui);
     font-size: var(--cui-font-2xs);
     font-weight: 600;
-    letter-spacing: 0.12em;
+    letter-spacing: var(--cui-tracking-btn);
     line-height: 1.2;
     text-transform: uppercase;
     opacity: 0.72;
@@ -274,7 +356,7 @@ body.chatui-active .cui-root-topbar-eyebrow {
 body.chatui-active .cui-root-topbar-title {
     margin: 0;
     font-family: var(--cui-font-display);
-    font-size: calc(var(--mainFontSize) * 1.08);
+    font-size: var(--cui-font-title);
     font-weight: 600;
     letter-spacing: 0.025em;
     line-height: 1.28;
@@ -327,7 +409,7 @@ body.chatui-active .cui-root-topbar-menu {
     }
 
     body.chatui-active .cui-root-topbar-title {
-        font-size: calc(var(--mainFontSize) * 0.98);
+        font-size: var(--cui-font-base);
     }
 
     body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
@@ -358,11 +440,11 @@ body.chatui-active .cui-root-topbar-rename {
     height: 2.15rem;
     padding: 0 0.5rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background: none;
     color: var(--cui-color-text);
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-card);
     outline: none;
     min-width: 0;
     width: min(60vw, 12rem);
@@ -468,14 +550,14 @@ body.chatui-active .cui-root-shell-header {
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.8rem 1rem;
-    border-bottom: 1px solid var(--cui-rule-structure);
+    border-bottom: 1px dashed var(--cui-rule-structure);
     font-weight: 700;
 }
 
 body.chatui-active .cui-root-sidebar-title {
     font-family: var(--cui-font-display);
-    font-size: calc(var(--mainFontSize) * 0.9);
-    letter-spacing: 0.12em;
+    font-size: var(--cui-font-card);
+    letter-spacing: var(--cui-tracking-btn);
     text-transform: uppercase;
 }
 
@@ -492,7 +574,7 @@ body.chatui-active .cui-root-sidebar-footer {
     flex: 0 0 auto;
     margin-top: auto;
     padding: 0.35rem 0.45rem 0.45rem;
-    border-top: 1px solid var(--cui-rule-structure);
+    border-top: 1px dashed var(--cui-rule-structure);
 }
 
 body.chatui-active .cui-root-settings-entry,
@@ -515,7 +597,7 @@ body.chatui-active .cui-root-settings-entry {
     gap: 0.7rem;
     min-height: 2.35rem;
     border-radius: var(--cui-radius-sm);
-    font-size: calc(var(--mainFontSize) * 0.94);
+    font-size: var(--cui-font-card);
     padding: 0 0.65rem;
 }
 
@@ -549,7 +631,7 @@ body.chatui-active .cui-root-section-label {
     font-size: var(--cui-font-2xs);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--cui-tracking-title);
     opacity: 0.5;
 }
 
@@ -571,7 +653,7 @@ body.chatui-active .cui-root-config-row {
 }
 
 body.chatui-active .cui-root-config-row-label {
-    font-size: calc(var(--mainFontSize) * 0.88);
+    font-size: var(--cui-font-card);
     opacity: 0.85;
 }
 
@@ -581,7 +663,7 @@ body.chatui-active .cui-root-config-select {
 
 body.chatui-active .cui-root-config-hint {
     margin: 0 0 0.3rem;
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: var(--cui-font-tight);
     opacity: 0.55;
 }
 
@@ -597,7 +679,7 @@ body.chatui-active .cui-root-pin-row {
     gap: 0.55rem;
     padding: 0.4rem 0.5rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     cursor: pointer;
 }
 
@@ -630,7 +712,7 @@ body.chatui-active .cui-root-convlist {
     gap: 0.2rem;
     min-height: 0;
     padding: 0.45rem 0;
-    border-top: 1px solid var(--cui-rule-faint);
+    border-top: 1px dashed var(--cui-rule-faint);
 }
 
 /* Only the chat list scrolls; the switcher + 新对话 stay pinned, and the
@@ -658,7 +740,7 @@ body.chatui-active .cui-root-newchat {
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.92);
+    font-size: var(--cui-font-card);
     padding: 0 1.1rem 0 calc(0.65rem + 0.45rem - 2px);
 }
 
@@ -680,8 +762,8 @@ body.chatui-active .cui-root-newchat:disabled {
 
 body.chatui-active .cui-root-draft-shelf {
     margin: -0.05rem 0 0.35rem;
-    border-top: 1px solid var(--cui-rule-faint);
-    border-bottom: 1px solid var(--cui-rule-faint);
+    border-top: 1px dashed var(--cui-rule-faint);
+    border-bottom: 1px dashed var(--cui-rule-faint);
 }
 
 body.chatui-active .cui-root-draft-shelf-toggle,
@@ -703,7 +785,7 @@ body.chatui-active .cui-root-draft-shelf-toggle {
     padding: 0.15rem 0.65rem;
     opacity: 0.62;
     font-size: var(--cui-font-xs);
-    letter-spacing: 0.04em;
+    letter-spacing: var(--cui-tracking-title);
 }
 
 body.chatui-active .cui-root-draft-shelf-toggle:hover,
@@ -717,7 +799,7 @@ body.chatui-active .cui-root-draft-shelf-row:focus-visible {
 body.chatui-active .cui-root-draft-shelf-count {
     min-width: 1.25rem;
     border: 1px solid var(--cui-rule-structure);
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     padding: 0 0.35rem;
     text-align: center;
 }
@@ -773,7 +855,7 @@ body.chatui-active .cui-root-draft-shelf-action {
 body.chatui-active .cui-root-draft-shelf-note {
     margin: 0.12rem 0.65rem 0;
     opacity: 0.42;
-    font-size: calc(var(--mainFontSize) * 0.68);
+    font-size: var(--cui-font-2xs);
     line-height: 1.35;
 }
 
@@ -784,7 +866,7 @@ body.chatui-active .cui-root-chat-row-act {
     width: 1.7rem;
     height: 1.7rem;
     border: none;
-    border-radius: 0.35rem;
+    border-radius: var(--cui-radius-sm);
     background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
     color: var(--cui-color-text);
     cursor: pointer;
@@ -822,7 +904,7 @@ body.chatui-active .cui-root-dialog-overlay {
 body.chatui-active .cui-root-dialog {
     width: min(22rem, 92vw);
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.7rem;
+    border-radius: var(--cui-radius-lg);
     padding: 1rem;
     background-color: var(--cui-color-surface);
     color: var(--cui-color-text);
@@ -837,7 +919,7 @@ body.chatui-active .cui-root-dialog-title {
 body.chatui-active .cui-root-dialog-message {
     margin-bottom: 1rem;
     opacity: 0.8;
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-tight);
     line-height: 1.5;
 }
 
@@ -856,7 +938,7 @@ body.chatui-active .cui-root-dialog-btn {
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-tight);
 }
 
 body.chatui-active .cui-root-dialog-btn:hover {
@@ -865,7 +947,10 @@ body.chatui-active .cui-root-dialog-btn:hover {
 
 body.chatui-active .cui-root-dialog-confirm.is-danger {
     border-color: transparent;
-    background-color: var(--cui-color-danger);
+    /* The fill token, not the ink one: --cui-color-danger is now the light
+       cinnabar that stays readable *on* the dark ground, which as a
+       background under a white label would sit near 2.3:1. */
+    background-color: var(--cui-color-danger-fill);
     color: #fff;
 }
 
@@ -917,7 +1002,7 @@ body.chatui-active .cui-root-char-group-header {
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.94);
+    font-size: var(--cui-font-card);
     font-weight: 500;
     letter-spacing: 0.025em;
     padding: 0.3rem var(--cui-sidebar-row-padding-x);
@@ -933,7 +1018,7 @@ body.chatui-active .cui-root-char-group-header:focus-visible {
 body.chatui-active .cui-root-char-group-avatar {
     width: var(--cui-sidebar-avatar-size);
     height: var(--cui-sidebar-avatar-size);
-    border-radius: 0.18rem;
+    border-radius: var(--cui-radius-paper);
     object-fit: cover;
     opacity: 0.78;
     flex: 0 0 auto;
@@ -966,7 +1051,7 @@ body.chatui-active .cui-root-char-group-chats {
 body.chatui-active .cui-root-char-group-note {
     padding: 0.25rem var(--cui-sidebar-row-padding-x) 0.3rem var(--cui-sidebar-indent);
     color: color-mix(in srgb, var(--cui-color-text) 62%, transparent);
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: var(--cui-font-tight);
 }
 
 body.chatui-active .cui-root-char-group-note.is-error {
@@ -979,12 +1064,12 @@ body.chatui-active .cui-root-char-group-note.is-error {
 body.chatui-active .cui-root-char-group-retry {
     min-height: 1.45rem;
     border: none;
-    border-radius: 0.35rem;
+    border-radius: var(--cui-radius-sm);
     background: color-mix(in srgb, var(--cui-color-text) 8%, transparent);
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.76);
+    font-size: var(--cui-font-sm);
     padding: 0.05rem 0.42rem;
 }
 
@@ -1004,12 +1089,12 @@ body.chatui-active .cui-root-char-group-more {
     min-height: 1.65rem;
     margin: 0 0 0.2rem var(--cui-sidebar-indent);
     border: none;
-    border-radius: 0.35rem;
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: color-mix(in srgb, var(--cui-color-text) 72%, transparent);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.82);
+    font-size: var(--cui-font-menu);
     padding: 0.12rem 0.45rem;
 }
 
@@ -1037,7 +1122,7 @@ body.chatui-active .cui-root-nested-chat-row {
     border-radius: 0;
     padding: 0.25rem var(--cui-sidebar-row-padding-x) 0.25rem calc(var(--cui-sidebar-indent) - 2px);
     cursor: pointer;
-    font-size: calc(var(--mainFontSize) * 0.88);
+    font-size: var(--cui-font-card);
 }
 
 body.chatui-active .cui-root-nested-chat-row:hover,
@@ -1074,19 +1159,19 @@ body.chatui-active .cui-root-nested-chat-row-preview {
     text-overflow: ellipsis;
     white-space: nowrap;
     opacity: 0.55;
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: var(--cui-font-sm);
 }
 
 body.chatui-active .cui-root-nested-chat-row-time {
     flex: 0 0 auto;
     opacity: 0.5;
-    font-size: calc(var(--mainFontSize) * 0.76);
+    font-size: var(--cui-font-2xs);
 }
 
 body.chatui-active .cui-root-nested-chat-row-check {
     flex: 0 0 auto;
     opacity: 0.8;
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: var(--cui-font-tight);
 }
 
 body.chatui-active .cui-root-nested-chat-row-actions {
@@ -1234,7 +1319,7 @@ body.chatui-active .cui-root-floor-tick {
     display: block;
     height: 2px;
     min-height: 2px;
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     background: color-mix(in srgb, var(--cui-color-text) 32%, transparent);
     opacity: 0.88;
     transition:
@@ -1263,11 +1348,11 @@ body.chatui-active .cui-root-floor-range-label {
     left: 0;
     width: 30px;
     color: color-mix(in srgb, var(--cui-color-text) 72%, var(--cui-color-muted));
-    font-family: var(--cui-font-ui);
-    font-size: 0.625rem;
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-xs);
     font-variant-numeric: tabular-nums;
     font-weight: 500;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--cui-tracking-title);
     line-height: 1;
     opacity: 0;
     transition:
@@ -1341,8 +1426,8 @@ body.chatui-active .cui-root-floor-popover-preview {
 body.chatui-active .cui-root-floor-popover-number {
     align-self: flex-start;
     color: var(--cui-color-muted);
-    font-family: var(--cui-font-ui);
-    font-size: 0.625rem;
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-xs);
     font-variant-numeric: tabular-nums;
     font-weight: 400;
     letter-spacing: 0.08em;
@@ -1422,7 +1507,7 @@ body.chatui-active .cui-root-message-meta {
     align-items: center;
     gap: 0.45rem;
     min-width: 0;
-    font-size: calc(var(--mainFontSize) * 0.82);
+    font-size: var(--cui-font-xs);
     opacity: 0.72;
 }
 
@@ -1436,7 +1521,7 @@ body.chatui-active .cui-root-avatar {
     border: 1px solid var(--cui-color-border);
     background-color: color-mix(in srgb, var(--cui-color-text) 8%, transparent);
     color: var(--cui-color-text);
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: var(--cui-font-tight);
     font-weight: 700;
     overflow: hidden;
     flex-shrink: 0;
@@ -1452,6 +1537,11 @@ body.chatui-active .cui-root-message-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    /* The meta row is now the design's 10px, which is a size for the floor
+       number and timestamp beside it — not for the speaker. The name had no
+       size of its own and rode on the row, so it needs one to stay the
+       heading it is. */
+    font-size: var(--cui-font-card);
     font-weight: 600;
     font-family: var(--cui-font-display);
     text-transform: uppercase;
@@ -1467,7 +1557,7 @@ body.chatui-active .cui-root-message-connector {
 body.chatui-active .cui-root-message-time,
 body.chatui-active .cui-root-message-swipe {
     flex-shrink: 0;
-    font-size: calc(var(--mainFontSize) * 0.75);
+    font-size: var(--cui-font-2xs);
     opacity: 0.75;
 }
 
@@ -1501,7 +1591,7 @@ body.chatui-active .cui-root-reasoning-body pre {
     overflow: auto;
     padding: 0.75rem 2.4rem 0.75rem 0.85rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background-color: color-mix(in srgb, var(--cui-color-text) 7%, transparent);
     line-height: 1.55;
     white-space: pre;
@@ -1509,8 +1599,8 @@ body.chatui-active .cui-root-reasoning-body pre {
 
 body.chatui-active .cui-root-message-body code,
 body.chatui-active .cui-root-reasoning-body code {
-    font-family: var(--monoFontFamily);
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-card);
 }
 
 body.chatui-active .cui-embed-frame {
@@ -1533,11 +1623,11 @@ body.chatui-active .cui-root-edit-textarea {
     box-sizing: border-box;
     resize: vertical;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background-color: color-mix(in srgb, var(--cui-color-surface) 80%, transparent);
     color: var(--cui-color-text);
     font-family: var(--cui-font-body);
-    font-size: var(--mainFontSize);
+    font-size: var(--cui-font-base);
     line-height: 1.45;
     padding: 0.65rem 0.75rem;
 }
@@ -1559,12 +1649,12 @@ body.chatui-active .cui-root-edit-btn {
     gap: 0.4rem;
     min-height: 1.85rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.4rem;
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.88);
+    font-size: var(--cui-font-tight);
     padding: 0 0.6rem;
 }
 
@@ -1592,7 +1682,7 @@ body.chatui-active .cui-root-code-copy {
     width: 1.65rem;
     height: 1.65rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.35rem;
+    border-radius: var(--cui-radius-sm);
     background-color: var(--cui-color-surface);
     color: var(--cui-color-text);
     cursor: pointer;
@@ -1613,8 +1703,8 @@ body.chatui-active .cui-root-code-lang {
     position: absolute;
     top: 0.45rem;
     left: 0.7rem;
-    font-family: var(--monoFontFamily);
-    font-size: calc(var(--mainFontSize) * 0.72);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-xs);
     letter-spacing: 0.02em;
     text-transform: lowercase;
     opacity: 0.6;
@@ -1631,7 +1721,7 @@ body.chatui-active .cui-root-reasoning {
 
 body.chatui-active .cui-root-reasoning-summary {
     cursor: pointer;
-    font-size: calc(var(--mainFontSize) * 0.82);
+    font-size: var(--cui-font-sm);
     font-weight: 600;
     opacity: 0.78;
 }
@@ -1672,7 +1762,7 @@ body.chatui-active .cui-root-media-item {
     margin: 0;
     overflow: hidden;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background-color: color-mix(in srgb, var(--cui-color-text) 5%, transparent);
 }
 
@@ -1702,10 +1792,10 @@ body.chatui-active .cui-root-media-counter {
     position: absolute;
     right: 0.45rem;
     bottom: 0.35rem;
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     background-color: rgba(0, 0, 0, 0.62);
     color: white;
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: var(--cui-font-tight);
     line-height: 1;
     padding: 0.25rem 0.45rem;
 }
@@ -1724,12 +1814,12 @@ body.chatui-active .cui-root-file-item {
     gap: 0.5rem;
     min-height: 2.35rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background-color: color-mix(in srgb, var(--cui-color-text) 5%, transparent);
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-card);
     padding: 0 0.65rem;
     text-align: left;
 }
@@ -1750,7 +1840,7 @@ body.chatui-active .cui-root-file-name {
 body.chatui-active .cui-root-file-size,
 body.chatui-active .cui-root-file-open {
     opacity: 0.62;
-    font-size: calc(var(--mainFontSize) * 0.78);
+    font-size: var(--cui-font-tight);
 }
 
 body.chatui-active .cui-root-message-actions {
@@ -1774,13 +1864,13 @@ body.chatui-active .cui-root-action-btn {
     min-width: 1.8rem;
     height: 1.65rem;
     border: 1px solid transparent;
-    border-radius: 0.4rem;
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     opacity: 0.68;
     padding: 0 0.45rem;
-    font-size: calc(var(--mainFontSize) * 0.86);
+    font-size: var(--cui-font-menu);
     line-height: 1;
 }
 
@@ -1831,7 +1921,7 @@ body.chatui-active .cui-root-menu {
     min-width: 10rem;
     padding: 0.25rem 0;
     border: 1px solid var(--cui-color-border);
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background-color: var(--cui-color-surface);
     box-shadow: 0 4px 18px var(--cui-color-shadow);
 }
@@ -1846,7 +1936,7 @@ body.chatui-active .cui-root-menu-item {
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-menu);
     padding: 0.45rem 0.65rem;
     text-align: left;
 }
@@ -1963,7 +2053,7 @@ body.chatui-active .cui-root-scroll-bottom {
     width: 2.4rem;
     height: 2.4rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     background-color: var(--cui-color-surface);
     color: var(--cui-color-text);
     cursor: pointer;
@@ -1995,12 +2085,12 @@ body.chatui-active .cui-root-generate-btn {
     min-height: 2rem;
     padding: 0 0.95rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     background-color: var(--cui-color-surface);
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.88);
+    font-size: var(--cui-font-tight);
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 
@@ -2018,7 +2108,7 @@ body.chatui-active .cui-root-composer {
     width: min(100%, var(--cui-content-max-width));
     margin: 0.25rem auto 0;
     padding: 0.65rem 0 0.15rem;
-    border-top: 1px solid var(--cui-rule-structure);
+    border-top: 1px dashed var(--cui-rule-structure);
     background: none;
     box-sizing: border-box;
 }
@@ -2058,7 +2148,7 @@ body.chatui-active .cui-root-composer-input {
     background: none;
     color: var(--cui-color-text);
     font-family: var(--cui-font-body);
-    font-size: var(--mainFontSize);
+    font-size: var(--cui-font-base);
     line-height: 1.65;
     padding: 0.42rem 0.45rem 0.52rem;
     outline: none;
@@ -2073,7 +2163,7 @@ body.chatui-active .cui-root-composer-input::placeholder {
 body.chatui-active .cui-root-plus-topslot {
     padding: 0.15rem 0.5rem 0.5rem;
     margin-bottom: 0.15rem;
-    border-bottom: 1px solid var(--cui-color-border);
+    border-bottom: 1px dashed var(--cui-color-border);
 }
 
 body.chatui-active .cui-root-plus-topslot .cui-root-selchips {
@@ -2096,11 +2186,11 @@ body.chatui-active .cui-root-composer-btn {
     height: 2.45rem;
     flex: 0 0 auto;
     border: 1px solid transparent;
-    border-radius: 0.3rem;
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
-    font-size: calc(var(--mainFontSize) * 0.95);
+    font-size: var(--cui-font-card);
 }
 
 body.chatui-active .cui-root-composer-btn:hover {
@@ -2124,7 +2214,7 @@ body.chatui-active .cui-root-composer-stop {
 body.chatui-active .cui-root-send-glyph {
     color: var(--cui-color-seal);
     font-family: var(--cui-font-display);
-    font-size: calc(var(--mainFontSize) * 1.35);
+    font-size: var(--cui-font-title);
     line-height: 1;
     transform: translateY(-0.04em);
 }
@@ -2146,11 +2236,11 @@ body.chatui-active .cui-root-plus-btn {
     width: 2.45rem;
     height: 2.45rem;
     border: 1px solid transparent;
-    border-radius: 0.3rem;
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
-    font-size: calc(var(--mainFontSize) * 0.95);
+    font-size: var(--cui-font-base);
 }
 
 body.chatui-active .cui-root-plus-btn:hover {
@@ -2188,7 +2278,7 @@ body.chatui-active .cui-root-plus-menu {
     box-sizing: border-box;
     padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
     border-top: 1px solid var(--cui-color-border);
-    border-radius: 1rem 1rem 0 0;
+    border-radius: var(--cui-radius-lg) var(--cui-radius-lg) 0 0;
     background-color: var(--cui-color-surface);
     box-shadow: 0 -6px 24px var(--cui-color-shadow);
     animation: cui-plus-sheet-in var(--animation-duration-2x) ease forwards;
@@ -2210,7 +2300,7 @@ body.chatui-active .cui-root-plus-header {
 body.chatui-active .cui-root-plus-title {
     font-weight: 700;
     opacity: 0.75;
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-menu);
 }
 
 body.chatui-active .cui-root-plus-close {
@@ -2251,7 +2341,7 @@ body.chatui-active .cui-root-plus-tile {
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.92);
+    font-size: var(--cui-font-card);
 }
 
 body.chatui-active .cui-root-plus-tile:hover,
@@ -2273,12 +2363,12 @@ body.chatui-active .cui-root-plus-tool {
     width: 100%;
     min-height: 2.6rem;
     border: none;
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.95);
+    font-size: var(--cui-font-card);
     padding: 0 0.7rem;
     text-align: left;
 }
@@ -2354,9 +2444,9 @@ body.chatui-active .cui-root-attachment-chip {
     max-width: 16rem;
     padding: 0.2rem 0.3rem 0.2rem 0.55rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     background-color: color-mix(in srgb, var(--cui-color-text) 7%, transparent);
-    font-size: calc(var(--mainFontSize) * 0.82);
+    font-size: var(--cui-font-menu);
 }
 
 body.chatui-active .cui-root-attachment-chip-name {
@@ -2410,7 +2500,7 @@ body.chatui-active .cui-root-selchip-btn {
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: calc(var(--mainFontSize) * 0.82);
+    font-size: var(--cui-font-sm);
     opacity: 0.85;
 }
 
@@ -2476,7 +2566,7 @@ body.chatui-active .cui-root-selchip-item {
     padding: 0.4rem 0.55rem;
     border-radius: var(--cui-radius-sm);
     cursor: pointer;
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-menu);
 }
 
 body.chatui-active .cui-root-selchip-item:hover {
@@ -2490,7 +2580,7 @@ body.chatui-active .cui-root-selchip-item.is-selected {
 body.chatui-active .cui-root-selchip-empty {
     padding: 0.4rem 0.55rem;
     opacity: 0.6;
-    font-size: calc(var(--mainFontSize) * 0.88);
+    font-size: var(--cui-font-menu);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2518,11 +2608,11 @@ body.chatui-active .cui-root-toast {
     padding: 0.5rem 0.6rem 0.5rem 0.75rem;
     border: 1px solid var(--cui-color-border);
     border-left-width: 3px;
-    border-radius: 0.5rem;
+    border-radius: var(--cui-radius-md);
     background-color: var(--cui-color-surface);
     box-shadow: 0 6px 22px var(--cui-color-shadow);
     color: var(--cui-color-text);
-    font-size: calc(var(--mainFontSize) * 0.9);
+    font-size: var(--cui-font-tight);
     animation: cui-toast-in var(--animation-duration-2x) ease forwards;
 }
 
@@ -2603,7 +2693,7 @@ body.chatui-active .cui-picker-label {
     font-size: var(--cui-font-2xs);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--cui-tracking-title);
     opacity: 0.5;
 }
 
@@ -2631,7 +2721,7 @@ body.chatui-active .cui-picker-item {
     width: 4rem;
     padding: 0.4rem 0.3rem;
     border: none;
-    border-radius: 0.65rem;
+    border-radius: var(--cui-radius-lg);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
@@ -2668,7 +2758,7 @@ body.chatui-active .cui-picker-item-avatar-fallback {
     height: 2.5rem;
     border-radius: 50%;
     background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
-    font-size: calc(var(--mainFontSize) * 0.95);
+    font-size: var(--cui-font-card);
     flex: 0 0 auto;
 }
 
@@ -2686,7 +2776,7 @@ body.chatui-active .cui-picker-item-name {
 body.chatui-active .cui-picker-item-mark {
     width: 1.4rem;
     height: 2px;
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     background: var(--cui-color-border);
     opacity: 0.6;
 }
@@ -2725,10 +2815,10 @@ body.chatui-active .cui-root-qrbar-btn {
     padding: 0.2rem 0.55rem;
     min-height: 1.75rem;
     border: 1px solid var(--cui-color-border);
-    border-radius: 999px;
+    border-radius: var(--cui-radius-pill);
     background-color: color-mix(in srgb, var(--cui-color-text) 8%, transparent);
     color: var(--cui-color-text);
-    font-size: calc(var(--mainFontSize) * 0.82);
+    font-size: var(--cui-font-menu);
     cursor: pointer;
     white-space: nowrap;
     transition: background-color 0.15s, border-color 0.15s, opacity 0.15s;
@@ -2752,7 +2842,7 @@ body.chatui-active .cui-root-qrbar-icon {
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    font-size: calc(var(--mainFontSize) * 0.85);
+    font-size: var(--cui-font-menu);
     pointer-events: none;
 }
 
@@ -2787,8 +2877,8 @@ body.chatui-active .cui-settings-nav-back {
     gap: 0.65rem;
     min-height: 2.5rem;
     padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--cui-color-border);
-    font-size: calc(var(--mainFontSize) * 0.94);
+    border-bottom: 1px dashed var(--cui-color-border);
+    font-size: var(--cui-font-card);
     font-weight: 600;
 }
 
@@ -2828,7 +2918,7 @@ body.chatui-active .cui-settings-nav-footer {
     flex: 0 0 auto;
     margin-top: auto;
     padding: 0.35rem 0.35rem 0.45rem;
-    border-top: 1px solid var(--cui-color-border);
+    border-top: 1px dashed var(--cui-color-border);
 }
 
 body.chatui-active .cui-settings-nav-disable {
