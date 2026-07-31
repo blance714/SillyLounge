@@ -1,6 +1,6 @@
 # SillyTavern-ChatUI · Roadmap
 
-Last updated: 2026-07-15
+Last updated: 2026-07-31
 
 三份文档的分工:`DESIGN.md` = 产品北极星(目标形态)、`STATUS.md` = 当前实现快照、
 **本文 = 完整度地图 + 剩余工作的优先级排期**。架构记录见 `ARCHITECTURE.md`。
@@ -157,6 +157,11 @@ Last updated: 2026-07-15
 
 ## 完整度快照(对照 DESIGN 五大区)
 
+> 这张表描述的是**已合并的 `main`**。长廊剧场分支栈把 ①② 顶栏、③ 内容区、
+> ⑤ 侧栏三行的形状换掉了(书脊 + 场刊、统一操作条、swipe 刻度、topbar 就地改名),
+> 但没有改变各行「还缺」的那一列——缺的仍然是缺的,只是又多了几条,统一记在下面的
+> 「长廊剧场收官 backlog」。合并那条栈的时候连这张表一起重画,别只改一行。
+
 | 区域 | 状态 | 已落地 | 还缺 |
 |---|---|---|---|
 | **地基** 架构重写 | ✅ ~完成 | shield→adapter→store→Preact 四层、旧 Phase1/2 清理、增量 store、流式实时、toast 层;**写路径加固**(delete/swipe 已迁到 ST 导出函数)、**滚动守卫**(贴底才跟、不打断看历史)、adapter 拆分 + store pub-sub 工厂;**2026-07-10/11**:per-chat temp quarantine、stable-avatar 手动删除确认/分态、typed filename locator + rename migration、lifecycle mutation queue、composer revision/epoch + acceptance/completion、per-message O(1) streaming、Query dirty/requeue、typed snapshots、validated atomic runtime;**2026-07-15**:53 个 Node 测试 + 固定 ST/真实 Chromium 发布门禁 + 400 楼基线 | host request-scoped send receipt、server-side conditional temp delete、剩余模拟点击写路径迁移(降级为架构债,不阻塞)、手机回归脚本化、长对话不定高虚拟消息窗口 |
@@ -212,6 +217,171 @@ Last updated: 2026-07-15
 
 ---
 
+## 长廊剧场收官 backlog(2026-07-31)
+
+整场重构是 `main`(基础层:token/字阶、宣纸浮层、宣纸确认弹窗)加上一条五节未合
+分支栈:`pr4-stage-skin` → `pr5-actions-ia` → `pr6-swipe-segments` →
+`pr9-spine-playbill` → `pr7-topbar-trio`,共 45 个提交。沿途每一棒都如实报了自己
+**没做**的事;下面把这些遗留合并成一张可执行清单。每条给「现状 → 落点 → 建议
+做法 → 依赖」,不复述各棒的叙述。
+
+自动化覆盖缺口不在这里重复:`INVARIANTS.md` §16 是那张清单的唯一权威(当前登记
+了 TopbarTitle/⋯ 三行、ConfirmDialogHost、`vanished-chat-store` → Query 失效桥接
+三处零浏览器驱动,以及更早的 swipe/regen 真实 DOM 依赖)。
+
+### A · 设计稿里还空着的章节
+
+**A1 开场白选择器(设计稿 §5)——未做,且 `DESIGN.md` 还没收编这一章。**
+角色卡可带多个开场白,设计稿给了三种形态(消息流内嵌列表 / 520px 场刊弹层 /
+「换一个开场 · N/M」胶囊切换器,后者仅在对话只有开场白一条消息时出现)。现在三种
+都没有,读者只能吃 ST 选中的那一条。落点:新组件 + `adapter/chats` 侧一个「读角色
+卡 greeting 列表 / 用第 N 条替换首条消息」的导出;先在 `DESIGN.md` 立这一节(含
+「胶囊只在单条开场白态出现」这条判定归谁算),再动 UI。依赖:ST 侧改写首条消息的
+安全语义(等同一次消息编辑,要走既有 host lane)。
+
+**A2 空态(设计稿 §2)——只做了半张。**
+场刊里那句「书架还空着。请一位角色,对话会列在这里。」已在
+`CharacterConversationList.tsx`;舞台中央那张 300px「空戏单」卡(`rotate(-0.6deg)`、
+竖排「虚 位 以 待」、「拖入 PNG / JSON 角色卡」、主按钮「浏览文件」+ 次链接
+「从空白新建」)没做。落点:一个只在无角色时挂载的 stage 空态组件。依赖:ChatUI
+自己没有导入动作——spine 的虚线 ＋ 现在是直接打开 ST 的角色面板(见 `Spine.tsx`
+注释),所以这张卡要么复用同一个入口(那主按钮文案就不能叫「浏览文件」),要么先
+补一个真的导入路径。**决定「叫什么」之前不要先画卡。**
+
+**A3 ⋯ 菜单还差两行。**
+设计稿 §7 给了五行,pr7 落了「从末楼开新分支」「角色卡设定……」「删除对话……」并把
+「重命名对话」接到标题铅笔的同一份状态上;缺的是**让模型重拟题名**与**导出为纯
+文本**。两者都缺 adapter 导出(前者要一次不写进对话的生成调用,后者要一个把整场
+对话降级成纯文本的投影),而且 `DESIGN.md` §6 的交互契约目前只承认「⋯ 承载当前
+对话重命名与删除」——要做**先更新契约**,否则实现会跑在规范前面。
+
+**A4 群聊仍不可选。**
+spine 只在群聊占台时画一个不可点的组图标槽位(`Spine.tsx` 注释写明了理由:
+adapter 今天只能回答「现在是不是群聊」,画一个永远不可点的按钮等于承诺一个没人
+实现的切换)。于是 `DESIGN.md` §8 验收清单里「群聊:选中后 playbill 给出降级提示
+而不是空白」这后半条**今天无法触发**。落点:`adapter/chats` 补「列群聊 / 切群聊」
+导出,再让 `spine-cast.ts` 把群聊当成一类座位。这是长尾里「群聊对话列表」那条的
+前置。
+
+### B · 场刊/卡片的产品缺口
+
+**B1 跨角色草稿不再同屏(pr9 的自觉代价)。**
+未完成草稿卡从「跨角色货架」搬进了单个角色的场刊列——这是 DESIGN §4.2 要的形状,
+但代价是别的角色的草稿只有走到那个角色才看得见。租约集本身仍是全局的,所以数据没
+丢,丢的是可发现性。落点:等搜索 🔍 / Mode B 全局视图时给它一个全局入口,别再单独
+造一个货架。
+
+**B2 卡片预览是原始 markdown。**
+`adapter/chats/queries.ts` 的 `preview` 取 `entry.preview_message || entry.mes`,
+原样印在场刊卡和草稿卡上,`**粗体**`、`<thinking>` 之类标记会直接露出来。落点:一
+个纯文本 reducer。注意**不能**在这里调 ST formatter:formatter 每次调用都会重解
+非确定宏(pr5 的「复制」正是为此改成对已缓存的渲染 HTML 做 DOMParser 归约),而侧
+栏这条路径连那份缓存都没有。可行方案是一个只认 markdown 标记的纯函数,和
+`spine-cast.ts` 同一档:无依赖、可单测。
+
+**B3 草稿卡标题的截断方式与普通卡不一致。**
+`.cui-root-nested-chat-row-name` 是两行 clamp(style.css 里写了理由:会话题名是散
+文,单行省略号恰好扔掉区分两个夜晚的那一半),而 `.cui-root-draft-card-name` 仍是
+`white-space: nowrap` + 尾部省略。落点:把它并进同一组 clamp 规则。**纯 CSS 一
+行**,只是要跟着重跑一次几何门。
+
+**B4「复制」与「复制原文」的语义待 owner 拍板。**
+pr5 把一个动作拆成两个:「复制」= 这一行真正渲染出来的文本(对已缓存 HTML 做归
+约),「复制原文」= ST 存的 `chat[id].mes`(含标记)。实现按「读到的 vs 写下的」这
+条线分,但**默认那一枚该是哪个**是产品选择,不是实现选择。要 owner 一句话。
+
+### C · 死代码与查询清理(低风险,落点明确)
+
+**C1 `ChatuiSidebarState` 四个死字段。**
+`src/ui/types.ts` 与 `src/ui/hooks.ts` 的 `useSidebarData()` 仍产出 `chats`、
+`loading`、`error`、`charGroupsLoading`,全 UI 无人读(`sidebar.chats` 从未被取用;
+组件读的是 `group.chats`,是另一回事)。三栏化之后这几个字段的语义也已经不对——
+「整列加载中」在一列一个角色的场刊里由 `group.pending` 回答。落点:删字段 + 顺手
+删掉只为它们存在的计算。
+
+**C2 `MessageSnapshotDto` 的 `canShowCharActions` / `canShowUserMenu`。**
+`src/store/chat-store.ts:309-310` 仍在算这两个布尔,pr5 把两种消息统一成同一条
+四钮操作条之后没有消费者。落点:删两个字段与其判定;`schema`/DTO 契约测试要同步。
+
+**C3 recents 查询是否还值一次请求。**
+场刊现在只有一列,并且**无条件**拉当前角色的完整列表(`hooks.ts` 的注释解释了为
+什么);`recents`(每角色封顶 5 条)只剩「首屏先画几行」的价值,同时还喂着 C1 那
+三个死字段。落点:`sidebar-queries.ts` + `hooks.ts` + `use-st-query-bridge.ts` 的
+失效表。**先量再删**:退役会让首屏在完整列表回来前空一拍,那一拍有多长要在真机
+上看,别凭感觉。
+
+### D · 交互状态机与可访问性
+
+**D1 菜单互斥与翻转都没有实现。**
+`DESIGN.md` §6 要「打开任一菜单关闭其余;浮层向下打开为默认,空间不足时才翻转,
+且不得被根容器裁切」。现状是三套各自为政的开合:topbar ⋯ 用 `<details>`,消息 ⋯
+用 `useState` + 一次性 rect 快照 portal,＋菜单/选择器各自 `useState`;没有共享的
+`activeMenuId`,也没有任何 flip-up 逻辑。落点:一个极小的 `activeMenuId` store
+(照 `ui-store.ts` 的既有先例)+ 一个「测得下就向下、测不下才翻」的纯函数(和
+`floor-rail-math.ts` 同一档,可单测)。
+
+**D2 ConfirmDialog 缺焦点陷阱。**
+键盘模型已按 §6 落地(焦点在确认钮、300ms 内吞 Enter/Space、Esc 取消、同一次按键
+只触发一个回调),但**没有把焦点困在弹窗内**:一次 Tab 就能走到被遮罩盖住的控件
+上。`ConfirmDialog.tsx` 顶部的长注释已经把这条写成「地板,不是修复」。落点:同文
+件补一个真正的 trap(首尾哨兵或 `focus` 事件回收),补完可以把那段注释收短。
+
+**D3 swipe 刻度零浏览器断言。**
+pr6 的判定在 `src/ui/swipe-segment-math.ts`,单测钉死;但刻度**真的能点**、窗口
+真的会随候选数滑动,浏览器层一条断言都没有。而 `swipeMessageById` 恰恰是
+`INVARIANTS.md` §16 里仅存的「必须真实 DOM」的动作。落点:并进将来那条覆盖
+copy/branch/checkpoint/hide/delete 的 Chromium 场景,一次性把消息动作补齐。
+
+### E · 性能与几何
+
+**E1 `VIRTUAL_MESSAGE_ESTIMATE_PX` 是一个常量,而真实行高跨两个数量级。**
+`src/ui/app.tsx:73` 的 320 在 pr4 收尾时**实测过**才保留(见 `c44a0b8` 的提交信
+息:两份 400 楼样张、改前改后、以及「抬高能买到什么」的追踪实验,区间内没有更优
+值)。真正的发现是:一个常量服务不了 130px–16000px 的行,出路是**从已测行学习的
+自适应估算**(虚拟化库已经在测每一行,数据是现成的)。落点:`app.tsx` 的
+`estimateSize` + 一个可单测的估算器。验收要同时看跳转追踪比与落位时间,别只看
+`content ready`。
+
+**E2 结构计数基线随皮肤变了。**
+pr5 的平铺按钮与 pr6 的刻度改变了「一条消息渲染多少个控件」,历史基线里的按钮数
+已作废;新量级与出处见 `PERFORMANCE.md` 的 2026-07-31 一节。后续任何按钮/元素数
+的回归判断以那节为准。
+
+### F · 视觉方言还没覆盖的表面
+
+**F1 Toast、设置页、代码块、QR bar 仍是旧文法。**
+四处都读同一套 `--cui-*` token(所以颜色是对的),但形状没做:设计稿 §10 的 toast
+是底部 120px 的深色卡,现在仍是顶部居中的 pill 行;设置页、代码块、QR bar 同理。
+落点:各自一节 style.css,互不依赖,适合当碎片时间的收尾。**先改 toast**——它是
+四者里唯一被设计稿单独立章的。
+
+**F2 字体自托管暂缓。**
+设计稿要 Noto Serif SC,而 §9.1 明确禁止任何外部 CDN,所以现在是「请求 Noto Serif
+SC,拿不到就回退到本机已装的思源/宋体系」。真要按稿呈现只能自托管子集字体,代价
+是三项:产物体积、字体许可、构建流水线多一个资产步骤。**这条不是忘了,是权衡后
+暂缓**;要推翻先算这三项。
+
+### G · 宿主行为遗留(真机 14 格矩阵实测,未修)
+
+**G1 收尾落地会改写 `active_character`,即使宿主关着 autoload。**
+`pendingnobody-noautoload` 格实测:`Lounge Test Character.png` → `default_Seraphina.png`。
+宿主不读它时无害;但读者日后打开 autoload,「上次选的人」就是 ChatUI 在一次事务收
+尾里替他选的。落点:`adapter/chats/navigation.ts` 那三行镜像写。要不要按 autoload
+开关分叉,是产品判断,不是 bug 修复。
+
+**G2 等待中的凭证会让一个零会话角色整会话领在鹤首。**
+`pendingelsewhere` 格实测。这是规则的设计意图(「让读者能自己走过去」),但凭证若
+始终不兑现,这个座位不会自己消失。落点:`spine-cast.ts` 的入列规则——要么给凭证
+座位一个可见的「待认领」态,要么给它一个页内寿命。
+
+**G3 `isCurrent` 依赖 header 与 chat store 短暂一致。**
+`!header.isGroup` 这道门在 header 落后一拍时会有一帧把某角色标成当前。这是既有行
+为,但 pr9 之后它**同时决定 spine 的入列**,多了一个后果面。群聊两格实测未观察
+到。落点:让 `isCurrent` 只认一个真源(chat store 的 `currentChat`),header 只负
+责显示。
+
+---
+
 ## 剩余工作(按优先级 · 已按 价值/成本 + 避免返工 重排)
 
 > 排序依据:分支已 live 但写路径刚加固,先求"可信赖"再堆功能;配置系统(M-E)是横切地基,**早落薄地基**以免后续 M-C/M-D 塞进更多硬编码默认、造成复利返工。
@@ -253,12 +423,30 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
 
 ## 当前分支与工作树
 
-当前开发分支为 `main`；桌面楼层导航的当前基线是 `2px` 高 / `8px` 间距（`10px` 节距，
-`85778e6` 从 `6px` 放宽而来）、边缘淡出与预览气泡内左对齐的楼层号，并按 `DESIGN.md`
-§4.3 保留自有样式与交互——设计稿的楼层轨规格不采用。视觉身份自 2026-07-31 起转向
-长廊剧场：token/字阶（`da23813`，`refactor/pr0-design-tokens`）与宣纸浮层
-（`2d56365`，`refactor/pr2-paper-popover`，其亲提交链含 `da23813`）两层已落地，但
-**两个分支都尚未合并**，其余区域仍是旧皮；侧栏三栏化按 `DESIGN.md` §3/§3.1 待做。
+当前开发分支为 `main`，另有一条**尚未合并**的长廊剧场分支栈叠在它上面。桌面楼层
+导航的当前基线是 `2px` 高 / `8px` 间距（`10px` 节距，`85778e6` 从 `6px` 放宽而来）、
+边缘淡出与预览气泡内左对齐的楼层号，并按 `DESIGN.md` §4.3 保留自有样式与交互——
+设计稿的楼层轨规格不采用。
+
+`main`（`86995df`）已含基础层：token/字阶、token 归一、宣纸浮层、宣纸确认弹窗、PR
+门禁与设计决策，因此 `refactor/pr0-design-tokens`、`-pr1-token-conformance`、
+`-pr2-paper-popover`、`-pr3-paper-confirm` 四条都已是 `main` 的亲提交链的一部分，只
+作 review 粒度的记录保留。其余按栈叠放，每条以前一条的头为亲提交：
+
+```text
+main 86995df
+ └─ refactor/pr4-stage-skin        c44a0b8  19 个提交  舞台/消息/composer/topbar 换皮
+     └─ refactor/pr5-actions-ia    7b3ea04  +4         所有楼层共用同一条四钮操作条
+         └─ refactor/pr6-swipe-segments 184f4d1  +5    swipe 版本改画成刻度段
+             └─ refactor/pr9-spine-playbill 207d8a4 +13 侧栏拆成书脊 + 场刊
+                 └─ refactor/pr7-topbar-trio        +6 topbar 就地改名 + ⋯ 三件套
+                                                       （末个代码提交 271f795）＋本次收尾文档
+```
+
+编号是章节的**拟稿顺序**，不是叠放顺序（pr7 最后写、叠在 pr9 上；没有 pr8 分支），
+以上图为准。阅读列宽度已在 pr9 随 spine 一起从 `54rem` 重标定到 `680px`（`DESIGN.md`
+§3.1 的联立方程；不改就会让楼层轨在 1280px 笔记本上静默消失）。
+
 2026-07-10/11 hardening、Manuscript Flow 视觉复归、new-chat quarantine 修复与楼层导航均已
 进入提交历史;本地 validated runtime 也已发布并通过 assembled-tree 检查。仓库现已由
 `.github/workflows/publish-dist.yml` 在每次推送 `main` 后执行完整验证、固定版本的真实
@@ -270,6 +458,10 @@ SillyTavern Chromium 门禁与可安装树检查，并自动更新默认的 `dis
 2026-07-03 对整条迁移分支做了一轮 xhigh 10-角度对抗审查,发现 14 个问题
 (含 1 个致命的挂载路径 bug,插件完全无法启动),全部修复并经独立第二轮
 对抗复核 + 回归扫描确认无遗留,实机 live-test 通过。历史用户消息保存/重挂载与
-character `⋯ → Edit` 已进入真实 Chromium 门禁。下一阶段重心:手机回归覆盖与适配、
-继续补删除确认等产品行为浏览器脚本、§7 深化(选择框槽位 / ＋菜单拖拽排序),再推进搜索、
-群聊列表与 Mode B。剩余模拟点击写路径已降级为普通架构债。
+character `⋯ → Edit` 已进入真实 Chromium 门禁。剩余模拟点击写路径已降级为普通架构债。
+
+**下一阶段重心**:先合并长廊剧场分支栈(合并时连「完整度快照」那张表一起重画),
+再按上面的「长廊剧场收官 backlog」排期——其中 C 组(死字段/查询清理)与 B3、F1 是
+低风险的碎片收尾,D2(焦点陷阱)与 D1(菜单状态机)是可访问性欠账,A 组是真正的
+产品缺口且都卡在 adapter 导出上。原有的长期项(手机回归覆盖与适配、删除确认等产品
+行为的浏览器脚本、§7 深化、搜索、群聊列表与 Mode B)不变,其中群聊列表以 A4 为前置。
