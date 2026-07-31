@@ -175,8 +175,20 @@ export function MessageActions({
                 <>
                     {/* Design §43 draws the swipe group after 重写/编辑/删除/⋯,
                         ruled off from them — what you do to this turn, then a
-                        seam, then which candidate reply you're looking at. */}
-                    <span className="cui-root-action-divider" aria-hidden="true" />
+                        seam, then which candidate reply you're looking at.
+                        The seam is drawn on the candidate count, not on
+                        canShowSwipe: the trailing character reply keeps its ›
+                        even at one candidate (that is how you ask for a second
+                        one, chat-store.ts), but with one candidate there is no
+                        "which version you're reading" on the far side — just a
+                        lone arrow — and a rule with nothing on one side of it
+                        reads as a mistake rather than a division. Neither the
+                        store's canShowSwipe nor the ‹ button's own swipe.id > 0
+                        test changes; this is the third, separate question of
+                        whether the two groups need telling apart at all. */}
+                    {message.swipe.hasMultiple && (
+                        <span className="cui-root-action-divider" aria-hidden="true" />
+                    )}
                     {message.swipe.id > 0 && (
                         <ActionButton
                             label="上一版本"
