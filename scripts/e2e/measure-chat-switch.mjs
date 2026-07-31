@@ -278,9 +278,9 @@ async function readEditDraftState(page, messageId) {
  * the committed text back from both ST state and rendered DOM.
  */
 async function assertHistoricalUserEditPersists(page, target) {
-    // An interior *user* turn a few floors before the last one: user messages
-    // tile the Edit action inline (no overflow menu to open first -- see
-    // MessageActions.tsx's canShowUserMenu branch), the text is short (fast
+    // An interior *user* turn a few floors before the last one: every row
+    // tiles Edit inline since the action bar's regroup (MessageActions.tsx's
+    // `tiled` list -- no overflow menu to open first), the text is short (fast
     // to diff), and it stays clear of the marker text baked into message 0
     // and message (messageCount - 1) by applyConversationMarker.
     const editMessageId = target.messageCount - 4;
