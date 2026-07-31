@@ -719,7 +719,11 @@ body.chatui-active .cui-root-topbar-eyebrow {
 }
 
 body.chatui-active .cui-root-topbar-title {
-    flex: 1 1 auto;
+    /* Shrink-to-fit, never grow: the pencil sits right after the title's last
+       glyph instead of being pushed to the row's far end (owner call,
+       2026-08-01). Long titles still ellipsize — min-width: 0 lets the flex
+       item shrink below its content. */
+    flex: 0 1 auto;
     min-width: 0;
     margin: 0;
     font-family: var(--cui-font-display);
@@ -1410,7 +1414,11 @@ body.chatui-active .cui-root-playbill-card-binding {
     top: 0;
     bottom: 0;
     width: 14px;
-    border-right: 1px dashed var(--cui-rule-faint);
+    /* border-strong, not rule-faint: the dashes are the card's defining motif
+       and were nearly invisible on the surface ground at the faint mix (owner
+       call, 2026-08-01). The current card still outranks this via the accent
+       override below. */
+    border-right: 1px dashed var(--cui-color-border-strong);
     pointer-events: none;
 }
 
@@ -1445,9 +1453,10 @@ body.chatui-active .cui-root-playbill-card-meta {
 
 /* ── Conversation card ───────────────────────────────────────────────────── */
 
-/* Two lines, then clamp. A session title is prose: a one-line ellipsis throws
-   away exactly the half that tells two nights apart. */
-body.chatui-active .cui-root-nested-chat-row-name,
+/* Previews clamp at two lines; the title is a single ellipsized line (owner
+   call, 2026-08-01, overriding README §1's two-line clamp — one line reads
+   cleaner in the column, and the meta row still carries the timestamp that
+   tells two nights apart). */
 body.chatui-active .cui-root-nested-chat-row-preview,
 body.chatui-active .cui-root-draft-card-preview {
     display: -webkit-box;
@@ -1457,6 +1466,9 @@ body.chatui-active .cui-root-draft-card-preview {
 }
 
 body.chatui-active .cui-root-nested-chat-row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     color: color-mix(in srgb, var(--cui-color-text) 85%, transparent);
     font-family: var(--cui-font-display);
     font-size: var(--cui-font-card);
@@ -3997,7 +4009,10 @@ body.chatui-active .cui-root-qrbar-label {
    columns, not a fourth column). Same 252px, because it is literally standing
    where the playbill stood. */
 body.chatui-active .cui-settings-nav {
-    flex: 0 0 252px;
+    /* 300px, not the playbill's 252px: nav rows carry icon + Chinese label and
+       read cramped at playbill width (owner call, 2026-08-01). Settings mode
+       has no reading column to protect, so the extra 48px is free. */
+    flex: 0 0 300px;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -4009,12 +4024,16 @@ body.chatui-active .cui-settings-nav {
     box-sizing: border-box;
 }
 
-/* ←返回 button — full-width, distinct from nav items */
+/* ←返回 button — full-width, distinct from nav items. Display serif + the
+   corridor's dashed rule below, so the nav opens like a chapter head instead
+   of a toolbar (light corridor pass, 2026-08-01; the full layer-7 dialect
+   remains backlog). */
 body.chatui-active .cui-settings-nav-back {
-    gap: 0.65rem;
-    min-height: 2.5rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px dashed var(--cui-color-border);
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-bottom: 1px dashed var(--cui-color-border-strong);
+    font-family: var(--cui-font-display);
     font-size: var(--cui-font-card);
     font-weight: 600;
 }
@@ -4023,14 +4042,19 @@ body.chatui-active .cui-settings-nav-back {
 body.chatui-active .cui-settings-nav-section {
     display: flex;
     flex-direction: column;
-    padding: 0.35rem 0.35rem 0.5rem;
+    gap: 2px;
+    padding: 12px 8px 14px;
+}
+
+body.chatui-active .cui-settings-nav-section .cui-root-section-label {
+    padding: 0 8px 6px;
 }
 
 /* Nav item buttons */
 body.chatui-active .cui-settings-nav-item {
-    gap: 0.65rem;
-    min-height: 2.3rem;
-    padding: 0 0.6rem;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 10px;
     border-radius: var(--cui-radius-sm);
     font-size: var(--cui-font-tight);
 }
@@ -4055,14 +4079,14 @@ body.chatui-active .cui-settings-nav-item.is-active i {
 body.chatui-active .cui-settings-nav-footer {
     flex: 0 0 auto;
     margin-top: auto;
-    padding: 0.35rem 0.35rem 0.45rem;
-    border-top: 1px dashed var(--cui-color-border);
+    padding: 8px 8px 10px;
+    border-top: 1px dashed var(--cui-color-border-strong);
 }
 
 body.chatui-active .cui-settings-nav-disable {
-    gap: 0.65rem;
-    min-height: 2.3rem;
-    padding: 0 0.6rem;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 10px;
     border-radius: var(--cui-radius-sm);
     font-size: var(--cui-font-tight);
     opacity: 0.75;
