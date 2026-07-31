@@ -1,5 +1,6 @@
 import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
+import { useCaretOnMount } from '../hooks.js';
 
 /**
  * Title-page topbar heading (DESIGN §4.1, README §7): eyebrow above, the
@@ -36,16 +37,19 @@ export function TopbarTitle({
     onCommit: () => void;
     onCancel: () => void;
 }): ComponentChild {
+    // Not `autoFocus`: it is inert for a field mounted after load — see
+    // useCaretOnMount for the measurement and the mechanism.
+    const inputRef = useCaretOnMount<HTMLInputElement>(isRenaming);
     return (
         <div className="cui-root-topbar-heading">
             <span className="cui-root-topbar-eyebrow">{eyebrow}</span>
             {isRenaming ? (
                 <div className="cui-root-topbar-title-editor">
                     <input
+                        ref={inputRef}
                         className="cui-root-topbar-rename"
                         type="text"
                         value={draft}
-                        autoFocus
                         aria-label="重命名对话"
                         onInput={(event) => onDraftChange(event.currentTarget.value)}
                         onBlur={onCancel}

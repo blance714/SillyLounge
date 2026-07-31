@@ -195,6 +195,43 @@ export function useTopbarChatTarget(): {
 }
 
 /**
+ * Put the caret in a field the moment it replaces the thing it edits.
+ *
+ * The `autoFocus` prop cannot do this and never could: Preact has no React-style
+ * shim for it (10.29's diff treats it as the ordinary `autofocus` DOM property),
+ * and the platform only flushes autofocus candidates while the document is
+ * still being parsed. An input mounted long after load therefore gets the
+ * attribute and no focus at all — measured on the pinned host: clicking the
+ * topbar pencil left `document.activeElement` on `<body>`, and clicking a
+ * playbill card's pencil left it on the pencil button itself. Both inputs then
+ * silently disowned their own contract: the「Enter 保存 · Esc 取消」hint named
+ * two keys that reached the document instead of the field, and the `onBlur`
+ * cancel could not fire because nothing had focus to lose.
+ *
+ * So the in-project precedent is the rule, not the prop — `MessageEditor.tsx`
+ * has always focused its textarea from an effect. This is that effect, named
+ * once and shared, because every in-place edit surface (topbar title,
+ * playbill card) owes the reader the same thing. Caret goes to the end, as it
+ * does in the message editor: the field opens on a name that already exists,
+ * and selecting it whole would make one stray keystroke erase it.
+ *
+ * @param {boolean} isActive Whether the field is mounted right now.
+ * @returns {{ current: T | null }} Ref to attach to the field.
+ */
+export function useCaretOnMount<T extends HTMLInputElement | HTMLTextAreaElement>(
+    isActive: boolean,
+): { current: T | null } {
+    const ref = useRef<T>(null);
+    useEffect(() => {
+        const field = ref.current;
+        if (!isActive || !field) return;
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+    }, [isActive]);
+    return ref;
+}
+
+/**
  * Spine feed. Deliberately built on useSidebarBasics rather than
  * useSidebarData: the spine needs the cast and nothing else, and
  * useSidebarData fans out one per-character chat query per entry — work the
