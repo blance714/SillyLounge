@@ -1,0 +1,98 @@
+name: PR checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          cache: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.13.0
+
+      - name: Install locked dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify source and build contract
+        run: pnpm run verify
+
+      - name: Read pinned SillyTavern host
+        id: st-pin
+        shell: bash
+        run: |
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const pin = JSON.parse(fs.readFileSync("test/e2e/st-version.json", "utf8"));
+            process.stdout.write(`repository=${pin.repository}\ncommit=${pin.commit}\nversion=${pin.version}\n`);
+          ' >> "$GITHUB_OUTPUT"
+
+      - name: Check out pinned SillyTavern host
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.st-pin.outputs.repository }}
+          ref: ${{ steps.st-pin.outputs.commit }}
+          path: .test-host/SillyTavern
+          persist-credentials: false
+
+      - name: Install SillyTavern runtime dependencies
+        working-directory: .test-host/SillyTavern
+        run: npm ci --omit=dev
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Assemble browser-test runtime
+        run: pnpm run runtime
+
+      - name: Verify the real SillyTavern UI
+        env:
+          SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
+        run: pnpm exec playwright test
+
+      - name: Verify the chat-switch performance harness
+        env:
+          SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
+        run: |
+          node ./scripts/e2e/measure-chat-switch.mjs || {
+            status=$?
+            echo "::error::chat-switch harness failed; its JSON report (on success) and screenshots/SillyTavern logs (always) live under test-results/performance/ and are picked up by the browser-test evidence upload below"
+            exit "$status"
+          }
+
+      - name: Verify the native-truncation guard acceptance
+        env:
+          SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
+        run: |
+          node ./scripts/e2e/verify-truncation-guard.mjs || {
+            status=$?
+            echo "::error::truncation-guard acceptance failed; its report lives under test-results/truncation-guard/ and is picked up by the browser-test evidence upload below"
+            exit "$status"
+          }
+
+      - name: Upload browser-test evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: sillylounge-playwright-${{ github.sha }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
