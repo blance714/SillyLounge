@@ -36,17 +36,49 @@ export async function deleteCharacterChat(
     fileName: string,
 ): Promise<DeleteCharacterChatResultDto> {
     const bareName = stripChatExt(fileName);
-    const unchanged = { deleted: false, reconciled: true, uncertain: false, reloadRequired: false } as const;
+    const unchanged = {
+        deleted: false,
+        reconciled: true,
+        uncertain: false,
+        reloadRequired: false,
+        absent: false,
+        fallbackChatFileName: null,
+    } as const;
     if (!avatar || !bareName) return unchanged;
 
     let chatNames: string[];
     try {
         chatNames = await listRawCharacterChatNames(avatar);
     } catch (error) {
+        // Deliberately not `absent`: a directory we could not read says
+        // nothing about whether the file is in it, and treating that as
+        // absence would drop a quarantine lease still holding a real file.
         console.error('[ChatUI] failed to verify chat before deletion', error);
         return unchanged;
     }
-    if (!chatNames.includes(bareName)) return unchanged;
+    if (!chatNames.includes(bareName)) {
+        // Nothing to delete, and nothing failed. Reporting this as an ordinary
+        // failure was a dead end for the caller: a quarantined draft whose file
+        // had gone could never be discarded, because discarding *is* this call,
+        // so the card and its lease stayed on the shelf forever.
+        //
+        // But 「no file」 is not 「no conversation」, and the difference is the
+        // whole of this guard. When the missing name is the chat the runtime is
+        // *standing in*, that conversation is very much alive — it is simply
+        // unsaved — and the next `saveChatConditional()` (a message, a swipe, an
+        // edit, walking away) writes the file straight back. Telling the caller
+        // 「absent, settle it as a real deletion」 there makes it drop the
+        // quarantine lease off a live draft, and the file ST re-materializes a
+        // moment later is then permanent history nobody is holding — the exact
+        // outcome the whole draft-quarantine handoff exists to prevent
+        // (deletion-finalization.ts). So absence is asserted only about files
+        // nothing live is claiming; a live one falls back to the plain 「nothing
+        // was deleted」 result, which keeps the lease and stays retryable the
+        // moment the file exists again.
+        const liveNow = getCurrentChatIdentity();
+        const deletingLive = liveNow?.avatar === avatar && liveNow.fileName === bareName;
+        return { ...unchanged, absent: !deletingLive };
+    }
 
     // Resolve the replacement from the raw directory listing. Unlike chat
     // search, this does not silently omit malformed JSONL files.
@@ -200,6 +232,8 @@ export async function deleteCharacterChat(
             reconciled: false,
             uncertain: true,
             reloadRequired: deletingCurrent,
+            absent: false,
+            fallbackChatFileName: null,
         };
     }
 
@@ -217,13 +251,28 @@ export async function deleteCharacterChat(
             reconciled,
             uncertain,
             reloadRequired: deletingCurrent && !reconciled,
+            absent: false,
+            fallbackChatFileName: null,
         };
     }
 
     if (deletingCurrent) {
         // Do not emit into the stale current-chat runtime: arbitrary listeners
         // may save it again. The caller reloads synchronously on this result.
-        return { deleted: true, reconciled: true, uncertain: false, reloadRequired: true };
+        return {
+            deleted: true,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: true,
+            absent: false,
+            // nextName is the fabricated fallback exactly when no real chat
+            // (preferred or otherwise) survived to replace the one just
+            // deleted — i.e. this character's history is now empty. Report
+            // it so the caller can quarantine whatever ST's reload boot
+            // materializes there, instead of it becoming the character's
+            // one permanent chat by accident.
+            fallbackChatFileName: nextName === fallbackName ? nextName : null,
+        };
     }
 
     try {
@@ -231,5 +280,12 @@ export async function deleteCharacterChat(
     } catch (error) {
         console.error('[ChatUI] failed to emit CHAT_DELETED', error);
     }
-    return { deleted: true, reconciled: true, uncertain: false, reloadRequired: false };
+    return {
+        deleted: true,
+        reconciled: true,
+        uncertain: false,
+        reloadRequired: false,
+        absent: false,
+        fallbackChatFileName: null,
+    };
 }

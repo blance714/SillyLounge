@@ -20,7 +20,7 @@ export function AttachmentChips(): ComponentChild {
     if (items.length === 0) return null;
 
     return (
-        <div className="cui-root-attachment-chips" aria-label="Pending attachments">
+        <div className="cui-root-attachment-chips" aria-label="待发送附件">
             {items.map(item => (
                 <span key={item.id} className="cui-root-attachment-chip" title={item.name}>
                     <i className={item.type.startsWith('image/') ? 'fa-solid fa-image' : 'fa-solid fa-file-lines'} />
@@ -28,8 +28,8 @@ export function AttachmentChips(): ComponentChild {
                     <button
                         className="cui-root-attachment-chip-remove"
                         type="button"
-                        aria-label={`Remove ${item.name}`}
-                        title="Remove"
+                        aria-label={`移除 ${item.name}`}
+                        title="移除"
                         onClick={() => {
                             removeChatuiPendingAttachment(item.id);
                             setItems(getChatuiPendingAttachments());

@@ -35,7 +35,7 @@ import {
 import { parseMessageRecord } from './schema.js';
 
 type MessageId = number | string;
-export type MessageAction = 'copy' | 'regen' | 'branch' | 'checkpoint' | 'hide';
+export type MessageAction = 'copySource' | 'regen' | 'branch' | 'checkpoint' | 'hide';
 export type SwipeDirection = 'left' | 'right';
 export type DeleteIntent = 'swipe' | 'message';
 
@@ -89,7 +89,14 @@ export function triggerOverflowAction(original: Element): void {
     _dispatchClick(original);
 }
 
-export async function copyMessage(mesId: MessageId): Promise<void> {
+/**
+ * 「复制原文（含标记）」 (design §45): the message exactly as SillyTavern
+ * stored it — every asterisk, tag and macro remnant included. This is also
+ * byte-for-byte what native's own `.mes_copy` handler puts on the clipboard
+ * (script.js:11752-11763), so the escape hatch keeps host parity while the
+ * plain 「复制」 below answers the other, more common need.
+ */
+export async function copyMessageSource(mesId: MessageId): Promise<void> {
     const normalizedId = Number(mesId);
     if (!Number.isInteger(normalizedId) || normalizedId < 0) {
         throw new Error(`[ChatUI/adapter] Invalid message id for copy: ${mesId}`);
@@ -106,6 +113,132 @@ export async function copyMessage(mesId: MessageId): Promise<void> {
         throw new Error(`[ChatUI/adapter] Message record not found for copy: ${normalizedId}`);
     }
     await copyText((rawMessage as Record<string, string>).mes);
+}
+
+/**
+ * Structural view of a parsed node, not the DOM's own `Node`. The reduction
+ * below needs exactly four fields, and naming them is what lets the walk be
+ * unit-tested against hand-built trees: the fake host's DOM (see
+ * test/helpers/fake-st-host.mjs) parses no HTML at all, so the `DOMParser`
+ * step in `plainTextFromMessageHtml` is a real-browser-only seam — the same
+ * standing `_deleteFullMessageById`'s own `mesEl?.remove()` already has.
+ */
+type PlainTextNode = {
+    nodeType?: number;
+    nodeName?: string;
+    nodeValue?: string | null;
+    childNodes?: ArrayLike<PlainTextNode> | null;
+};
+
+const NODE_TYPE_ELEMENT = 1;
+const NODE_TYPE_TEXT = 3;
+
+/**
+ * Tags a reader sees as a line of their own. This is the flow-content list
+ * from HTML's own block/inline split — the same rule `innerText` applies, which
+ * is the behaviour we want but cannot use: `innerText` is layout-dependent and
+ * a detached (or `DOMParser`-produced, inert) node degrades it back to
+ * `textContent`, collapsing every paragraph into one run-on line.
+ */
+const PLAIN_TEXT_BREAK_TAGS = new Set([
+    'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DETAILS', 'DIV', 'DL',
+    'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2',
+    'H3', 'H4', 'H5', 'H6', 'HEADER', 'HR', 'LI', 'MAIN', 'NAV', 'OL', 'P',
+    'PRE', 'SECTION', 'SUMMARY', 'TABLE', 'TR', 'UL',
+]);
+
+/** Cells separate along the row, rows separate down the table. */
+const PLAIN_TEXT_CELL_TAGS = new Set(['TD', 'TH']);
+
+/**
+ * Elements whose text is never *read* — `innerText` skips them and so must
+ * this walk, or 「复制」 hands over source code as if it were prose.
+ *
+ * `STYLE` is the one that is genuinely reachable today, and it is reachable
+ * through a first-class SillyTavern feature, not an exotic case: a character
+ * card (or a message) may carry a `<style>` block, and ST's own formatter
+ * puts it back into the message HTML verbatim after sanitizing it
+ * (public/scripts/chats.js, `encodeStyleTags` -> DOMPurify -> `decodeStyleTags`,
+ * which re-emits `<style>${css.stringify(ast)}</style>`). `DOMParser` leaves
+ * such a block inside `<body>` whenever any content precedes it, so without
+ * this gate a whole stylesheet lands in the clipboard between two paragraphs.
+ * The rest cannot survive ST's sanitizer today and are listed so the rule is
+ * "what a reader never sees", not "the one tag that bit us".
+ */
+const PLAIN_TEXT_SKIP_TAGS = new Set([
+    'HEAD', 'NOSCRIPT', 'SCRIPT', 'STYLE', 'TEMPLATE', 'TITLE',
+]);
+
+function _collectPlainText(node: PlainTextNode, out: string[]): void {
+    if (node.nodeType === NODE_TYPE_TEXT) {
+        out.push(node.nodeValue ?? '');
+        return;
+    }
+    if (node.nodeType !== NODE_TYPE_ELEMENT) return;
+
+    const tag = String(node.nodeName ?? '').toUpperCase();
+    if (PLAIN_TEXT_SKIP_TAGS.has(tag)) return;
+    if (tag === 'BR') {
+        out.push('\n');
+        return;
+    }
+
+    const breaks = PLAIN_TEXT_BREAK_TAGS.has(tag);
+    if (breaks) out.push('\n');
+    const children = node.childNodes;
+    const count = children?.length ?? 0;
+    for (let index = 0; index < count; index += 1) {
+        const child = children?.[index];
+        if (child) _collectPlainText(child, out);
+    }
+    if (breaks) out.push('\n');
+    else if (PLAIN_TEXT_CELL_TAGS.has(tag)) out.push('\t');
+}
+
+function _normalizePlainText(raw: string): string {
+    return raw
+        .replace(/\r\n?/g, '\n')
+        // Whitespace that only ever existed to pad a break is not content.
+        .replace(/[^\S\n]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+}
+
+/**
+ * Test seam for the reduction itself: everything except the `DOMParser` call.
+ * Exported the way `_deleteSwipeById` is — an adapter internal the unit suite
+ * pins directly, never part of the frozen facade.
+ */
+export function _plainTextFromNode(node: PlainTextNode): string {
+    const parts: string[] = [];
+    _collectPlainText(node, parts);
+    return _normalizePlainText(parts.join(''));
+}
+
+/**
+ * Reduce one already-rendered message body to the prose a reader sees.
+ * `DOMParser` rather than `div.innerHTML`: the parsed document is inert, so a
+ * message body carrying `<img src>` cannot turn a clipboard action into a
+ * network fetch.
+ */
+export function plainTextFromMessageHtml(html: string): string {
+    if (!html) return '';
+    const parsed = new DOMParser().parseFromString(html, 'text/html');
+    return _plainTextFromNode(parsed.body as unknown as PlainTextNode);
+}
+
+/**
+ * 「复制」 (design §45): the message with its markers taken off.
+ *
+ * Takes the already-formatted HTML rather than a message id on purpose. ST's
+ * formatter re-resolves non-deterministic macros ({{random::a,b}}) on every
+ * call, so formatting again here would hand the user a version of the message
+ * that was never on screen. The store already holds the exact string the row
+ * rendered from (chat-store's formatted-HTML cache); this side owns the
+ * clipboard and the HTML -> text reduction, and nothing else.
+ */
+export async function copyMessageAsPlainText(html: string): Promise<void> {
+    await copyText(plainTextFromMessageHtml(html));
 }
 
 /**
@@ -872,9 +1005,14 @@ export async function swipeMessage(mesEl: Element, direction: SwipeDirection): P
 }
 
 /**
- * DOM-DECOUPLING.md: copy / branch / checkpoint / hide never require a live
- * `.mes` node (Tier 1) — the blanket getMessageElementById gate that used to
- * guard every action here is gone for exactly those. `delete` is no longer
+ * DOM-DECOUPLING.md: copySource / branch / checkpoint / hide never require a
+ * live `.mes` node (Tier 1) — the blanket getMessageElementById gate that used
+ * to guard every action here is gone for exactly those. The plain 「复制」 is
+ * not dispatched through here at all: it needs the formatted HTML the row
+ * actually rendered from, which only the store holds, so it is orchestrated
+ * there (store/chat-actions.ts) against `copyMessageAsPlainText` directly —
+ * same shape `delete` already uses, for the same reason (this dispatcher
+ * takes an id and nothing else). `delete` is no longer
  * dispatched through this generic entry point at all as of Tier 2: it needs
  * to read confirm_message_delete and (conditionally) await a ChatUI-owned
  * confirm dialog *before* deciding which mutation to run, which this
@@ -901,7 +1039,7 @@ export async function triggerMessageActionById(mesId: MessageId, action: Message
     }
 
     switch (action) {
-        case 'copy':       await copyMessage(normalizedId);       return;
+        case 'copySource': await copyMessageSource(normalizedId);  return;
         case 'branch':     await createBranch(normalizedId);      return;
         case 'checkpoint': await createCheckpoint(normalizedId);  return;
         case 'hide':       await toggleHideMessage(normalizedId); return;
@@ -928,4 +1066,46 @@ export async function swipeMessageById(mesId: MessageId, direction: SwipeDirecti
         throw new Error(`[ChatUI/adapter] Message element not found for swipe: ${normalizedId}`);
     }
     await swipeMessage(mesEl, direction);
+}
+
+/**
+ * Jump straight to `targetSwipeId` instead of stepping through every swipe
+ * in between (the segment ticks' click target, design §43). This uses ST's
+ * own `forceSwipeId` option on `swipe()` — the exact mechanism ST's built-in
+ * swipe picker (public/scripts/swipe-picker.js, `openSwipePicker`) uses for
+ * its own "jump to swipe N" popup — rather than synthesizing N-1 sequential
+ * left/right calls: a step-simulation would run every intermediate swipe's
+ * side effects (each one re-renders, each one could re-trigger a debounced
+ * save) for versions the user never asked to see, purely to land on the one
+ * they clicked.
+ *
+ * `direction` is derived from the live current swipe_id (not trusted from
+ * the caller) so it only ever steers which way the swap animates — the
+ * landing index is `forceSwipeId`, not direction-derived — matching
+ * swipe-picker.js's own `targetSwipeId > currentSwipeId ? RIGHT : LEFT`.
+ */
+export async function swipeMessageToIndexById(mesId: MessageId, targetSwipeId: number): Promise<void> {
+    const normalizedId = Number(mesId);
+    if (!Number.isInteger(normalizedId) || normalizedId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for swipe: ${mesId}`);
+    }
+    if (!Number.isInteger(targetSwipeId) || targetSwipeId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid target swipe id for swipe: ${targetSwipeId}`);
+    }
+    const mesEl = getMessageElementById(normalizedId);
+    if (!mesEl) {
+        throw new Error(`[ChatUI/adapter] Message element not found for swipe: ${normalizedId}`);
+    }
+    const rawMessage = getMessageById(normalizedId);
+    const parsedMessage = parseMessageRecord(rawMessage);
+    if (!parsedMessage) {
+        throw new Error(`[ChatUI/adapter] Message record not found for swipe: ${normalizedId}`);
+    }
+    if (targetSwipeId >= parsedMessage.swipes.length) {
+        throw new Error(`[ChatUI/adapter] Target swipe id ${targetSwipeId} out of range for message: ${normalizedId}`);
+    }
+    const currentSwipeId = parsedMessage.swipe_id ?? 0;
+    if (targetSwipeId === currentSwipeId) return;
+    const direction: SwipeDirection = targetSwipeId > currentSwipeId ? 'right' : 'left';
+    await stSwipe(null, direction, { forceMesId: normalizedId, forceSwipeId: targetSwipeId, message: rawMessage });
 }

@@ -15,11 +15,25 @@ import { AttachmentChips } from './AttachmentChips.js';
 import { SelectorChips } from './SelectorChip.js';
 import { useComposerDraft, useConfig } from '../hooks.js';
 
-export function GeneratingIndicator(): ComponentChild {
+/**
+ * The reply that has not been written yet, standing in the stream where it will
+ * appear. Design §4 gives it the same header a message has — speaker name and
+ * connector — so the stream does not visibly restructure itself the moment the
+ * first token lands; only the line beneath it is replaced.
+ */
+export function GeneratingIndicator({ name }: { name?: string }): ComponentChild {
     return (
         <div className="cui-root-generating" role="status" aria-atomic="true">
-            <span className="cui-root-generating-seal" aria-hidden="true" />
-            <span className="cui-root-generating-label">落笔中</span>
+            {name && (
+                <div className="cui-root-message-meta">
+                    <span className="cui-root-message-name">{name}</span>
+                    <span className="cui-root-message-connector" />
+                </div>
+            )}
+            <div className="cui-root-generating-line">
+                <span className="cui-root-generating-seal" aria-hidden="true" />
+                <span className="cui-root-generating-label">正在酝酿……</span>
+            </div>
         </div>
     );
 }
@@ -39,9 +53,7 @@ export function Composer({
     const chatKeyRef = useRef(chatKey);
     chatKeyRef.current = chatKey;
     const singleLine = useConfig().composerLines === 'single';
-    // Slot B = preset + model. Multi-line shows it on its own row below the input;
-    // single-line relocates it into the ＋ menu top (DESIGN §4.2).
-    const selectorSlotB = <SelectorChips kinds={['preset', 'model']} />;
+    const hasDraft = draft.trim() !== '';
 
     const submit = async () => {
         if (isSending || isGenerating) return;
@@ -73,15 +85,27 @@ export function Composer({
         <form
             className="cui-root-composer"
             data-lines={singleLine ? 'single' : 'multi'}
-            aria-label="ChatUI composer"
+            aria-label="ChatUI 输入区"
             onSubmit={(event) => {
                 event.preventDefault();
                 void submit();
             }}
         >
+            {/* The ledger's own rule line (design §6 / DESIGN §4.4's "始终有结构
+                横线"): a fixed-width left segment, the preset/model chips, and a
+                hairline that fills out to the trailing edge. Single- and
+                multi-line composers share this row unconditionally now — it
+                replaced the old below-input selector strip that single-line mode
+                used to hide/relocate into the ＋ menu, and at this row's height
+                (~one chip tall) there is no longer a compact-mode reason to. */}
+            <div className="cui-root-composer-deco">
+                <span className="cui-root-composer-rule cui-root-composer-rule-left" aria-hidden="true" />
+                <SelectorChips kinds={['preset', 'model']} />
+                <span className="cui-root-composer-rule cui-root-composer-rule-right" aria-hidden="true" />
+            </div>
             <AttachmentChips />
             <div className="cui-root-composer-row">
-                <PlusMenu chatKey={chatKey} topSlot={singleLine ? selectorSlotB : undefined} />
+                <PlusMenu chatKey={chatKey} />
                 <textarea
                     ref={textareaRef}
                     className="cui-root-composer-input"
@@ -118,8 +142,8 @@ export function Composer({
                     <button
                         className="cui-root-composer-btn cui-root-composer-stop"
                         type="button"
-                        aria-label="Stop generation"
-                        title="Stop generation"
+                        aria-label="停止生成"
+                        title="停止生成"
                         onClick={() => stopChatuiGeneration()}
                     >
                         <i className="fa-solid fa-stop" />
@@ -128,17 +152,28 @@ export function Composer({
                     <button
                         className="cui-root-composer-btn"
                         type="submit"
-                        aria-label={draft.trim() ? 'Send message' : 'Send or continue'}
-                        title={draft.trim() ? 'Send message' : 'Send or continue'}
+                        aria-label={draft.trim() ? '发送' : '发送或续写'}
+                        title={draft.trim() ? '发送' : '发送或续写'}
                         disabled={isSending}
                     >
                         {isSending
                             ? <i className="fa-solid fa-spinner fa-spin" />
-                            : <span className="cui-root-send-glyph" aria-hidden="true">→</span>}
+                            : (
+                                <span
+                                    className={`cui-root-send-glyph${hasDraft ? ' is-armed' : ''}`}
+                                    aria-hidden="true"
+                                >
+                                    →
+                                </span>
+                            )}
                     </button>
                 )}
             </div>
-            {!singleLine && selectorSlotB}
+            {/* Design §6's bottom hint row. Its rgba(.25) contrast is below AA on
+                purpose (evaluation report §6 D2) — a decorative caption, not the
+                sole conveyor of the Enter/Shift+Enter behavior, so it stays as
+                specified rather than getting brightened into a functional label. */}
+            <div className="cui-root-composer-hint">⏎ 发送 · ⇧⏎ 换行</div>
         </form>
     );
 }

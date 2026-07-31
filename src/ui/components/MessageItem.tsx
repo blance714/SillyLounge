@@ -48,7 +48,7 @@ function MessageItemComponent({
     return (
         <article
             ref={rootRef}
-            className={`cui-root-message cui-root-message-${message.role}`}
+            className={`cui-root-message cui-root-message-${message.role}${message.ui.isLast ? ' is-latest' : ''}`}
             data-cui-message-id={String(message.id)}
             data-cui-message-role={message.role}
         >
@@ -57,10 +57,18 @@ function MessageItemComponent({
                     {showAvatar && <MessageAvatar message={message} />}
                     <span className="cui-root-message-name">{message.name || message.role}</span>
                     <span className="cui-root-message-connector" />
-                    {timestamp && <span className="cui-root-message-time">{timestamp}</span>}
-                    {message.swipe.hasMultiple && (
-                        <span className="cui-root-message-swipe">{message.swipe.label}</span>
-                    )}
+                    {/* 「第 N 楼 · 时间」 is one stamp read as one phrase (design §4),
+                        so it is one element the connector stops at — not three
+                        loose spans sharing the header row's wide gap. */}
+                    <span className="cui-root-message-stamp">
+                        {message.floorNumber !== null && (
+                            <span className="cui-root-message-floor">第 {message.floorNumber} 楼</span>
+                        )}
+                        {timestamp && <span className="cui-root-message-time">{timestamp}</span>}
+                        {message.swipe.hasMultiple && (
+                            <span className="cui-root-message-swipe">{message.swipe.label}</span>
+                        )}
+                    </span>
                 </div>
             )}
             {isEditing ? (
