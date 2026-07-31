@@ -35,6 +35,8 @@ declare module '@st/script' {
     export const saveSettingsDebounced: any;
     export function saveSettings(): Promise<void>;
     export const selectCharacterById: any;
+    export function setActiveCharacter(entityOrKey?: object | number | string | null): void;
+    export function setActiveGroup(entityOrKey?: object | number | string | null): void;
     export function sendTextareaMessage(): Promise<unknown>;
     export function setEditedMessageId(value: number | undefined): void;
     export function stopGeneration(): boolean;

@@ -4,7 +4,10 @@ import {
     getCurrentChatDetails,
     isChatSaving,
     openCharacterChat,
+    saveSettingsDebounced,
     selectCharacterById,
+    setActiveCharacter,
+    setActiveGroup,
 } from '@st/script';
 import {
     type CharacterSwitchStatus,
@@ -14,6 +17,45 @@ import {
     getStContext,
     stripChatExt,
 } from './state.js';
+
+/**
+ * Mirror ST's own "remember who is selected" write after a programmatic
+ * character selection.
+ *
+ * `selectCharacterById()` moves only the *live* selection (`this_chid`). The
+ * persisted `active_character` that the next boot reads back
+ * (RossAscends-mods.js's RA_autoloadchat, :272-287) is written nowhere inside
+ * it: ST keeps that write in the delegated `.character_select` click handler
+ * instead (RossAscends-mods.js:849-854). So every host path that selects a
+ * character without going through that native list row — every path ChatUI
+ * has — leaves the persisted pointer on whoever the reader last picked from
+ * ST's own UI. With the spine as the only way to change character, that made
+ * *any* reload (the mandatory one a current-chat delete forces, a manual
+ * refresh, the disable-and-reload path) come back on a different character
+ * than the one the reader was reading.
+ *
+ * Deliberately the same three calls that handler makes, in the same order: a
+ * character selection must also retire any persisted group, or ST's boot
+ * finds both set and drops the character (RA_autoloadchat :289-292).
+ *
+ * The live index is what gets passed, not the avatar, even though avatar is
+ * this adapter's stable identity everywhere else: `getTagKeyForEntity()`
+ * (tags.js:691-722) resolves an index unambiguously, but runs a string
+ * through `parseInt()` first — an avatar like `3.png` would resolve to
+ * `characters[3]`, a different card.
+ *
+ * Never throws: failing to persist the selection must not fail the switch the
+ * reader actually asked for.
+ */
+function persistStActiveCharacter(index: number): void {
+    try {
+        setActiveCharacter(index);
+        setActiveGroup(null);
+        saveSettingsDebounced();
+    } catch (error) {
+        console.error('[ChatUI] failed to persist ST active character', error);
+    }
+}
 
 export async function openChatForCharacter(avatar: string, fileName: string): Promise<ChatSwitchStatus> {
     const ctx = getStContext();
@@ -46,6 +88,9 @@ export async function openChatForCharacter(avatar: string, fileName: string): Pr
             if (latestLiveCharacter) latestLiveCharacter.chat = previousChat;
             return 'busy';
         }
+        // Only once the switch is confirmed landed: never persist a character
+        // we failed to select.
+        persistStActiveCharacter(index);
 
         await createOrEditCharacter(new CustomEvent('newChat'));
         return 'ok';
@@ -65,7 +110,9 @@ export async function switchCharacter(avatar: string): Promise<CharacterSwitchSt
     if (!ctx.groupId && String(ctx.characterId) === String(index)) return 'ok';
 
     await selectCharacterById(index);
-    return String(getStContext().characterId) === String(index) ? 'ok' : 'busy';
+    if (String(getStContext().characterId) !== String(index)) return 'busy';
+    persistStActiveCharacter(index);
+    return 'ok';
 }
 
 export async function openCharacterChatByName(fileName: string): Promise<void> {

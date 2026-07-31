@@ -78,6 +78,7 @@ import {
     switchCharacter,
 } from './chats.js';
 import {
+    flushSettings,
     read,
     write,
 } from './config.js';
@@ -170,6 +171,7 @@ export const chatuiAdapter = Object.freeze({
     configActions: Object.freeze({
         read,
         write,
+        flushSettings,
     }),
     qrActions: Object.freeze({
         listQuickReplies,
