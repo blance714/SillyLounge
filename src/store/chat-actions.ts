@@ -212,15 +212,27 @@ export function isChatuiLifecycleCancellation(error: unknown): boolean {
     return error instanceof HostOperationCancelledError;
 }
 
-// ST's own wording (script.js:1638-1647's askConfirmation branch / the
-// .mes_edit_delete handler's popup options) -- kept in English on purpose,
-// matching DOM-DECOUPLING.md decision #3: "措辞...与 ST 原生...逐字一致,
-// 不需要新增任何 @st/* 模块映射" (now no longer even a direct ST popup call,
-// but the wording stays the same because users already know it).
-const DELETE_CONFIRM_TITLE = 'Are you sure you want to delete this message?';
-const DELETE_SWIPE_LABEL = 'Delete Swipe';
-const DELETE_MESSAGE_LABEL = 'Delete Message';
-const DELETE_CANCEL_LABEL = 'Cancel';
+// The delete dialog's wording, from the design (§9).
+//
+// This overturns DOM-DECOUPLING.md decision #3's "措辞...与 ST 原生...逐字一致"
+// (ST's script.js:1638-1647 askConfirmation branch / the .mes_edit_delete
+// handler's popup options, kept verbatim in English). That rule bought
+// recognition -- a user who knew ST's popup would recognize ours -- and it was
+// worth having while this dialog was standing in for ST's. It no longer is:
+// every other word in this app is Chinese, the dialog is now ChatUI's own
+// paper surface rather than a lookalike, and "Delete Swipe" was never the
+// clearer half of the trade anyway -- it names an ST implementation term, not
+// the thing on screen. Recognition is not worth an English question with
+// Chinese buttons underneath it.
+//
+// Escalate and the two-way confirm both delete the whole message and are
+// worded differently on purpose: only the escalate sits beside an alternative,
+// so only it has to say which of the two it is.
+const DELETE_CONFIRM_TITLE = '删除这一楼？';
+const DELETE_SWIPE_LABEL = '仅删除此条';
+const DELETE_ESCALATE_LABEL = '删除整楼';
+const DELETE_MESSAGE_LABEL = '删除';
+const DELETE_CANCEL_LABEL = '取消';
 
 /**
  * Message delete needs its own orchestration, unlike every other action
@@ -235,10 +247,10 @@ const DELETE_CANCEL_LABEL = 'Cancel';
  *     confirm_message_delete to be true, so a swipe-only delete is never
  *     reachable when it's off).
  *   - confirm_message_delete === true and the message is swipe-eligible
- *     (getDeleteEligibility().canDeleteSwipe): a three-way dialog -- "Delete
- *     Swipe" (default), "Delete Message" (escalate), "Cancel".
+ *     (getDeleteEligibility().canDeleteSwipe): a three-way dialog --
+ *     「仅删除此条」(default),「删除整楼」(escalate),「取消」.
  *   - confirm_message_delete === true and not swipe-eligible: a plain
- *     two-way "Delete Message" / "Cancel" confirm.
+ *     two-way「删除」/「取消」confirm.
  *
  * The confirm dialog is awaited *outside* the shared host-operation queue
  * (store/host-operation-queue.ts) -- an indefinite wait on the user must not
@@ -264,7 +276,7 @@ function deleteChatuiMessage(messageId: number | string, expectedChatKey: string
                         title: DELETE_CONFIRM_TITLE,
                         variant: 'three-way',
                         confirmLabel: DELETE_SWIPE_LABEL,
-                        escalateLabel: DELETE_MESSAGE_LABEL,
+                        escalateLabel: DELETE_ESCALATE_LABEL,
                         cancelLabel: DELETE_CANCEL_LABEL,
                         danger: true,
                     });

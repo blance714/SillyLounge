@@ -561,7 +561,7 @@ test('triggerChatuiMessageAction("delete"): confirm_message_delete === false ski
     }
 });
 
-test('triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with ST\'s own wording; choosing "confirm" runs the swipe-only mini-fork with the message\'s selected swipe id', async () => {
+test('triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with the design\'s own wording; choosing "confirm" runs the swipe-only mini-fork with the message\'s selected swipe id', async () => {
     const host = await createFakeStHost();
     try {
         const actions = await host.importModule('store/chat-actions.js');
@@ -587,10 +587,10 @@ test('triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests
         const request = confirmStore.getChatuiConfirmRequest();
         assert.ok(request, 'a confirm request must be created');
         assert.equal(request.variant, 'three-way');
-        assert.equal(request.title, 'Are you sure you want to delete this message?');
-        assert.equal(request.confirmLabel, 'Delete Swipe');
-        assert.equal(request.escalateLabel, 'Delete Message');
-        assert.equal(request.cancelLabel, 'Cancel');
+        assert.equal(request.title, '删除这一楼？');
+        assert.equal(request.confirmLabel, '仅删除此条');
+        assert.equal(request.escalateLabel, '删除整楼');
+        assert.equal(request.cancelLabel, '取消');
         assert.equal(request.danger, true);
 
         confirmStore.resolveChatuiConfirm(request.id, 'confirm');
@@ -707,9 +707,9 @@ test('triggerChatuiMessageAction("delete"): not swipe-eligible + confirm on requ
         const request = confirmStore.getChatuiConfirmRequest();
         assert.ok(request);
         assert.equal(request.variant, 'two-way');
-        assert.equal(request.confirmLabel, 'Delete Message');
+        assert.equal(request.confirmLabel, '删除');
         assert.equal(request.escalateLabel, undefined, 'a two-way dialog must carry no escalate button at all');
-        assert.equal(request.cancelLabel, 'Cancel');
+        assert.equal(request.cancelLabel, '取消');
 
         confirmStore.resolveChatuiConfirm(request.id, 'confirm');
         await Promise.resolve(); // see the three-way 'confirm' test above for why this flush is required
