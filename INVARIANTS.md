@@ -369,6 +369,13 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 容量覆盖全对话时窗口起点恒为 0 | `test/floor-rail-math.test.mjs :: centerWindowStart: capacity covering the whole conversation always yields windowStart 0` |
 | 容量 1 时窗口恰好跟随激活刻度 | `test/floor-rail-math.test.mjs :: centerWindowStart: degenerate capacity 1 tracks the active tick exactly, one turn per window` |
 | 容量 0 时仍有确定性结果且不越界 | `test/floor-rail-math.test.mjs :: centerWindowStart: degenerate capacity 0 is still deterministic and clamps within range` |
+| 贴底门 80px 与「回到最新」门 240px 是两个独立常量，且前者恒小于后者 | `test/follow-scroll-math.test.mjs :: follow-scroll gates: the two thresholds are 80px and 240px, and the jump gate is the far one` |
+| 距底距离恒为 scrollHeight - scrollTop - clientHeight（不是滚动偏移本身） | `test/follow-scroll-math.test.mjs :: readFollowGates: distance is the content below the viewport, not the scroll offset` |
+| 贴底门严格开区间：79px 仍粘滞、恰好 80px 已松手 | `test/follow-scroll-math.test.mjs :: readFollowGates: the follow gate holds up to but not at 80px` |
+| 胶囊门严格开区间：恰好 240px 仍不出现、241px 才浮出 | `test/follow-scroll-math.test.mjs :: readFollowGates: the 「回到最新」 gate opens past 240px, never at it` |
+| 80–240px 死区既不自动贴底也不显示胶囊（防两门被并回一个常量） | `test/follow-scroll-math.test.mjs :: readFollowGates: the 80–240px dead zone follows nothing and offers nothing` |
+| 两道门永不同时开（胶囊绝不浮在仍在自动贴底的视图上） | `test/follow-scroll-math.test.mjs :: readFollowGates: the two gates are never open at the same time` |
+| 过卷（负距离）与不可滚动容器一律判为贴底且不出胶囊 | `test/follow-scroll-math.test.mjs :: readFollowGates: over-scroll and unscrollable containers both count as pinned` |
 
 ## 10. 构建与运行时契约
 
@@ -613,7 +620,11 @@ flag 断言原生只挂 1 行。性能对照仍可用 `--truncation-guard off` �
 浏览器层：
 
 - 双滚动系统（useAutoScroll 与 virtualizer 内建 end-anchoring）的一致性——待合并为
-  单一机制后补断言，当前为已知重构待办。
+  单一机制后补断言，当前为已知重构待办。**2026-07-31 起这笔债还了第一笔**：两道
+  阈值判定已下沉到纯模块 `src/ui/follow-scroll-math.ts` 并被 §9 的七条单测钉死
+  （其中 80px 贴底门与 virtualizer 的 `scrollEndThreshold: 80` 是同一个数，两者
+  失配正是这条债的核心风险）。仍留在浏览器层的是 hook 的接线本身：scroll 监听、
+  `wasAtBottomRef` 与 rAF 合帧、切换对话时的落底，这些没有 DOM 就无法验证。
 
 需要 src 级注入口子或只能在浏览器层验证：
 
