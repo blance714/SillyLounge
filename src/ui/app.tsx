@@ -272,10 +272,13 @@ function ChatuiApp(): ComponentChild {
                                       );
                                   })}
                               </div>
-                              {state.chat.isGenerating && <GeneratingIndicator />}
+                              {state.chat.isGenerating && (
+                                  <GeneratingIndicator name={chatHeader.characterName} />
+                              )}
                           </div>
                           <div className="cui-root-empty" hidden={messageIds.length > 0}>
-                              No messages
+                              <span className="cui-root-empty-title">台上还空着</span>
+                              <span className="cui-root-empty-note">写下第一楼，这一场就开了。</span>
                           </div>
                           <button
                               className="cui-root-scroll-bottom"

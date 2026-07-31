@@ -15,11 +15,25 @@ import { AttachmentChips } from './AttachmentChips.js';
 import { SelectorChips } from './SelectorChip.js';
 import { useComposerDraft, useConfig } from '../hooks.js';
 
-export function GeneratingIndicator(): ComponentChild {
+/**
+ * The reply that has not been written yet, standing in the stream where it will
+ * appear. Design §4 gives it the same header a message has — speaker name and
+ * connector — so the stream does not visibly restructure itself the moment the
+ * first token lands; only the line beneath it is replaced.
+ */
+export function GeneratingIndicator({ name }: { name?: string }): ComponentChild {
     return (
         <div className="cui-root-generating" role="status" aria-atomic="true">
-            <span className="cui-root-generating-seal" aria-hidden="true" />
-            <span className="cui-root-generating-label">落笔中</span>
+            {name && (
+                <div className="cui-root-message-meta">
+                    <span className="cui-root-message-name">{name}</span>
+                    <span className="cui-root-message-connector" />
+                </div>
+            )}
+            <div className="cui-root-generating-line">
+                <span className="cui-root-generating-seal" aria-hidden="true" />
+                <span className="cui-root-generating-label">正在酝酿……</span>
+            </div>
         </div>
     );
 }
