@@ -257,6 +257,21 @@ owns the actual quarantine write, keeping the adapter/store boundary intact.
 Deleting down to a *remaining* real chat is unaffected — that path already
 worked and queues nothing new.
 
+The character a delete like that empties is also on the spine now, which is
+what makes any of it reachable by hand at all. The spine's membership rule
+(`ui/spine-cast.ts`) used to be
+「`chat_size > 0`」 alone, and `chat_size` is a per-boot disk snapshot that is
+never refreshed inside the page — so the character you were standing on
+vanished from the only rail that can change character. Membership is now the
+union of four sources: conversations on disk, on stage now, holding a
+quarantine lease, or named by a pending draft-quarantine credential. The
+original purpose of the filter (a character nobody ever opened is not on the
+bill) is kept. Ordering gains one band in front — the characters ChatUI knows
+are live while the snapshot still reports nothing, whose recency key is absent
+rather than old — and is otherwise the same `date_last_chat` order as before,
+so the ordinary rail is untouched and only otherwise-absent entries gain a
+position.
+
 That handoff also depends on the reload coming back on the same character,
 which it did not: `selectCharacterById()` moves only the live selection, and ST
 writes the persisted `active_character` exclusively from its own

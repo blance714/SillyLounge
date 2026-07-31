@@ -14,6 +14,7 @@ import { getUiState, subscribeUiStore } from '../store/ui-store.js';
 import {
     getChatuiCurrentChatHeader,
     getChatuiComposerDraftStoreSnapshot,
+    getChatuiPendingDraftQuarantineCharacter,
     getTempChat,
     getTempChats,
     getTempChatDraft,
@@ -27,6 +28,7 @@ import {
 } from './actions.js';
 import { renderCardEmbeds } from './card-embed.js';
 import { readFollowGates } from './follow-scroll-math.js';
+import { orderSpineCast } from './spine-cast.js';
 import {
     SIDEBAR_BACKFILL_CONCURRENCY,
     SIDEBAR_INITIAL_VISIBLE,
@@ -65,22 +67,6 @@ function dedupeSortChats(chats: ChatListItem[], limit = Number.POSITIVE_INFINITY
 
 function finiteNumber(value: unknown): number {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
-}
-
-/**
- * The cast list: characters that own at least one conversation, most recently
- * active first. This is the spine's feed — the one place that decides who is
- * on the bill. The playbill deliberately does *not* read it: a playbill is one
- * character's programme (DESIGN §4.2), so it selects the current character
- * directly rather than filtering the cast, which also keeps a character whose
- * `chatSize` has not been written back yet from having an open conversation
- * with no column to list it in.
- */
-function orderConversationCharacters(characters: CharacterSummary[]): CharacterSummary[] {
-    return characters
-        .filter((character: CharacterSummary) => character.avatar && character.name && finiteNumber(character.chatSize) > 0)
-        .slice()
-        .sort((a: CharacterSummary, b: CharacterSummary) => finiteNumber(b.dateLastChatTs) - finiteNumber(a.dateLastChatTs));
 }
 
 function withSetValue<T>(source: Set<T>, value: T, included: boolean): Set<T> {
@@ -190,6 +176,17 @@ export function useSidebarBasics(): {
  * useSidebarData fans out one per-character chat query per entry — work the
  * playbill already pays for and the book spine has no use for.
  *
+ * The membership rule itself lives in ui/spine-cast.ts (pure, unit-tested);
+ * everything here is the wiring that hands it the three things ChatUI knows
+ * and ST's boot-time `chat_size` snapshot does not. Two of the three are
+ * reactive stores, so the rail follows them: the on-stage avatar arrives
+ * through `useSidebarBasics`'s `isCurrent` (which already honours the group
+ * case), and the leases through `useTempChats`. The third — the pending
+ * draft-quarantine credential — is a `sessionStorage` record with no change
+ * notification, and needs none: the only thing that ever clears it is the
+ * commit that puts a lease in its place, so the lease store's own update is
+ * exactly when this is re-read.
+ *
  * `isGroupActive` is the whole of ChatUI's group knowledge today: the header
  * says whether the open chat is a group, and there is no adapter query that
  * enumerates groups. So the spine can honestly show that a group holds the
@@ -198,7 +195,12 @@ export function useSidebarBasics(): {
  */
 export function useSpineCharacters(): { characters: CharacterSummary[]; isGroupActive: boolean } {
     const { characters, header } = useSidebarBasics();
-    const cast = useMemo(() => orderConversationCharacters(characters), [characters]);
+    const tempChats = useTempChats();
+    const cast = useMemo(() => orderSpineCast(characters, {
+        onStageAvatar: characters.find((character: CharacterSummary) => character.isCurrent)?.avatar ?? null,
+        leasedAvatars: tempChats.map(pointer => pointer.avatar),
+        pendingDraftAvatar: getChatuiPendingDraftQuarantineCharacter(),
+    }), [characters, tempChats]);
     return { characters: cast, isGroupActive: header.isGroup };
 }
 
@@ -237,6 +239,11 @@ export function useSidebarData(): ChatuiSidebarState {
     // /api/chats/search backfill per character to fill groups nothing renders.
     // Everything downstream is per-group and unchanged — 更多 paging, retry and
     // the temp-chat hiding all still work, they just work on the one group.
+    //
+    // Note this selects the current character *directly* rather than by
+    // filtering the spine's cast: the playbill is one character's programme,
+    // and a character whose boot-time `chatSize` snapshot has not caught up
+    // must never end up with an open conversation and no column to list it in.
     const groupHeaders = useMemo<CharacterSummary[]>(
         () => characters.filter((character: CharacterSummary) => character.isCurrent),
         [characters],

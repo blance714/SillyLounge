@@ -1860,3 +1860,44 @@ test('a failure to persist the active character never fails the switch the reade
         await host.dispose();
     }
 });
+
+
+test('peekPendingCharacterChatDraftQuarantine reports who a waiting credential is about without arming or consuming it', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+
+        assert.equal(finalization.peekPendingCharacterChatDraftQuarantine(), null,
+            'nothing queued, nothing to report');
+
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+        const queued = { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' };
+
+        // Before the reload the credential is not armed yet, and the answer to
+        // "who is this about" is the same in both states.
+        assert.deepEqual(finalization.peekPendingCharacterChatDraftQuarantine(), queued);
+        assert.deepEqual(
+            finalization.armPendingCharacterChatDraftQuarantine(),
+            queued,
+            'peeking must not have claimed the credential for a page load of its own',
+        );
+        assert.deepEqual(finalization.peekPendingCharacterChatDraftQuarantine(), queued);
+        assert.deepEqual(
+            finalization.resolvePendingCharacterChatDraftQuarantine(),
+            { status: 'waiting' },
+            'nor consumed it: the fallback file is still not the live chat',
+        );
+
+        liveChat(host, { characterId: 0, sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+        assert.deepEqual(
+            finalization.resolvePendingCharacterChatDraftQuarantine(),
+            { status: 'quarantine', pointer: queued },
+        );
+        assert.equal(finalization.peekPendingCharacterChatDraftQuarantine(), null,
+            'once the credential is consumed there is nobody left to report');
+        assert.equal(host.fetch.calls.length, 0);
+    } finally {
+        await host.dispose();
+    }
+});

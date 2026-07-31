@@ -267,6 +267,22 @@ export function armPendingCharacterChatDraftQuarantine(): PendingCharacterChatDr
 }
 
 /**
+ * Read the queued intent without arming, consuming or otherwise touching it.
+ *
+ * Exists for readers that need to know *who* a delete transaction is still
+ * mid-flight for while it is still waiting — the spine's membership rule
+ * (ui/spine-cast.ts), whose whole problem is that this character's disk
+ * snapshot says it has nothing. Deliberately not gated on the arm stamp: an
+ * intent queued but not yet armed (between `queueCharacterChatDraftQuarantine`
+ * and the reload it precedes) names the same character, and a caller asking
+ * "who is this about" is entitled to the answer in both states.
+ */
+export function peekPendingCharacterChatDraftQuarantine(): PendingCharacterChatDraftQuarantine | null {
+    const pending = readPendingCharacterChatDraftQuarantine();
+    return pending ? { avatar: pending.avatar, fileName: pending.fileName } : null;
+}
+
+/**
  * Check the pending draft-quarantine tombstone against the live chat, and
  * consume it if this is the moment it names.
  *

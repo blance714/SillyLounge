@@ -430,6 +430,26 @@ function _resolveChatuiDraftQuarantine(): boolean {
 }
 
 /**
+ * The character a queued-but-unresolved draft-quarantine credential is about,
+ * or null when nothing is pending.
+ *
+ * For the spine's membership rule (ui/spine-cast.ts): while this credential is
+ * waiting, ST's boot-time disk snapshot still reports zero conversations for
+ * that character, and hiding it is precisely what makes the transaction
+ * unfinishable by hand.
+ *
+ * @returns {string | null}
+ */
+export function getChatuiPendingDraftQuarantineCharacter(): string | null {
+    try {
+        return chatuiAdapter.sidebarActions.peekPendingCharacterChatDraftQuarantine()?.avatar ?? null;
+    } catch (error) {
+        console.error('[ChatUI] failed to read the pending draft-quarantine credential', error);
+        return null;
+    }
+}
+
+/**
  * Complete the draft-quarantine handoff `deleteChatuiChat` queues when
  * deleting a character's last chat leaves it pointed at a fallback file
  * nothing had written yet. Call once at boot (after ST is ready), alongside
