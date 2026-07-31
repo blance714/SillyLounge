@@ -2697,24 +2697,38 @@ body.chatui-active .cui-root-generate-bar {
     padding: 0.35rem 0.75rem 0;
 }
 
+/* Reskinned onto the same dark-floating-surface recipe the toast already
+   uses (surface ground + --cui-color-shadow elevation) rather than a plain
+   bordered pill with its own one-off shadow literal — this bar is asking the
+   reader to do something, the same job the toast and the 回到最新 capsule
+   do, so it borrows their weight instead of inventing a third. Border and
+   icon take the accent gold rather than the neutral --cui-color-border:
+   DESIGN §2.1 reserves that gold for focus, and this is the one control in
+   the reading column that summons the character's next line. */
 body.chatui-active .cui-root-generate-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
     min-height: 2rem;
     padding: 0 0.95rem;
-    border: 1px solid var(--cui-color-border);
+    border: 1px solid color-mix(in srgb, var(--cui-color-accent) 40%, transparent);
     border-radius: var(--cui-radius-pill);
     background-color: var(--cui-color-surface);
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
     font-size: var(--cui-font-tight);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 6px 22px var(--cui-color-shadow);
+    transition: border-color var(--cui-motion-base) ease;
+}
+
+body.chatui-active .cui-root-generate-btn i {
+    color: var(--cui-color-accent);
 }
 
 body.chatui-active .cui-root-generate-btn:hover,
 body.chatui-active .cui-root-generate-btn:focus-visible {
+    border-color: var(--cui-color-accent-hover);
     outline: 1px solid var(--cui-outline-faint);
 }
 
