@@ -32,6 +32,8 @@ import {
     formatConversationMeta,
     formatDuration,
     formatTimestamp,
+    resolveConversationTitle,
+    stripChatNameCharacterPrefix,
 } from '../dist/runtime/ui/format.js';
 
 /** 2026-01-04T00:00:02.000Z, expressed every way ST has ever stored it. */
@@ -117,4 +119,103 @@ test('the playbill card meta line counts messages under the name 「条」, neve
     assert.equal(formatConversationMeta(Number.NaN, '  '), '');
     // An empty chat is not a chat with zero messages worth announcing.
     assert.equal(formatConversationMeta(-3, '10:24'), '10:24');
+});
+
+// ── 会话题名 ────────────────────────────────────────────────────────────────
+//
+// The topbar's fallback chain was `sessionName || characterName || 'ChatUI'`
+// and it was never wrong about anything it was asked. It was asked the wrong
+// question: ST's sessionName is never empty, so the guard never fired, and a
+// brand-new chat printed its host filename — 「角色名 - 时间戳」 — directly under
+// an eyebrow already showing 「角色名」. DESIGN §4.1 rules the repeat out with no
+// escape clause. The question these two functions answer instead is「这名字是
+// 宿主起的还是读者起的」.
+
+const CHARACTER = 'Lounge Test Character';
+/** Exactly what `humanizedDateTime()` emits (RossAscends-mods.js). */
+const STAMP = '2026-08-01@01h25m42s735ms';
+
+test('stripChatNameCharacterPrefix drops the host-repeated cast name and nothing that merely resembles it', () => {
+    assert.equal(
+        stripChatNameCharacterPrefix({ chatName: `${CHARACTER} - ${STAMP}`, characterName: CHARACTER }),
+        STAMP,
+    );
+
+    // Only the exact 「名字 + 空格 + 短横 + 空格」 ST writes. A name that starts
+    // with the character's name but does not carry that separator is a name
+    // someone chose, and choosing it is the whole point.
+    assert.equal(
+        stripChatNameCharacterPrefix({ chatName: `${CHARACTER}的第二夜`, characterName: CHARACTER }),
+        `${CHARACTER}的第二夜`,
+    );
+    assert.equal(
+        stripChatNameCharacterPrefix({ chatName: `${CHARACTER}-${STAMP}`, characterName: CHARACTER }),
+        `${CHARACTER}-${STAMP}`,
+    );
+    // Mid-string occurrences are not prefixes.
+    assert.equal(
+        stripChatNameCharacterPrefix({ chatName: `重逢 · ${CHARACTER} - 尾声`, characterName: CHARACTER }),
+        `重逢 · ${CHARACTER} - 尾声`,
+    );
+
+    // With no character name to match, 「 - 」 is just punctuation: an empty
+    // prefix must never turn 「 - 开场」 into 「开场」.
+    assert.equal(
+        stripChatNameCharacterPrefix({ chatName: ' - 开场', characterName: '' }),
+        ' - 开场',
+    );
+
+    // The strip is exact, so it survives a chat the reader deliberately named
+    // with the same shape — only the repeated half goes.
+    assert.equal(
+        stripChatNameCharacterPrefix({ chatName: `${CHARACTER} - 走廊尽头`, characterName: CHARACTER }),
+        '走廊尽头',
+    );
+});
+
+test('resolveConversationTitle treats a name ST generated as no name at all, and never repeats the eyebrow', () => {
+    // The defect itself: ST's own name for a new character chat.
+    assert.equal(
+        resolveConversationTitle({ sessionName: `${CHARACTER} - ${STAMP}`, characterName: CHARACTER }),
+        CHARACTER,
+    );
+    // …and for a new group chat, where ST writes the bare stamp with no prefix
+    // (group-chats.js) and `characterName` carries the group's name.
+    assert.equal(
+        resolveConversationTitle({ sessionName: STAMP, characterName: '同台三人' }),
+        '同台三人',
+    );
+
+    // A name the reader chose is shown as chosen, prefix stripped or not.
+    assert.equal(
+        resolveConversationTitle({ sessionName: 'act-two', characterName: CHARACTER }),
+        'act-two',
+    );
+    assert.equal(
+        resolveConversationTitle({ sessionName: `${CHARACTER} - 走廊尽头`, characterName: CHARACTER }),
+        '走廊尽头',
+    );
+    // A checkpoint of an auto-named chat still carries something that tells it
+    // apart, so it is a name: the stamp test is anchored and does not match a
+    // stamp with anything appended.
+    assert.equal(
+        resolveConversationTitle({ sessionName: `${CHARACTER} - ${STAMP} - Checkpoint #1`, characterName: CHARACTER }),
+        `${STAMP} - Checkpoint #1`,
+    );
+
+    // The tail of the chain, unchanged: no session name, then no cast name.
+    assert.equal(resolveConversationTitle({ sessionName: '', characterName: CHARACTER }), CHARACTER);
+    assert.equal(resolveConversationTitle({ sessionName: '   ', characterName: CHARACTER }), CHARACTER);
+    assert.equal(resolveConversationTitle({ sessionName: `${CHARACTER} - `, characterName: CHARACTER }), CHARACTER);
+    assert.equal(resolveConversationTitle({ sessionName: '', characterName: '' }), 'ChatUI');
+    assert.equal(resolveConversationTitle({ sessionName: STAMP, characterName: '' }), 'ChatUI');
+
+    // The whole reason the guard exists: whatever this returns for a chat ST
+    // named, it must not be the string the eyebrow is already printing —
+    // either the eyebrow's own name (in which case app.tsx's
+    // 「characterName !== title」 test hands the eyebrow over to 「对话手记」) or
+    // that name repeated inside a longer one.
+    const generated = resolveConversationTitle({ sessionName: `${CHARACTER} - ${STAMP}`, characterName: CHARACTER });
+    assert.ok(!generated.includes(STAMP), 'a host-generated stamp must never reach the title page');
+    assert.ok(generated === CHARACTER, 'and the fallback is the cast name itself, which the eyebrow then yields to');
 });
