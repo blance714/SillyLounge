@@ -554,26 +554,40 @@ body.chatui-active .cui-root-app {
     font-family: var(--cui-font-family);
 }
 
+/* DESIGN §2.5: spacing/sizing converges from `rem` to `px` one reskinned
+   region at a time, so the rhythm stops drifting with the host's own
+   <html> font-size. Topbar and composer are this pass's region — every
+   length below (not a --cui-font-*/--cui-tracking-*/--cui-radius-* token,
+   which are already px-anchored via --cui-font-root) is a literal px value
+   rather than a bare rem multiplier. --cui-content-max-width stays rem: it
+   is a cross-region token shared with messages/QR-bar and pinned to the
+   sidebar baton (DESIGN §3.1), not this region's to convert alone. */
 body.chatui-active .cui-root-topbar {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 0.7rem;
+    gap: 11.2px;
     width: min(100%, var(--cui-content-max-width));
     margin: 0 auto;
-    padding: 0.45rem 0 0.75rem;
+    padding: 7.2px 0 12px;
     border-bottom: 1px dashed var(--cui-rule-faint);
 }
 
+/* Design §7: the topbar's hamburger and ⋯ trigger are ~28-30px square with a
+   6px corner (原型 L131/L149) — one shared control shape rather than two, and
+   the sidebar's own drawer-close button (Sidebar.tsx) keeps the same shape
+   since it answers to the same hamburger it closes. -sm (5px) is the nearer
+   existing radius tier; a bespoke 6px token for one pixel of difference
+   wasn't worth adding. */
 body.chatui-active .cui-root-shell-toggle,
 body.chatui-active .cui-root-shell-close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.15rem;
-    height: 2.15rem;
+    width: 28.8px;
+    height: 28.8px;
     border: 1px solid transparent;
-    border-radius: var(--cui-radius-md);
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
@@ -592,7 +606,7 @@ body.chatui-active .cui-root-topbar-heading {
     flex: 1 1 0;
     display: flex;
     flex-direction: column;
-    gap: 0.08rem;
+    gap: 1.28px;
     min-width: 0;
 }
 
@@ -606,7 +620,12 @@ body.chatui-active .cui-root-topbar-title {
 body.chatui-active .cui-root-topbar-eyebrow {
     color: var(--cui-color-accent);
     font-family: var(--cui-font-ui);
-    font-size: var(--cui-font-2xs);
+    /* README §7's topbar sub-line is 10px; DESIGN §4.1 repurposes the slot
+       (character name, above the title, rather than the 原型's session meta
+       below it) but doesn't pin its own size, so the literal value still
+       applies. Was -2xs (9px) — a plain size mismatch, not a deliberate
+       departure. */
+    font-size: var(--cui-font-xs);
     font-weight: 600;
     letter-spacing: var(--cui-tracking-btn);
     line-height: 1.2;
@@ -629,7 +648,7 @@ body.chatui-active .cui-root-topbar-tools {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 0.25rem;
+    gap: 4px;
     min-width: 0;
     margin-left: auto;
 }
@@ -643,14 +662,39 @@ body.chatui-active .cui-root-topbar .cui-root-selchips {
     flex-wrap: nowrap;
 }
 
+/* README §7's persona chip is a plain icon-button, not the underline-tabbed
+   look .cui-root-selchip-btn wears everywhere else (the same "SelectorChip
+   markup, per-container skin" split the composer's decoration row uses —
+   see its own chip rules). Only color tracks open/closed (原型 L146
+   personaColor); hover and open share one background tint. */
 body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
-    max-width: 9rem;
+    max-width: 144px;
+    min-height: 0;
+    padding: 4.8px 8.8px;
+    border-radius: var(--cui-radius-sm);
+    box-shadow: none;
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 70%, transparent);
+    font-family: var(--cui-font-ui);
+    font-size: var(--cui-font-chip);
+    opacity: 1;
+}
+
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn:hover,
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn:focus-visible,
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn[aria-expanded="true"] {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+}
+
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn[aria-expanded="true"] {
+    box-shadow: none;
+    color: var(--cui-color-accent);
 }
 
 /* Composer selector menus open upward; the title-page selector lives at the
    top edge and must open into the page instead. */
 body.chatui-active .cui-root-topbar .cui-root-selchip-menu {
-    top: calc(100% + 0.35rem);
+    top: calc(100% + 5.6px);
     right: 0;
     bottom: auto;
     left: auto;
@@ -667,8 +711,8 @@ body.chatui-active .cui-root-topbar-menu {
 
 @media (max-width: 768px) {
     body.chatui-active .cui-root-topbar {
-        gap: 0.35rem;
-        padding: 0.25rem 0 0.6rem;
+        gap: 5.6px;
+        padding: 4px 0 9.6px;
     }
 
     body.chatui-active .cui-root-topbar-title {
@@ -676,7 +720,7 @@ body.chatui-active .cui-root-topbar-menu {
     }
 
     body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
-        max-width: 5rem;
+        max-width: 80px;
     }
 }
 
@@ -688,20 +732,20 @@ body.chatui-active .cui-root-topbar-menu {
 
     body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
         justify-content: center;
-        width: 2rem;
-        min-width: 2rem;
+        width: 32px;
+        min-width: 32px;
         padding-inline: 0;
     }
 
     body.chatui-active .cui-root-topbar-rename {
-        width: min(42vw, 12rem);
+        width: min(42vw, 192px);
     }
 }
 
 /* Inline rename input shown in place of the ⋯ button */
 body.chatui-active .cui-root-topbar-rename {
-    height: 2.15rem;
-    padding: 0 0.5rem;
+    height: 34.4px;
+    padding: 0 8px;
     border: 1px solid var(--cui-color-border);
     border-radius: var(--cui-radius-md);
     background: none;
@@ -710,7 +754,7 @@ body.chatui-active .cui-root-topbar-rename {
     font-size: var(--cui-font-card);
     outline: none;
     min-width: 0;
-    width: min(60vw, 12rem);
+    width: min(60vw, 192px);
 }
 
 /* The topbar menu dropdown opens below and to the right */
