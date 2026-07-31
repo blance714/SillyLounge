@@ -34,7 +34,7 @@ test('a two-way request round-trips: getChatuiConfirmRequest() reflects it while
     assert.equal(request.title, 'Delete this?');
     assert.equal(request.variant, 'two-way');
     assert.equal(request.confirmLabel, 'Delete');
-    assert.equal(request.cancelLabel, 'Cancel', 'cancelLabel defaults when omitted');
+    assert.equal(request.cancelLabel, '取消', 'cancelLabel defaults when omitted, in the UI\'s own language');
     assert.equal(request.danger, false, 'danger defaults to false when omitted');
     assert.equal(request.escalateLabel, undefined, 'a two-way request must never carry an escalate label');
 

@@ -99,7 +99,13 @@ export function requestChatuiConfirm(input: ChatuiConfirmRequestInput): Promise<
         danger: input.danger ?? false,
         variant: input.variant,
         confirmLabel: input.confirmLabel,
-        cancelLabel: input.cancelLabel ?? 'Cancel',
+        // Chinese, because that is the language of the surface this renders
+        // on. Every caller passes an explicit label today, so this default is
+        // only ever the answer when someone forgets one — and the failure it
+        // used to produce was a lone English "Cancel" under a Chinese
+        // question, which is exactly the mismatch the delete dialog's wording
+        // was just changed to stop producing.
+        cancelLabel: input.cancelLabel ?? '取消',
         escalateLabel: input.variant === 'three-way' ? input.escalateLabel : undefined,
     };
 
