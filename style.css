@@ -40,10 +40,13 @@
     --cui-color-user-mark: #96633f;
     --cui-color-user-mark-hover: #a8734c;
 
-    /* Two structural darks and two border weights the layout regions need.
-       Nothing consumes the spine ground yet — the character rail it belongs
-       to arrives with the sidebar split — but the value is part of this
-       palette, so it is defined here rather than reintroduced as a literal. */
+    /* Two structural darks the layout regions need, and neither is consumed
+       yet: the spine ground waits on the character rail that arrives with the
+       sidebar split, the heavier border on the framed surfaces that use it
+       (the greeting modal §5, the playbill's own edges §1). Both are part of
+       this palette, so they are defined here rather than reintroduced as
+       literals — but that is a bet on components, not an oversight, and it is
+       written down so nobody has to re-derive the answer by grepping. */
     --cui-color-spine: #0f0d0a;
     --cui-color-border-strong: #3f372c;
 
@@ -209,6 +212,11 @@
        composer's blur-tint gradient or avatar-fallback fills. */
     --cui-tint-hover: 10%;
     --cui-tint-active: 13%;
+    /* -strong has no consumer either: the scattered values it was meant to
+       collect all landed on the two steps above it. Kept as the ramp's top
+       step so the next control that needs a heavier press reaches for it
+       instead of inventing 20%, but it is a third unproven step, and the
+       honest read is that two might have been enough. */
     --cui-tint-strong: 18%;
 
     /* The two remaining host seams. Both were read bare at eleven call sites,
