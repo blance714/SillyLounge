@@ -34,6 +34,7 @@ export {
 export {
     openChatForCharacter,
     switchCharacter,
+    selectCharacterIfNobodyIsOnStage,
     openCharacterChatByName,
     newCharacterChat,
 } from './chats/navigation.js';

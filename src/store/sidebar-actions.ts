@@ -450,6 +450,43 @@ export function getChatuiPendingDraftQuarantineCharacter(): string | null {
 }
 
 /**
+ * Finish the delete transaction on a host that deliberately came back on
+ * nobody.
+ *
+ * `power_user.auto_load_chat` is false by default, so a stock install answers
+ * the mandatory reload with an empty stage: the fallback file ST was going to
+ * write is never written, the credential above waits forever, and the reader
+ * is left in the "character selected, no conversation" state pr9 exists to
+ * abolish — one worse, in fact, with no character selected either.
+ *
+ * So when — and only when — a credential is still pending and nothing at all
+ * holds the stage, ChatUI selects the character that credential names. This is
+ * the closing move of a transaction the reader started (they confirmed the
+ * delete; the reload is ChatUI's own doing), not a vote on their autoload
+ * preference: the adapter refuses the moment ST landed anywhere, group or
+ * character (adapter/chats/navigation.ts's selectCharacterIfNobodyIsOnStage).
+ *
+ * Exactly once per page: `armPendingCharacterChatDraftQuarantine` stamps the
+ * credential, so a second `finalizeChatuiDraftQuarantine` in the same load
+ * finds nothing to arm and never reaches here. A landing that does not happen
+ * is not retried and never toasts — the credential simply keeps its ordinary
+ * meaning and the reader can now walk to the character by hand, because the
+ * spine shows it (ui/spine-cast.ts).
+ */
+async function _completePendingChatTransactionLanding(avatar: string): Promise<void> {
+    try {
+        const landing = await chatuiAdapter.sidebarActions.selectCharacterIfNobodyIsOnStage(avatar);
+        // 'occupied' is the ordinary outcome on an autoload host and says
+        // nothing is wrong; the rest are worth one line, once.
+        if (landing !== 'selected' && landing !== 'occupied') {
+            console.warn('[ChatUI] could not finish the pending chat transaction', landing, avatar);
+        }
+    } catch (error) {
+        console.error('[ChatUI] failed to finish the pending chat transaction', error);
+    }
+}
+
+/**
  * Complete the draft-quarantine handoff `deleteChatuiChat` queues when
  * deleting a character's last chat leaves it pointed at a fallback file
  * nothing had written yet. Call once at boot (after ST is ready), alongside
@@ -461,10 +498,18 @@ export function getChatuiPendingDraftQuarantineCharacter(): string | null {
  * with the byte-level trace of the boot where this used to lose every time).
  * So the handoff arms itself for this page and then watches for the fallback
  * file to *become* the live chat — immediately, in case ST's autoload already
- * finished, and on every CHAT_CHANGED after that, which ST only emits once the
- * file is saved. The listener stops the moment the intent is either committed
+ * finished, and on every CHAT_CHANGED after that, which ST emits at the end of
+ * loading a chat. The listener stops the moment the intent is either committed
  * or gone; while it is neither, an unrelated chat change is simply not the
  * event we are waiting for.
+ *
+ * If nothing at all holds the stage once that watch is armed, this also
+ * finishes the transaction itself rather than waiting for a signal a stock
+ * (auto_load_chat: false) host will never send — see
+ * `_completePendingChatTransactionLanding` above for why that is a completion
+ * and not a preference override. The watch is registered *before* the landing
+ * is attempted, because the CHAT_CHANGED that resolves the credential is
+ * emitted from inside that very call.
  *
  * @returns {void}
  */
@@ -487,6 +532,8 @@ export function finalizeChatuiDraftQuarantine(): void {
         stopWatching?.();
         stopWatching = null;
     });
+
+    void _completePendingChatTransactionLanding(pending.avatar);
 }
 
 /**

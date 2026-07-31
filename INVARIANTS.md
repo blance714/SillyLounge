@@ -127,6 +127,17 @@ APP_READY 之后（真机 1.18.0 实测：目录读取 848ms 完成、凭证 855
 autoload 已经先到就当场成立，没到就等本页后续的 CHAT_CHANGED（autoload 关掉、读者
 自己点开该角色，同样成立）。
 
+ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本仓库 e2e
+固件把它强制为 true，这也是先前全部真机证据都产自非默认设置的原因）。默认设置下那次
+强制刷新会落在「一个角色都没选中」：ST 不会去载入该角色、兜底文件永不写出、凭证等一个
+永远不来的信号，读者被留在比「角色已选中、没有对话」更糟的空台上。所以
+`finalizeChatuiDraftQuarantine` 在凭证仍在等待、且**没有任何人占台**时，主动
+`selectCharacterById` 凭证指向的那个角色——这是读者已经发起的删除事务的收尾（刷新本就
+是 ChatUI 自己强制的），不是替读者改 autoload 偏好：只要 ST 落在了任何地方（角色或
+群聊），adapter 一律拒绝
+（`adapter/chats/navigation.ts` 的 `selectCharacterIfNobodyIsOnStage`），凭证按既有
+语义继续等待。每次页面加载至多一次（认领盖章天然保证），落不下去不重试、不弹 toast。
+
 凭证因此在不匹配时**保留**而不是销毁——它的语义是「这个文件名若成为当前对话即隔离」，
 一次落在别的角色/别的对话上并不是反证。有界性不靠任何时间常数：`sessionStorage` 本身
 已把它限定在本标签页内，`armPendingCharacterChatDraftQuarantine` 再给「拥有它的那一次
@@ -146,6 +157,11 @@ autoload 已经先到就当场成立，没到就等本页后续的 CHAT_CHANGED�
 | 非兜底文件的 CHAT_CHANGED 既不隔离它、也不丢弃凭证，继续等真正那一条 | `test/sidebar-actions.test.mjs :: a pending draft quarantine ignores chat changes that are not its fallback file, and keeps waiting for the one that is` |
 | 没有待处理凭证时 `finalizeChatuiDraftQuarantine` 是纯空操作：零网络请求、隔离集不变、不留下任何 CHAT_CHANGED 监听 | `test/sidebar-actions.test.mjs :: finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombstone is pending` |
 | 凭证不消费也不认领即可读出它指向哪个角色（供 spine 入列），peek 之后 arm/resolve 语义一字不变 | `test/adapter-chats.test.mjs :: peekPendingCharacterChatDraftQuarantine reports who a waiting credential is about without arming or consuming it` |
+| ST 默认设置（不 autoload）下启动落在「没有角色」时，凭证指向的角色被主动选上，落地后按常规持久化 active_character | `test/adapter-chats.test.mjs :: a pending chat transaction lands on its character when ST's boot chose nobody, persisting the selection like any other landing` |
+| 已经有人占台（读者 autoload 回来的角色，含下标 0；或群聊）时一律不抢，且什么都不持久化 | `test/adapter-chats.test.mjs :: a pending chat transaction never steals a stage somebody already holds — not a character ST autoloaded, not a group` |
+| 角色卡已不存在、或 ST 拒绝这次选择时如实上报且不持久化，绝不假定落地 | `test/adapter-chats.test.mjs :: a pending chat transaction whose character is gone, or whose selection ST refuses, reports it and persists nothing` |
+| 空台启动时事务收尾走完全程：选上角色 → ST 写出兜底文件并发 CHAT_CHANGED → 折进隔离集、凭证消费、监听注销 | `test/sidebar-actions.test.mjs :: a boot that lands on nobody finishes the delete transaction itself: ChatUI selects the credential's character and the fallback file lands in quarantine` |
+| 启动落在别的角色上时绝不改动，凭证继续等待；读者之后走到该角色仍照常兑现 | `test/sidebar-actions.test.mjs :: a boot that landed on somebody else is never overridden: the credential simply keeps waiting` |
 
 pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时
 选择（`this_chid`）；ST 把持久化的 `active_character` 写在自己
