@@ -552,6 +552,8 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 标头时间戳把 ST 写过的每种 `send_date`（ISO 8601 / `humanizedDateTime` / epoch 毫秒数与数字串）都渲染成时钟时间，无法辨认的原样透出而不臆造 | `test/format.test.mjs :: formatTimestamp renders every send_date shape SillyTavern writes as a clock time, and never invents one it cannot read` |
 | 时长与体积格式化保持中文口径，且「没有数值」不被四舍五入成「零」 | `test/format.test.mjs :: formatDuration and formatBytes stay in the language the rest of the UI speaks and refuse to round a non-quantity into one` |
 | 场刊卡片元信息按「N 条」计消息数、绝不写成「N 楼」（楼＝用户回合，会话列表只有 `chat_items` 总条数，写成楼就与楼层轨自相矛盾），缺失的一半连同分隔点一起消失 | `test/format.test.mjs :: the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator` |
+| 只剥 ST 自己写的那个精确前缀「角色名 + 空格短横空格」，形近串（无空格短横、串中出现、空角色名下的裸「 - 」）一律不动 | `test/format.test.mjs :: stripChatNameCharacterPrefix drops the host-repeated cast name and nothing that merely resembles it` |
+| 顶栏题名的回退判据是「这名字是宿主起的还是读者起的」而非「是否为空」：剥完只剩裸 `humanizedDateTime()` 戳（单聊「角色名 - 戳」、群聊裸戳）即视为无名，回退到角色/群名，再回退 `ChatUI`；读者起的名（含检查点后缀）原样呈现，且宿主戳绝不出现在题名里 | `test/format.test.mjs :: resolveConversationTitle treats a name ST generated as no name at all, and never repeats the eyebrow` |
 
 ### 书脊入列规则（ui/spine-cast.ts）
 

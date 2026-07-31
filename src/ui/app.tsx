@@ -29,6 +29,7 @@ import { SelectorChips } from './components/SelectorChip.js';
 import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings, useTopbarChatTarget } from './hooks.js';
 import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, renameChatuiChat, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMessageEditDraftStore } from './actions.js';
 import { teardownCardEmbedRuntime } from './card-embed.js';
+import { resolveConversationTitle } from './format.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
 import { resolveTopbarRenameCommit } from './topbar-menu-logic.js';
@@ -204,7 +205,12 @@ function ChatuiApp(): ComponentChild {
             messageVirtualizer.scrollToIndex(index, { align: 'start', behavior });
         },
     }), [messageIds, messageIndexById, messageVirtualizer]);
-    const conversationTitle = chatHeader.sessionName || chatHeader.characterName || 'ChatUI';
+    // DESIGN §4.1's two layers. The title resolves the fallback chain in
+    // format.ts (a chat ST named for itself does not count as having a name);
+    // the eyebrow then steps aside whenever the title has landed on the very
+    // name it would otherwise print, so the two lines can never say the same
+    // thing twice.
+    const conversationTitle = resolveConversationTitle(chatHeader);
     const conversationEyebrow = chatHeader.characterName && chatHeader.characterName !== conversationTitle
         ? chatHeader.characterName
         : chatHeader.isGroup ? '群组手记' : '对话手记';
