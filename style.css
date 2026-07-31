@@ -51,6 +51,18 @@
        shadow. Not derivable from either neighbour, so it is declared. */
     --cui-color-user-voice: #c08a6a;
 
+    /* The floating-card ground, one step up from --cui-color-surface: what the
+       stage lays *on top of* itself, rather than what its own panels are made
+       of. The drawing spends this exact pair in two places — the toast (§10)
+       and the floor rail's hover preview bubble (§3, not built yet) — so it is
+       a named recipe instead of a literal typed twice.
+       Its rule is the text color at 15%, from the same channel triple the
+       scrollbar thumb reads at 14% (rgba(232,223,206,…)): a card that sits
+       above the stage needs an edge lit from the same side as its ground, and
+       a --cui-color-border hairline would simply vanish on it. */
+    --cui-color-raised: #2a251e;
+    --cui-rule-raised: color-mix(in srgb, var(--cui-color-text) 15%, transparent);
+
     /* Two structural darks the layout regions need, and neither is consumed
        yet: the spine ground waits on the character rail that arrives with the
        sidebar split, the heavier border on the framed surfaces that use it
@@ -298,7 +310,11 @@
        the card action dock (§1) and the title's rename pencil (§7) — and gives
        all three the same .15s (§92). Deliberately not --cui-motion-base and
        deliberately not the host's: this is something surfacing under the
-       cursor, which has to feel like it was already there. */
+       cursor, which has to feel like it was already there.
+       The toast's own `fade-in .15s` (§10) is the same beat spent on the same
+       kind of event — something appearing that the reader did not navigate to
+       — so it reads this rather than restating the number. The name is about
+       the beat, not about the cursor. */
     --cui-motion-reveal: 0.15s;
 
     /* Radius scale. The design corners much tighter than the old scale did:
@@ -3772,9 +3788,16 @@ body.chatui-active .cui-root-selchip-empty {
 /* ---------------------------------------------------------------------------
    6. Toasts  (ChatUI-owned feedback)
    --------------------------------------------------------------------------- */
+/* Design §10 puts the toast at the *foot* of the stage, centred, 120px up.
+   It used to sit at top:1rem, where it covered the topbar every single time:
+   the eyebrow was cut mid-word and the conversation title was pushed out from
+   under it — the one surface whose job is to report what just happened was
+   hiding the thing it happened to. 120px is the design's own number and it
+   clears the composer; the width rules are unchanged, only the edge it hangs
+   from. */
 body.chatui-active .cui-root-toasts {
     position: fixed;
-    top: 1rem;
+    bottom: 120px;
     left: 50%;
     transform: translateX(-50%);
     z-index: calc(var(--cui-sheet-z) + 50);
@@ -3786,25 +3809,33 @@ body.chatui-active .cui-root-toasts {
     pointer-events: none;
 }
 
+/* The card itself is §10 verbatim: raised ground, one hairline rule all the
+   way round, 8px corner, 12px type. What it is *not* any more is a pill with a
+   3px colored spine down its left edge — that was the old dialect's way of
+   saying which kind of toast this is, and the design draws one uniform card.
+   Nothing is lost by dropping it: each kind already arrives with its own
+   glyph (circle-check / circle-exclamation / circle-info, Toaster.tsx) and
+   each of those glyphs is inked in its own status color below, so the spine
+   was the third copy of a distinction the icon already made twice.
+
+   The entrance is the shared cui-fade-in rather than a private keyframe:
+   §10 asks for the same fade the rest of the app uses, and rising 6px into
+   place is the right direction now that the toast lives at the bottom — the
+   old private keyframe dropped it *downward* from above, which only ever made
+   sense when it hung from the top edge. */
 body.chatui-active .cui-root-toast {
     display: flex;
     align-items: center;
     gap: 0.55rem;
     pointer-events: auto;
     padding: 0.5rem 0.6rem 0.5rem 0.75rem;
-    border: 1px solid var(--cui-color-border);
-    border-left-width: 3px;
+    border: 1px solid var(--cui-rule-raised);
     border-radius: var(--cui-radius-md);
-    background-color: var(--cui-color-surface);
+    background-color: var(--cui-color-raised);
     box-shadow: 0 6px 22px var(--cui-color-shadow);
     color: var(--cui-color-text);
     font-size: var(--cui-font-tight);
-    animation: cui-toast-in var(--cui-motion-base) ease forwards;
-}
-
-@keyframes cui-toast-in {
-    from { opacity: 0; transform: translateY(-0.4rem); }
-    to { opacity: 1; transform: translateY(0); }
+    animation: cui-fade-in var(--cui-motion-reveal) ease both;
 }
 
 body.chatui-active .cui-root-toast > i:first-child {
@@ -3812,24 +3843,19 @@ body.chatui-active .cui-root-toast > i:first-child {
     opacity: 0.9;
 }
 
-body.chatui-active .cui-root-toast-success {
-    border-left-color: var(--cui-color-success);
-}
-
 body.chatui-active .cui-root-toast-success > i:first-child {
     color: var(--cui-color-success);
-}
-
-body.chatui-active .cui-root-toast-error {
-    border-left-color: var(--cui-color-danger);
 }
 
 body.chatui-active .cui-root-toast-error > i:first-child {
     color: var(--cui-color-danger);
 }
 
-body.chatui-active .cui-root-toast-info {
-    border-left-color: var(--cui-color-info);
+/* The neutral kind keeps its gold too, moved from the left spine onto the
+   glyph the way the other two already had theirs — otherwise dropping the
+   spine would have left info as the only kind with no color at all. */
+body.chatui-active .cui-root-toast-info > i:first-child {
+    color: var(--cui-color-info);
 }
 
 body.chatui-active .cui-root-toast-text {
