@@ -25,7 +25,7 @@ export function QRBar({ chatKey }: { chatKey: string }): ComponentChild {
     if (items.length === 0) return null;
 
     return (
-        <div className="cui-root-qrbar" aria-label="Quick replies">
+        <div className="cui-root-qrbar" aria-label="快捷回复">
             {items.map(item => (
                 <button
                     key={item.id}

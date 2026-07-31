@@ -61,7 +61,7 @@ export function Sidebar({
                 <button
                     className="cui-root-sidebar-backdrop"
                     type="button"
-                    aria-label="Close navigation"
+                    aria-label="收起侧栏"
                     onClick={onClose}
                 />
             )}
@@ -76,8 +76,8 @@ export function Sidebar({
                     <button
                         className="cui-root-shell-close"
                         type="button"
-                        aria-label="Close navigation"
-                        title="Close navigation"
+                        aria-label="收起侧栏"
+                        title="收起侧栏"
                         onClick={onClose}
                     >
                         <i className="fa-solid fa-xmark" />

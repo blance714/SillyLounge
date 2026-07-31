@@ -85,7 +85,7 @@ export function Composer({
         <form
             className="cui-root-composer"
             data-lines={singleLine ? 'single' : 'multi'}
-            aria-label="ChatUI composer"
+            aria-label="ChatUI 输入区"
             onSubmit={(event) => {
                 event.preventDefault();
                 void submit();
@@ -142,8 +142,8 @@ export function Composer({
                     <button
                         className="cui-root-composer-btn cui-root-composer-stop"
                         type="button"
-                        aria-label="Stop generation"
-                        title="Stop generation"
+                        aria-label="停止生成"
+                        title="停止生成"
                         onClick={() => stopChatuiGeneration()}
                     >
                         <i className="fa-solid fa-stop" />
@@ -152,8 +152,8 @@ export function Composer({
                     <button
                         className="cui-root-composer-btn"
                         type="submit"
-                        aria-label={draft.trim() ? 'Send message' : 'Send or continue'}
-                        title={draft.trim() ? 'Send message' : 'Send or continue'}
+                        aria-label={draft.trim() ? '发送' : '发送或续写'}
+                        title={draft.trim() ? '发送' : '发送或续写'}
                         disabled={isSending}
                     >
                         {isSending

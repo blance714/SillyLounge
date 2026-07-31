@@ -212,8 +212,8 @@ function ChatuiApp(): ComponentChild {
                           <button
                               className="cui-root-shell-toggle cui-root-shell-hamburger"
                               type="button"
-                              aria-label="Open navigation"
-                              title="Open navigation"
+                              aria-label="打开侧栏"
+                              title="打开侧栏"
                               onClick={summonSidebar}
                           >
                               <i className="fa-solid fa-bars" />

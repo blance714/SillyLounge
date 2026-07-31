@@ -81,10 +81,10 @@ export function PlusMenu({
             <button
                 className={`cui-root-plus-btn${isOpen ? ' is-open' : ''}`}
                 type="button"
-                aria-label="More actions"
+                aria-label="更多操作"
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
-                title="More actions"
+                title="更多操作"
                 onClick={() => setIsOpen(open => !open)}
             >
                 <i className="fa-solid fa-plus" />
@@ -94,7 +94,7 @@ export function PlusMenu({
                     <button
                         className="cui-root-plus-backdrop"
                         type="button"
-                        aria-label="Close menu"
+                        aria-label="关闭菜单"
                         onClick={() => setIsOpen(false)}
                     />
                     <div className="cui-root-plus-menu cui-paper" role="menu">
@@ -103,8 +103,8 @@ export function PlusMenu({
                             <button
                                 className="cui-root-plus-close"
                                 type="button"
-                                aria-label="Close menu"
-                                title="Close"
+                                aria-label="关闭菜单"
+                                title="关闭菜单"
                                 onClick={() => setIsOpen(false)}
                             >
                                 <i className="fa-solid fa-xmark" />

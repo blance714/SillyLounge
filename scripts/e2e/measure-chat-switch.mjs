@@ -306,7 +306,7 @@ async function assertHistoricalUserEditPersists(page, target) {
     assert.equal(typeof originalMes, 'string');
 
     await article.hover();
-    await article.getByRole('button', { name: 'Edit' }).click();
+    await article.getByRole('button', { name: '编辑' }).click();
     const editor = article.locator('.cui-root-edit-textarea');
     await editor.waitFor({ state: 'visible', timeout: 30_000 });
     await waitForSettledEditorFocus(page, editMessageId);
@@ -347,7 +347,7 @@ async function assertHistoricalUserEditPersists(page, target) {
         'draft must survive the round trip back to the message unchanged',
     );
 
-    await article.getByRole('button', { name: 'Save edit' }).click();
+    await article.getByRole('button', { name: '落笔' }).click();
     await page.waitForFunction(({ editMessageId, marker }) => {
         const context = globalThis.SillyTavern?.getContext?.();
         const editedArticle = document.querySelector(`[data-cui-message-id="${editMessageId}"]`);
@@ -404,18 +404,18 @@ async function assertCharacterOverflowEditPersists(page, target) {
     );
 
     await article.hover();
-    await article.getByRole('button', { name: 'More actions' }).click();
+    await article.getByRole('button', { name: '更多操作' }).click();
     const overflowMenu = page.locator('body > .cui-root-menu');
     await overflowMenu.waitFor({ state: 'visible', timeout: 5_000 });
-    await overflowMenu.locator('.cui-root-menu-item').filter({ hasText: /^Edit$/ }).click();
+    await overflowMenu.locator('.cui-root-menu-item').filter({ hasText: /^编辑$/ }).click();
 
     const editor = article.locator('.cui-root-edit-textarea');
     await editor.waitFor({ state: 'visible', timeout: 30_000 });
-    assert.equal(await overflowMenu.count(), 0, 'choosing Edit must close the portaled overflow menu');
+    assert.equal(await overflowMenu.count(), 0, 'choosing 编辑 must close the portaled overflow menu');
     await waitForSettledEditorFocus(page, editMessageId);
     const marker = `SAVED-CHARACTER-OVERFLOW-EDIT::${target.fileName}::${editMessageId}`;
     await editor.fill(marker);
-    await article.getByRole('button', { name: 'Save edit' }).click();
+    await article.getByRole('button', { name: '落笔' }).click();
     await page.waitForFunction(({ editMessageId, marker }) => {
         const context = globalThis.SillyTavern?.getContext?.();
         const editedArticle = document.querySelector(`[data-cui-message-id="${editMessageId}"]`);
