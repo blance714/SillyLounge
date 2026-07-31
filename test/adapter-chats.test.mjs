@@ -1530,9 +1530,12 @@ test('deleting the current chat rolls the pointer back and abandons the delete w
 // the shape the previous implementation could not survive, because it read the
 // chat directory once at APP_READY and destroyed the tombstone when (always)
 // the file was not there yet. `host.fetch.calls.length` is asserted throughout:
-// this handoff must now make no request at all, since ST's own await ordering
-// (getChatResult() awaits saveChatConditional() before emitting CHAT_CHANGED)
-// already proves the file exists by the time it can be current. Each assertion
+// this handoff must now make no request at all. Note what the remaining check
+// does and does not prove — on a CHAT_CHANGED the file really is saved
+// (getChatResult() awaits saveChatConditional() before emitting), but the
+// immediate check reads the durable pointer ChatUI itself wrote, so it is an
+// identity check and the file follows ~142ms later (deletion-finalization.ts's
+// section comment records the window and why it is accepted). Each assertion
 // also checks host.sessionStorage.length as a black-box proxy for "is the
 // tombstone still queued" — this module owns exactly one sessionStorage key,
 // so nothing else in these tests touches it.

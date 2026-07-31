@@ -241,21 +241,39 @@ first version of this handoff asked the chat directory too early on every
 single boot, found nothing, and destroyed the intent; measured on a real
 1.18.0 host, the listing came back at t≈848ms and the file was only saved at
 t≈949ms. What replaced it keeps one condition — the fabricated name is this
-character's live current chat — and gets "the file is on disk" for free from
-ST's own await ordering, since `getChatResult()` awaits `saveChatConditional()`
-before it emits CHAT_CHANGED. `finalizeChatuiDraftQuarantine` therefore arms
-the intent for this page load and watches: immediately, in case ST's autoload
-got there first, then on CHAT_CHANGED. A chat change that is not the fallback
-file leaves the tombstone alone (its meaning is "if this name goes live, it is
-a draft", and landing elsewhere is no evidence against that); an intent the
-page never resolves is expired by the next boot, so nothing dangles and no
-wall-clock timeout was invented. Once it fires, the file folds into the same
-quarantine set `newChatuiChat()` uses — same 未完成草稿 card, same 丢弃
-action, same lease rules. The whole boot half is now request-free. The
-decision lives in the adapter (read-only over live identity) and the store
-owns the actual quarantine write, keeping the adapter/store boundary intact.
-Deleting down to a *remaining* real chat is unaffected — that path already
-worked and queues nothing new.
+character's live current chat. `finalizeChatuiDraftQuarantine` arms the intent
+for this page load and watches: immediately, in case ST's autoload got there
+first, then on CHAT_CHANGED. A chat change that is not the fallback file leaves
+the tombstone alone (its meaning is "if this name goes live, it is a draft",
+and landing elsewhere is no evidence against that); an intent the page never
+resolves is expired by the next boot, so nothing dangles and no wall-clock
+timeout was invented. Once it fires, the file folds into the same quarantine
+set `newChatuiChat()` uses — same 未完成草稿 card, same 丢弃 action, same
+lease rules. The whole boot half is request-free. The decision lives in the
+adapter (read-only over live identity) and the store owns the actual quarantine
+write, keeping the adapter/store boundary intact. Deleting down to a
+*remaining* real chat is unaffected — that path already worked and queues
+nothing new.
+
+Be precise about what that condition proves, because the two branches differ
+and this document previously claimed the stronger fact for both. On the
+CHAT_CHANGED branch the file really is saved already — `getChatResult()` awaits
+`saveChatConditional()` before emitting, so the event cannot arrive early. The
+*immediate* branch — the one a real boot actually takes, since autoload
+finishes before APP_READY — reads `getCurrentChatDetails().sessionName`, which
+is `characters[this_chid].chat`: the durable pointer ChatUI itself wrote before
+forcing the reload. It proves identity, not a file on disk; measured on the
+same host, the lease was written at t=843ms and `POST /api/chats/save` only
+went out at t=985ms. Two consequences are accepted rather than overlooked: a
+`saveChatConditional()` that fails outright leaves a lease pointing at a file
+that never appears (recoverable — restoring checks the raw listing and drops
+the lease, and discarding now reports `absent` and drops it too), and a 丢弃
+inside that ~142ms window would send DELETE before ST's CREATE, leaving the
+file unleased. The window is not humanly reachable — the card must render, be
+found, be clicked and its confirm accepted within a tenth of a second of the
+page appearing — and closing it properly would mean waiting for a CHAT_CHANGED
+that a real boot has already emitted before this code first runs, which would
+strand every ordinary autoload boot instead.
 
 ST's `power_user.auto_load_chat` is **false** by default (power-user.js:335),
 and this repo's e2e fixture forces it true — which is why every earlier

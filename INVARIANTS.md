@@ -121,13 +121,31 @@ APP_READY 之后（真机 1.18.0 实测：目录读取 848ms 完成、凭证 855
 `POST /api/chats/save` 949ms 才发出）。那道磁盘核验问的是「ST 保证会发生、但保证发生
 在我们唯一的观察点之后」的事，本就不是本仓库该守的不变量。
 
-现在磁盘核验连同这条链路上的全部网络请求一起去掉了，只留身份核验——「该角色此刻的
-当前对话就是我们捏出来的那个文件名」——而文件已落盘这件事由 ST 自己的 await 顺序
-免费提供：`getChatResult()`（script.js:7625）先 await `saveChatConditional()`、之后
-才发 CHAT_CHANGED，所以任何一次「CHAT_CHANGED 时当前对话是兜底文件」都已蕴含文件在
-盘上。观察点也随之从 APP_READY 移到「兜底文件成为当前对话的那一刻」：启动时若 ST 的
-autoload 已经先到就当场成立，没到就等本页后续的 CHAT_CHANGED（autoload 关掉、读者
-自己点开该角色，同样成立）。
+现在磁盘核验连同这条链路上的全部网络请求一起去掉了，只留**身份核验**——「该角色此刻的
+当前对话就是我们捏出来的那个文件名」。观察点也随之从 APP_READY 移到「兜底文件成为当前
+对话的那一刻」：启动时若 ST 的 autoload 已经先到就当场成立，没到就等本页后续的
+CHAT_CHANGED（autoload 关掉、读者自己点开该角色，或由下面那条事务收尾把角色选上，
+同样成立）。
+
+**这道核验能证明什么，两条分支并不相同**，早先这里把强的那条写成了两条都成立，现按
+实测订正：走 **CHAT_CHANGED** 时文件确实已在盘上（`getChatResult()`，script.js:7625，
+先 await `saveChatConditional()` 才发事件，事件不可能早于落盘）；而真机上实际走的是
+**立即判定**那条（autoload 早于 APP_READY 完成），它读的
+`getCurrentChatDetails().sessionName` 就是 `characters[this_chid].chat`
+（script.js:8478）——正是我们自己在强制刷新前写进去的那个指针，与磁盘无关。真机 1.18.0
+字节级记录：租约在 t=843ms 建立，`POST /api/chats/save` 到 t=985ms 才发出，隔离比文件
+早约 142ms。两条已知边界如实记在这里，并且是**接受**而不是遗漏：
+
+- 若那次 `saveChatConditional()` 直接失败，会留下一条指向永不出现的文件的草稿租约。
+  这是可恢复态而非坏态：恢复它会先查原始目录并清掉租约
+  （`openChatuiChatForCharacter`），丢弃它会拿到 `absent` 同样清掉租约
+  （`delete-transaction.ts`），两条路都不卡住。
+- 那约 142ms 窗口内点「丢弃」，DELETE 会跑在 ST 的 CREATE 前面，文件随后被创建却不再
+  被租约持有——正是这条规则要防的「兜底文件变普通历史」。接受的理由是这个窗口人手
+  不可达：草稿卡要渲染出来、被找到、被点开、确认框还要被按下，全部发生在页面出现后的
+  十分之一秒内。真要封死它，只能把立即判定挪到一个保证晚于落盘的信号上——那就是
+  CHAT_CHANGED，而真机上那一次在本段代码首次运行前就已经发过了；改等下一次会让所有
+  正常 autoload 启动全部落空。
 
 ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本仓库 e2e
 固件把它强制为 true，这也是先前全部真机证据都产自非默认设置的原因）。默认设置下那次
