@@ -29,6 +29,7 @@ const RUNTIME_ENTRY_FILES = Object.freeze([
     'ui/floor-rail-math.ts',
     'ui/follow-scroll-math.ts',
     'ui/format.ts',
+    'ui/swipe-segment-math.ts',
 ]);
 
 const ST_EXTERNAL_TARGETS = Object.freeze({
