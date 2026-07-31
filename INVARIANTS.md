@@ -112,6 +112,7 @@
 | 流式 token 更新只重建被改动的一行，绝不退化为全量重建（O(1) 流式承诺） | `test/chat-store.test.mjs :: refreshChatuiMessage targets exactly the changed row: unrelated DTOs, the top-level state reference, and materialization counters are all left untouched` |
 | 切换会话不清空其它会话的输入框草稿 | `test/chat-store.test.mjs :: composer drafts for chats other than the one being switched away from survive a CHAT_CHANGED refresh` |
 | 轻量索引投影不携带昂贵内容字段（全文/swipes/extra） | `test/state-contracts.test.mjs :: message index projection ignores expensive content fields` |
+| 楼层号（第 N 楼）随 DTO 下发：用户回合与它引出的首条回复同号且与楼层轨编号一致；开场白/系统消息/群聊次条回复无楼层号 | `test/chat-store.test.mjs :: message DTO floor projection: both members of a user turn carry that turn's 1-based floor, and every message outside a turn carries none` |
 | 原始宿主消息在 adapter 边界规范化为不可变 DTO，畸形字段回退安全默认值 | `test/state-contracts.test.mjs :: raw messages are normalized into an immutable adapter-boundary DTO` |
 | 现代数组形状附件（extra.media/files）按序精确投影，无附件消息投影空列表不抛错 | `test/chat-store.test.mjs :: message DTO attachment projection: array-shaped media/files extras project ids, urls, titles, and order exactly, including display/inline/mediaIndex overrides` |
 | 旧版单字段附件（extra.image/video/file）按固定顺序经回退形状投影 | `test/chat-store.test.mjs :: message DTO attachment projection: legacy single image/video/file extras project through the fallback shape without throwing` |

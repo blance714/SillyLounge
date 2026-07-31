@@ -474,3 +474,44 @@ test('the formatter HTML cache keeps a message\'s reasoning-text HTML and body H
         await host.dispose();
     }
 });
+
+test('message DTO floor projection: both members of a user turn carry that turn\'s 1-based floor, and every message outside a turn carries none', async () => {
+    const { host, store } = await setUpHost({ messageCount: 1 });
+    try {
+        // A chat that exercises every "no floor defined" shape at once: an
+        // opening greeting before any user turn, a second character responder
+        // inside one turn (the group-chat case -- a turn records only the
+        // responder that answered first), and a system notice.
+        host.context.chat = [
+            makeMessage({ name: 'Bob', mes: 'greeting' }),
+            makeMessage({ isUser: true, name: 'User', mes: 'turn one' }),
+            makeMessage({ name: 'Bob', mes: 'reply one' }),
+            makeMessage({ name: 'Ann', mes: 'second responder' }),
+            makeMessage({ isUser: true, name: 'User', mes: 'turn two' }),
+            makeMessage({ isSystem: true, name: 'System', mes: 'notice' }),
+            makeMessage({ name: 'Bob', mes: 'reply two' }),
+        ];
+        store.initChatuiStore();
+
+        const floorOf = id => store.getMessageDtoById(id).floorNumber;
+        assert.equal(floorOf(0), null, 'greeting precedes every user turn');
+        assert.equal(floorOf(1), 1);
+        assert.equal(floorOf(2), 1, 'the reply shares its user turn\'s floor');
+        assert.equal(floorOf(3), null, 'only the first responder of a turn is numbered');
+        assert.equal(floorOf(4), 2);
+        assert.equal(floorOf(5), null, 'a system notice belongs to no floor');
+        assert.equal(floorOf(6), 2, 'a system notice between the turn and its reply does not break the pair');
+
+        // The header's floor number and the floor rail's tick number must name
+        // the same turn: the rail labels tick i as 第 (i+1) 楼 (MessageFloorRail).
+        const { userTurns } = store.getChatuiState().chat;
+        assert.equal(userTurns.length, 2);
+        for (const [index, turn] of userTurns.entries()) {
+            assert.equal(floorOf(turn.userMessageId), index + 1);
+            if (turn.responseMessageId !== null) assert.equal(floorOf(turn.responseMessageId), index + 1);
+        }
+    } finally {
+        store.teardownChatuiStore();
+        await host.dispose();
+    }
+});
