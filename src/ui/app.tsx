@@ -31,6 +31,41 @@ import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
 
+/**
+ * Assumed height of a message row the virtualizer has not measured yet. It is
+ * only ever wrong — the question is by how much, and in which direction.
+ *
+ * Re-measured against both 400-floor e2e fixtures in the real pinned host on
+ * 2026-07-31, after the corridor-theater reskin raised every row (line-height
+ * 1.82 -> 1.9, 20.8px -> 26px between rows, and a header that solo chats now
+ * render by default). Mean measured row height, before -> after the reskin:
+ *
+ *   long-plain (short turns both sides)   110px -> 135px
+ *   long-rich  (assistant p50 6147 chars) 4523px -> 4719px
+ *
+ * So this constant is ~2.4x too large for one corpus and ~15x too small for
+ * the other, and the reskin moved neither number enough to relocate it: +4.3%
+ * on the realistic fixture, and on the synthetic one it moved *toward* this
+ * value rather than away.
+ *
+ * Raising it was measured too, not assumed. One capacity-sized floor-rail jump
+ * into unmeasured rows, sampling scrollTop every frame (travelled/net = how
+ * much the view chases its own target before settling):
+ *
+ *   estimate   long-rich chase   long-rich settle   long-plain settle
+ *   320        2.05x             2617ms             1366ms
+ *   500        1.61x             2550ms             ~1680ms (interpolated)
+ *   800        1.33x             2516ms             2200ms
+ *
+ * Every step toward the rich corpus buys less chase there and pays for it in
+ * plain-chat jump latency, because the smooth scroll has to animate across the
+ * estimated distance. There is no value in range that is simply better, which
+ * is the real finding: one constant cannot serve rows spanning 130px..16000px.
+ * The principled fix is an estimate that learns from what has been measured,
+ * i.e. a change to the virtualizer's own configuration — out of scope for a
+ * reskin, and deliberately left as the next question rather than papered over
+ * by nudging this number.
+ */
 const VIRTUAL_MESSAGE_ESTIMATE_PX = 320;
 const VIRTUAL_MESSAGE_OVERSCAN = 5;
 
