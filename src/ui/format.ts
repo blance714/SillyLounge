@@ -1,9 +1,67 @@
+/**
+ * ST's own `humanizedDateTime()` shape (RossAscends-mods.js):
+ * `YYYY-M-D@HHhMMmSSsMSms`, built from local-time getters and zero-padded.
+ * Chats written before ST moved to ISO still carry it, and `Date` cannot parse
+ * it at all — hence the explicit reader rather than a parse attempt.
+ */
+const ST_HUMANIZED_SEND_DATE = /^(\d{4})-(\d{1,2})-(\d{1,2})@(\d{1,2})h(\d{1,2})m(\d{1,2})s(\d{1,3})ms$/;
+
+/**
+ * Every shape ST has ever put in `send_date`, resolved to one instant.
+ *
+ * Modern messages carry ISO 8601 (`getMessageTimeStamp()` is
+ * `Date#toISOString`), older ones carry `humanizedDateTime()`, and a few
+ * import paths carry epoch milliseconds as a number or as a numeric string.
+ * Returns null — never a guess — for anything else.
+ */
+function parseSendDate(value: string | number): Date | null {
+    const finite = (date: Date): Date | null => (Number.isNaN(date.getTime()) ? null : date);
+
+    if (typeof value === 'number') return finite(new Date(value));
+
+    const trimmed = value.trim();
+    if (trimmed === '') return null;
+    // Epoch milliseconds handed over as text: `new Date(string)` would try to
+    // read the digits as a date rather than as an offset, so convert first.
+    if (!Number.isNaN(Number(trimmed))) return finite(new Date(Number(trimmed)));
+
+    const humanized = ST_HUMANIZED_SEND_DATE.exec(trimmed);
+    if (humanized) {
+        const [, year, month, day, hour, minute, second, millisecond] = humanized;
+        // Read back as local time, because that is how humanizedDateTime()
+        // wrote it; parsing it as UTC would shift every legacy stamp by the
+        // reader's own offset.
+        return finite(new Date(
+            Number(year),
+            Number(month) - 1,
+            Number(day),
+            Number(hour),
+            Number(minute),
+            Number(second),
+            Number(millisecond),
+        ));
+    }
+
+    return finite(new Date(trimmed));
+}
+
+/**
+ * The message header's 「第 N 楼 · 时间」 stamp (design §4) — a clock time, not
+ * a date string.
+ *
+ * This used to hand back any non-numeric string verbatim, which meant a modern
+ * ST chat printed the whole ISO stamp (`2026-01-04T00:00:02.000Z`) in the
+ * header. That was invisible while solo chats defaulted to no header at all;
+ * the corridor-theater pass turns the header on by default, so the shortcut had
+ * to go rather than be styled around. Verbatim survives only as the last
+ * resort, for a stamp no known ST format explains: showing data we cannot read
+ * is honest, inventing a time for it would not be.
+ */
 export function formatTimestamp(value: string | number | null): string {
     if (value === null || value === '') return '';
-    if (typeof value === 'string' && Number.isNaN(Number(value))) return value;
 
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return String(value);
+    const date = parseSendDate(value);
+    if (!date) return String(value);
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
