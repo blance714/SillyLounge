@@ -233,30 +233,33 @@ export function openChatuiChat(fileName: string): Promise<void> {
 }
 
 /**
- * Rename one of the current character's chats.
+ * Rename one of a character's chats, named by stable avatar + file name.
+ *
+ * The target is explicit rather than "whatever is open", because the playbill
+ * renames a card, and a card is a conversation on disk — not necessarily the
+ * live one. The adapter is already written for both cases: it re-reads the
+ * live identity when it runs and takes the current-chat protocol (save flush,
+ * cancelled debounces, post-rename safety reconciliation) only if this really
+ * is the open chat. That is also why the old "the open chat moved, try again"
+ * bail is gone: it turned a still-valid intent (rename *that* file) into a
+ * failure whenever a navigation landed between the click and the queue slot,
+ * and the honest handling of that race is the adapter's non-current path.
+ *
+ * @param {string} avatar
  * @param {string} oldFileName
  * @param {string} newName
  * @returns {Promise<void>}
  */
-export function renameChatuiChat(oldFileName: string, newName: string): Promise<void> {
-    const expectedAvatar = chatuiAdapter.getCurrentChatIdentity()?.avatar ?? null;
-    const expectedFileName = typeof oldFileName === 'string'
-        ? oldFileName.replace(/\.jsonl$/i, '')
-        : '';
+export function renameChatuiChat(avatar: string, oldFileName: string, newName: string): Promise<void> {
     return enqueueHostTask(async () => {
         try {
-            const liveTarget = chatuiAdapter.getCurrentChatIdentity();
-            if (
-                !expectedAvatar
-                || liveTarget?.avatar !== expectedAvatar
-                || liveTarget.fileName !== expectedFileName
-            ) {
-                pushToast('info', '对话已切换，请重试');
+            if (!avatar) {
+                pushToast('error', '重命名失败');
                 return;
             }
             const tempSnapshot = getTempChatSnapshot();
             const result = await chatuiAdapter.sidebarActions.renameCharacterChat(
-                expectedAvatar,
+                avatar,
                 oldFileName,
                 newName,
             );

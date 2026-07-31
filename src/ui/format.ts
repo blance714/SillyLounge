@@ -73,6 +73,28 @@ export function formatDuration(duration: string | number | null): string {
     return `${seconds} 秒`;
 }
 
+/**
+ * The playbill card's 9px meta line (DESIGN §4.2 / README §1).
+ *
+ * The design writes this line as 「N 楼 · 时间」, and this deliberately says
+ * 「N 条」instead. 楼 has one meaning in this app — a user turn, the same number
+ * the floor rail and the message header count (DESIGN §4.3) — and the only
+ * quantity a chat listing carries is ST's `chat_items`, the raw line count of
+ * the .jsonl. Printing that as 楼 would put "40 楼" on a card whose rail tops
+ * out at 20. Deriving real floors would mean reading every chat file just to
+ * draw the sidebar, which is the one thing a list query must not do. So the
+ * card prints the number it actually has, under the name that number has.
+ *
+ * Either half may be missing (a chat with no readable timestamp, a draft whose
+ * listing row has not arrived), and neither placeholder is invented: an absent
+ * half drops itself and the separator with it.
+ */
+export function formatConversationMeta(messageCount: number, timeLabel: string): string {
+    const count = Number.isFinite(messageCount) && messageCount > 0 ? `${messageCount} 条` : '';
+    const time = typeof timeLabel === 'string' ? timeLabel.trim() : '';
+    return [count, time].filter(Boolean).join(' · ');
+}
+
 export function formatBytes(value: number | null): string {
     if (value === null || value < 0) return '';
 
