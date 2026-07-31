@@ -1,9 +1,8 @@
 import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { openChatuiChatForCharacter, deleteChatuiChat, switchChatuiCharacter } from '../../actions.js';
-import { useSidebarData } from '../../hooks.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
-import type { CharConversationGroup, ChatListItem } from '../../types.js';
+import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '../../types.js';
 
 /**
  * Single character header row: avatar + name.
@@ -95,11 +94,15 @@ function NestedChatRow({ chat, charAvatar }: NestedChatRowProps): ComponentChild
 }
 
 /**
- * Region-5 conversation list: all single characters grouped with up to 5
- * nested chat rows each, sorted by most-recently-active. Replaces ConversationList.
+ * Playbill list body: all single characters grouped with up to 5 nested chat
+ * rows each, sorted by most-recently-active.
+ *
+ * The feed arrives as a prop rather than from useSidebarData() here, because
+ * the playbill header above this list has to count the current character's
+ * conversations too — one owner of that fan-out, read in two places.
  */
-export function CharacterConversationList(): ComponentChild {
-    const { charGroups, charGroupsError, header, loadMoreCharacterChats, retryCharacterChats } = useSidebarData();
+export function CharacterConversationList({ sidebar }: { sidebar: ChatuiSidebarState }): ComponentChild {
+    const { charGroups, charGroupsError, header, loadMoreCharacterChats, retryCharacterChats } = sidebar;
 
     if (header.isGroup) {
         return (

@@ -67,6 +67,21 @@ function finiteNumber(value: unknown): number {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 }
 
+/**
+ * The cast list: characters that own at least one conversation, most recently
+ * active first. Both rails read it — the spine draws one avatar per entry, the
+ * playbill groups conversations under the same entries — so it is defined once
+ * rather than twice. Two copies of this predicate would let the spine and the
+ * playbill disagree about who is on the bill, and the spine's whole job is to
+ * answer "who is on now".
+ */
+function orderConversationCharacters(characters: CharacterSummary[]): CharacterSummary[] {
+    return characters
+        .filter((character: CharacterSummary) => character.avatar && character.name && finiteNumber(character.chatSize) > 0)
+        .slice()
+        .sort((a: CharacterSummary, b: CharacterSummary) => finiteNumber(b.dateLastChatTs) - finiteNumber(a.dateLastChatTs));
+}
+
 function withSetValue<T>(source: Set<T>, value: T, included: boolean): Set<T> {
     const next = new Set(source);
     if (included) next.add(value);
@@ -168,6 +183,24 @@ export function useSidebarBasics(): {
     };
 }
 
+/**
+ * Spine feed. Deliberately built on useSidebarBasics rather than
+ * useSidebarData: the spine needs the cast and nothing else, and
+ * useSidebarData fans out one per-character chat query per entry — work the
+ * playbill already pays for and the book spine has no use for.
+ *
+ * `isGroupActive` is the whole of ChatUI's group knowledge today: the header
+ * says whether the open chat is a group, and there is no adapter query that
+ * enumerates groups. So the spine can honestly show that a group holds the
+ * stage; it cannot yet offer to switch to one (DESIGN §4.2 defers full group
+ * support to its own project).
+ */
+export function useSpineCharacters(): { characters: CharacterSummary[]; isGroupActive: boolean } {
+    const { characters, header } = useSidebarBasics();
+    const cast = useMemo(() => orderConversationCharacters(characters), [characters]);
+    return { characters: cast, isGroupActive: header.isGroup };
+}
+
 export function useSidebarData(): ChatuiSidebarState {
     const queryClient = useQueryClient();
     const currentChat = useCurrentChatIdentity();
@@ -198,10 +231,10 @@ export function useSidebarData(): ChatuiSidebarState {
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
 
-    const groupHeaders = useMemo<CharacterSummary[]>(() => characters
-        .filter((character: CharacterSummary) => character.avatar && character.name && finiteNumber(character.chatSize) > 0)
-        .slice()
-        .sort((a: CharacterSummary, b: CharacterSummary) => finiteNumber(b.dateLastChatTs) - finiteNumber(a.dateLastChatTs)), [characters]);
+    const groupHeaders = useMemo<CharacterSummary[]>(
+        () => orderConversationCharacters(characters),
+        [characters],
+    );
 
     const groupAvatarKey = useMemo(() => groupHeaders.map((group: CharacterSummary) => group.avatar).join('\u0001'), [groupHeaders]);
 

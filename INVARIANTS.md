@@ -419,6 +419,8 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 完整代次发布在可原子替换的活动指针之后 | `test/check-runtime.test.mjs :: publishes complete generations behind an atomically replaceable live pointer` |
 | dev 监视器忽略生成树、只观察运行时输入 | `test/check-runtime.test.mjs :: dev watcher ignores generated trees and observes runtime inputs` |
 | 运行时 Zod 门面覆盖 adapter schema 用到的每个值级 z 成员 | `test/check-runtime.test.mjs :: runtime Zod facade covers every value-level z member used by adapter schema` |
+| style.css 里不存在提前闭合的注释：注释终止符只能出现在注释里，否则其后的整条规则块会被 CSS 解析器静默丢弃 | `test/stylesheet-integrity.test.mjs :: style.css has no comment terminator that lands in code, so no rule block is silently dropped` |
+| 该扫描确实能识别它要防的那次真实回归（pr4 topbar 规则被注释吃掉），修好后不再误报 | `test/stylesheet-integrity.test.mjs :: the stray-terminator scan actually detects the pr4 topbar regression it exists to prevent` |
 
 另有两个源码级静态校验（无对应测试文件，由脚本直接接入 `verify`）：
 `scripts/check-boundaries.mjs`（分层规则：`@st/*` 仅 adapter 与 index.ts 可导入、

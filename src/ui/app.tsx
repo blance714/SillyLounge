@@ -18,6 +18,7 @@ import { NewChatCharacterPicker } from './components/composer/NewChatCharacterPi
 import { MessageItem } from './components/MessageItem.js';
 import { MessageFloorRail } from './components/MessageFloorRail.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
+import { Spine } from './components/sidebar/Spine.js';
 import { Toaster } from './components/Toaster.js';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost.js';
 import { SettingsNav } from './components/settings/SettingsNav.js';
@@ -231,15 +232,32 @@ function ChatuiApp(): ComponentChild {
 
     return (
         <>
-            {settingsOpen
-                ? <SettingsNav />
-                : <Sidebar
-                      mobileOpen={isSidebarMobileOpen}
-                      onClose={() => setIsSidebarMobileOpen(false)}
-                      onNavigate={dismissSidebarNavigation}
-                      isTempChatActive={isTempChatActive}
-                  />
-            }
+            {/* The rails: spine + one of (playbill | settings nav). Desktop keeps
+                both columns in flow; mobile slides the pair in as one drawer, so
+                the spine is never a permanent 58px bite out of a phone screen
+                (DESIGN §3). The backdrop is a sibling, not a child — it must not
+                ride the wrapper's own translate. */}
+            {isSidebarMobileOpen && !settingsOpen && (
+                <button
+                    className="cui-root-sidebar-backdrop"
+                    type="button"
+                    aria-label="收起侧栏"
+                    onClick={() => setIsSidebarMobileOpen(false)}
+                />
+            )}
+            <div
+                className={`cui-root-rails${isSidebarMobileOpen && !settingsOpen ? ' is-mobile-open' : ''}${settingsOpen ? ' is-settings' : ''}`}
+            >
+                <Spine onNavigate={dismissSidebarNavigation} />
+                {settingsOpen
+                    ? <SettingsNav />
+                    : <Sidebar
+                          onClose={() => setIsSidebarMobileOpen(false)}
+                          onNavigate={dismissSidebarNavigation}
+                          isTempChatActive={isTempChatActive}
+                      />
+                }
+            </div>
             {settingsOpen
                 ? <SettingsContent />
                 : <section className="cui-root-app" aria-label="ChatUI message root">

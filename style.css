@@ -306,8 +306,33 @@
     --cui-radius-pill: 999px;
 
     /* A restrained reading column leaves a real manuscript gutter for the
-       desktop user-turn navigator instead of allowing it to overlap prose. */
-    --cui-content-max-width: 54rem;
+       desktop user-turn navigator instead of allowing it to overlap prose.
+
+       DESIGN §3.1: this number and the spine's width are one simultaneous
+       equation, not two settings. The floor rail only mounts when
+       `contentLeft - railLeft >= 42px` (30px rail + 12px prose clearance,
+       MessageFloorRail.tsx), and `railLeft` is the app column's own left edge
+       + 16px — so widening the left rails pushes the threshold *up* while the
+       reading column's centering margin is what pays for it. Solving both
+       sides at 1280px, with .cui-root-app's 24px side padding:
+
+         before  one 273px sidebar (272 + its rule), column 54rem/864px
+                 gutter = 7.5 + (W - 1185)/2  →  rail appears from W ≥ 1253px
+                 at 1280px: 55.5px — 13.5px of slack on a 1280 laptop
+
+         after   rails 58 + 252 = 310px, column 680px
+                 gutter = 8 + (W - 1038)/2   →  rail appears from W ≥ 1106px
+                 at 1280px: 129px
+
+       Both rows measured in Chromium against this stylesheet, not derived on
+       paper: the 273 is why the paper number was 272.
+
+       Keeping 54rem while adding the spine would have moved the threshold to
+       ~1310px and made the rail vanish on a 1280px laptop with nothing to
+       show for it — no error, no failing test. 680px is the design's own main
+       column, and px rather than rem because a reading measure is a constant
+       of the drawing, not of the host's <html> font-size (§2.5). */
+    --cui-content-max-width: 680px;
 
     /* Component-scoped "shape" tokens: for the handful of spots where a
        whole look (bubble vs. flat) hinges on 3-4 properties acting together
@@ -396,8 +421,10 @@ body.chatui-active.chatui-root-visible #chatui-root {
     font-size: var(--cui-font-base);
 }
 
-/* Desktop: two-column layout (persistent sidebar | main), and give #sheld room
-   to host both since it is only --sheldWidth (50vw) wide by default. */
+/* Desktop: three-column layout (spine | playbill | stage, DESIGN §3), and give
+   #sheld room to host all of it since it is only --sheldWidth (50vw) wide by
+   default. The first two columns are one flex child (.cui-root-rails) so the
+   pair can become a single drawer on mobile without restacking the row. */
 @media (min-width: 769px) {
     body.chatui-active.chatui-root-visible #chatui-root {
         flex-direction: row;
@@ -601,11 +628,25 @@ body.chatui-active .cui-root-app {
 /* DESIGN §2.5: spacing/sizing converges from `rem` to `px` one reskinned
    region at a time, so the rhythm stops drifting with the host's own
    <html> font-size. Topbar and composer are this pass's region — every
-   length below (not a --cui-font-*/--cui-tracking-*/--cui-radius-* token,
-   which are already px-anchored via --cui-font-root) is a literal px value
-   rather than a bare rem multiplier. --cui-content-max-width stays rem: it
-   is a cross-region token shared with messages/QR-bar and pinned to the
-   sidebar baton (DESIGN §3.1), not this region's to convert alone. */
+   length below (anything that is not a --cui-font-…, --cui-tracking-… or
+   --cui-radius-… token, all of which are already px-anchored via
+   --cui-font-root) is a literal px value rather than a bare rem multiplier.
+
+   Those ellipses used to be star-globs written as a slash-separated list,
+   and the first of them ended this comment forty characters early: a star
+   immediately followed by a slash is a comment terminator, and the parser
+   does not care that it is sitting in the middle of a sentence. Everything
+   after it became garbage that the parser swallowed as one invalid
+   selector, taking the whole `.cui-root-topbar` block with it — so since
+   that reskin the topbar has had no `display:flex`, no reading width, no
+   dashed rule and no padding, and nothing failed: a dropped rule is
+   invisible to typecheck, to the unit suites, and to e2e assertions written
+   against behaviour. Restored here as part of the reading-column
+   calibration below, since a topbar that never read
+   --cui-content-max-width could not have been recalibrated by changing it.
+
+   --cui-content-max-width is no longer rem (see its own comment): it is the
+   cross-region measure this file's spine/playbill/stage split pins down. */
 body.chatui-active .cui-root-topbar {
     flex: 0 0 auto;
     display: flex;
@@ -807,7 +848,12 @@ body.chatui-active .cui-root-topbar-menu-dropdown {
     left: auto;
 }
 
-/* ── Region 5 · sidebar (mobile slide-in overlay / desktop persistent column) ── */
+/* ── Region 5 · the two rails: 书脊 spine + 场刊 playbill (DESIGN §3/§4.2) ────
+   Desktop keeps both in flow at fixed widths; ≤768px the pair slides in as one
+   drawer, because a 58px spine permanently parked on a 390px phone would spend
+   15% of the screen answering a question the topbar already answers.
+   Lengths in this region are px, not rem (§2.5): these are drawing constants,
+   not multiples of whatever <html> font-size the host happens to run.        */
 
 /* height explicit everywhere below, not inferred from inset alone: ST's own
    `html { transform: translateZ(0); ... }` (unconditional, in ST's own
@@ -826,90 +872,265 @@ body.chatui-active .cui-root-sidebar-backdrop {
     cursor: default;
 }
 
-body.chatui-active .cui-root-sidebar {
+/* The drawer is the *pair*, not the playbill: the transform, the shadow and
+   the z-index live on this wrapper so spine and playbill arrive together and
+   the reader never sees half a navigation. */
+body.chatui-active .cui-root-rails {
     position: fixed;
     inset: 0 auto 0 0;
     height: 100vh;
     height: 100dvh;
     z-index: calc(var(--cui-sheet-z) + 11);
     display: flex;
-    flex-direction: column;
-    width: min(82vw, 18rem);
+    max-width: 100%;
+    min-height: 0;
+    /* Each rail owns its own scroll; the wrapper only clips. Safe for the
+       ConfirmDialog a playbill row can open — that one portals to
+       document.body precisely so no ancestor's transform/overflow reaches it. */
+    overflow: hidden;
     transform: translateX(-100%);
     transition: transform var(--cui-motion-base) ease;
-    border-right: 1px solid var(--cui-color-border);
-    background-color: var(--cui-color-surface);
     box-shadow: 6px 0 24px var(--cui-color-shadow);
-    color: var(--cui-color-text);
 }
 
-body.chatui-active .cui-root-sidebar.is-mobile-open {
+body.chatui-active .cui-root-rails.is-mobile-open {
     transform: translateX(0);
 }
 
-body.chatui-active .cui-root-sidebar-title {
-    flex: 1 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+body.chatui-active .cui-root-spine {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 58px;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: 14px 0 12px;
+    border-right: 1px solid var(--cui-color-border);
+    background-color: var(--cui-color-spine);
+    color: var(--cui-color-text);
 }
 
-/* Desktop: persistent in-flow left column. */
+/* The cast scrolls; the shop sign and the gear do not. */
+body.chatui-active .cui-root-spine-list {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* The one scroll container in the app that hides its scrollbar rather than
+       joining the scoped 8px family below (§9.1 is about never going global,
+       and this stays scoped either way). An 8px track inside a 58px rail
+       shifts the 32px avatars 4px off the rail's optical centre the moment it
+       appears, and "which square is lit, centred in its rail" is the entire
+       signal this column carries. */
+    scrollbar-width: none;
+}
+
+body.chatui-active .cui-root-spine-list::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+/* One shape for every seat on the spine: character, group, ＋. */
+body.chatui-active .cui-root-spine-slot {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    box-sizing: border-box;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--cui-radius-md);
+    background: none;
+    color: var(--cui-color-text);
+    cursor: pointer;
+    transition:
+        opacity var(--cui-motion-reveal) ease,
+        border-color var(--cui-motion-reveal) ease;
+}
+
+/* Avatars are locators, not portraits: off-duty ones dim, and the one on stage
+   is marked with a single rust hairline — no solid fill, no scaling up (§4.2,
+   and §2.4 on hover staying short and light; the 原型's scale(1.08) is exactly
+   the bounce that rule rules out). */
+body.chatui-active .cui-root-spine-char {
+    overflow: hidden;
+    opacity: 0.55;
+}
+
+body.chatui-active .cui-root-spine-char:hover,
+body.chatui-active .cui-root-spine-char:focus-visible {
+    opacity: 1;
+    outline: 1px solid var(--cui-outline-faint);
+}
+
+body.chatui-active .cui-root-spine-slot.is-current {
+    opacity: 1;
+    border-color: var(--cui-color-user-mark);
+}
+
+body.chatui-active .cui-root-spine-avatar {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* One px in from the slot's own corner so the rust ring reads as a ring
+       rather than as a seam against the image. */
+    border-radius: calc(var(--cui-radius-md) - 1px);
+    object-fit: cover;
+}
+
+/* No thumbnail: the initial on a dark gradient block, after the 原型's
+   per-character `grad`. One gradient for everyone rather than three — the
+   prototype's hues are literals outside this palette, and inventing a
+   per-character brown is exactly what §2.1 forbids. */
+body.chatui-active .cui-root-spine-avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-image: linear-gradient(
+        135deg,
+        var(--cui-color-border-strong),
+        var(--cui-color-surface)
+    );
+    color: var(--cui-color-accent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-card);
+    line-height: 1;
+}
+
+/* The group's own seat — a group mark, never a member's face standing in for
+   the room (§4.2). It is a marker rather than a button: ChatUI can see that a
+   group holds the stage but has no query that enumerates groups, so there is
+   nothing honest for a click to do yet. */
+body.chatui-active .cui-root-spine-group {
+    background-color: color-mix(in srgb, var(--cui-color-user-mark) 12%, transparent);
+    color: var(--cui-color-accent);
+    cursor: default;
+    font-size: var(--cui-font-menu);
+}
+
+body.chatui-active .cui-root-spine-add {
+    border: 1px dashed var(--cui-color-border-strong);
+    color: color-mix(in srgb, var(--cui-color-text) 40%, transparent);
+    font-size: var(--cui-font-tight);
+}
+
+body.chatui-active .cui-root-spine-add:hover,
+body.chatui-active .cui-root-spine-add:focus-visible {
+    border-color: var(--cui-color-user-mark);
+    color: var(--cui-color-accent);
+    outline: none;
+}
+
+/* 竖排店名: the rail's one piece of type, set as an inscription. */
+body.chatui-active .cui-root-spine-mark {
+    flex: 0 0 auto;
+    writing-mode: vertical-rl;
+    color: color-mix(in srgb, var(--cui-color-text) 30%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-xs);
+    letter-spacing: var(--cui-tracking-stamp);
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* ── 场刊 playbill ───────────────────────────────────────────────────────── */
+
+body.chatui-active .cui-root-sidebar {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    /* 252px on desktop; on a phone the drawer still has to leave the stage
+       visible behind it, so the pair (58 + this) tops out around 82vw. */
+    width: min(calc(82vw - 58px), 252px);
+    min-width: 0;
+    min-height: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-right: 1px solid var(--cui-color-border);
+    background-color: var(--cui-color-surface);
+    color: var(--cui-color-text);
+}
+
+/* Desktop: both rails are persistent in-flow columns. */
 @media (min-width: 769px) {
     body.chatui-active .cui-root-sidebar-backdrop {
         display: none;
     }
 
-    body.chatui-active .cui-root-sidebar {
+    /* Back into the row: no fixed positioning, so the rails stretch with their
+       actual flex container (#chatui-root), which can be shorter than the
+       viewport when ST's own chrome sits above it. Left at 100dvh they would
+       overflow their own container and get clipped by its overflow:hidden. */
+    body.chatui-active .cui-root-rails {
         position: relative;
         inset: auto;
         z-index: auto;
         flex: 0 0 auto;
-        /* Reset the mobile drawer's height:100dvh (needed there because the
-           sidebar is position:fixed against the viewport) back to stretching
-           with its actual flex-row container (#chatui-root), which can be
-           shorter than the viewport when ST's own chrome sits above it —
-           otherwise the sidebar silently overflows past its own container
-           and the footer (SettingsEntry) gets clipped by #chatui-root's
-           overflow:hidden. */
         height: auto;
         transform: none;
         box-shadow: none;
-        overflow: hidden;
-        transition: width var(--cui-motion-base) ease;
     }
 
-    /* Fixed sidebar width. */
     body.chatui-active .cui-root-sidebar {
-        width: clamp(13rem, 22vw, 17rem);
+        width: 252px;
     }
 
     body.chatui-active .cui-root-sidebar .cui-root-shell-close { display: none; }
 
-    /* Hide the topbar hamburger on desktop — sidebar is always visible. Scoped
-       to this specific class, not the shared .cui-root-shell-toggle, since the
-       topbar's "..." menu trigger also carries that shared class and must stay
-       visible on desktop. */
+    /* Hide the topbar hamburger on desktop — the rails are always visible.
+       Scoped to this specific class, not the shared .cui-root-shell-toggle,
+       since the topbar's "..." menu trigger also carries that shared class and
+       must stay visible on desktop. */
     body.chatui-active .cui-root-shell-hamburger {
         display: none;
     }
 }
 
+/* Playbill masthead: 角色名 +「的对话 · N」(README §1). Baseline-aligned so the
+   name and its meta read as one line of type; the drawer-close button is
+   centred against that line rather than sitting on its baseline. */
 body.chatui-active .cui-root-shell-header {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.8rem 1rem;
+    gap: 8px;
+    padding: 16px 18px 10px;
     border-bottom: 1px dashed var(--cui-rule-structure);
-    font-weight: 700;
 }
 
-body.chatui-active .cui-root-sidebar-title {
+body.chatui-active .cui-root-playbill-heading {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+body.chatui-active .cui-root-playbill-name {
+    flex: 0 1 auto;
+    overflow: hidden;
+    color: var(--cui-color-accent);
     font-family: var(--cui-font-display);
-    font-size: var(--cui-font-card);
-    letter-spacing: var(--cui-tracking-btn);
-    text-transform: uppercase;
+    font-size: var(--cui-font-base);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-playbill-count {
+    flex: 0 0 auto;
+    color: var(--cui-color-muted);
+    font-family: var(--cui-font-family);
+    font-size: var(--cui-font-xs);
 }
 
 /* ── Sidebar top section (NewChatButton wrapper) ─────────────────────────── */
@@ -919,16 +1140,33 @@ body.chatui-active .cui-root-sidebar-top {
     padding: 0.45rem 0.45rem 0;
 }
 
-/* ── Sidebar footer (SettingsEntry) ─────────────────────────────────────── */
-
-body.chatui-active .cui-root-sidebar-footer {
+/* The gear that now sits at the foot of the spine. Icon square like every
+   other seat on the rail, so it keeps none of the full-width row geometry it
+   shared with the settings nav items below. */
+body.chatui-active .cui-root-settings-entry {
     flex: 0 0 auto;
-    margin-top: auto;
-    padding: 0.35rem 0.45rem 0.45rem;
-    border-top: 1px dashed var(--cui-rule-structure);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    box-sizing: border-box;
+    padding: 0;
+    border: none;
+    border-radius: var(--cui-radius-md);
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 50%, transparent);
+    cursor: pointer;
+    font-size: var(--cui-font-card);
 }
 
-body.chatui-active .cui-root-settings-entry,
+body.chatui-active .cui-root-settings-entry:hover,
+body.chatui-active .cui-root-settings-entry:focus-visible {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    color: var(--cui-color-text);
+    outline: none;
+}
+
 body.chatui-active .cui-settings-nav-back,
 body.chatui-active .cui-settings-nav-item,
 body.chatui-active .cui-settings-nav-disable {
@@ -944,15 +1182,6 @@ body.chatui-active .cui-settings-nav-disable {
     box-sizing: border-box;
 }
 
-body.chatui-active .cui-root-settings-entry {
-    gap: 0.7rem;
-    min-height: 2.35rem;
-    border-radius: var(--cui-radius-sm);
-    font-size: var(--cui-font-card);
-    padding: 0 0.65rem;
-}
-
-body.chatui-active .cui-root-settings-entry i,
 body.chatui-active .cui-settings-nav-item i,
 body.chatui-active .cui-settings-nav-disable i {
     width: 1.25rem;
@@ -960,12 +1189,6 @@ body.chatui-active .cui-settings-nav-disable i {
     flex: 0 0 auto;
 }
 
-body.chatui-active .cui-root-settings-entry i {
-    opacity: 0.78;
-}
-
-body.chatui-active .cui-root-settings-entry:hover,
-body.chatui-active .cui-root-settings-entry:focus-visible,
 body.chatui-active .cui-settings-nav-back:hover,
 body.chatui-active .cui-settings-nav-back:focus-visible,
 body.chatui-active .cui-settings-nav-item:hover,
@@ -3734,9 +3957,12 @@ body.chatui-active .cui-root-qrbar-label {
    Settings mode — embedded ST drawer host + layout
    --------------------------------------------------------------------------- */
 
-/* SettingsNav left column (mirrors .cui-root-sidebar desktop width) */
+/* SettingsNav takes over the playbill's slot inside .cui-root-rails while the
+   spine stays put (DESIGN §3: settings is a mode swap over two of the three
+   columns, not a fourth column). Same 252px, because it is literally standing
+   where the playbill stood. */
 body.chatui-active .cui-settings-nav {
-    flex: 0 0 clamp(13rem, 22vw, 17rem);
+    flex: 0 0 252px;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -3787,9 +4013,10 @@ body.chatui-active .cui-settings-nav-item.is-active i {
     opacity: 1;
 }
 
-/* Bottom-pinned "关闭 ChatUI" — mirrors .cui-root-sidebar-footer's
-   margin-top:auto pattern so it stays at the bottom of the nav column
-   regardless of how many ST/ChatUI entries are listed above it. */
+/* Bottom-pinned "关闭 ChatUI" — margin-top:auto so it stays at the bottom of
+   the nav column regardless of how many ST/ChatUI entries are listed above
+   it. (The playbill used to end in the same pattern for its settings row;
+   that row is the spine's gear now, pinned by the spine's own flex column.) */
 body.chatui-active .cui-settings-nav-footer {
     flex: 0 0 auto;
     margin-top: auto;
@@ -3899,10 +4126,30 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
     height: auto !important;
 }
 
-/* Mobile: stack vertically. */
+/* Mobile: stack vertically.
+
+   The rails wrapper is a drawer only in chat mode. Settings on a phone is
+   already a full-screen takeover with its own 返回对话, so there is no drawer
+   for the spine to live in and no hamburger to open one — it drops out and
+   the nav gets the full width back, which is exactly the layout this branch
+   had before the spine existed. */
 @media (max-width: 768px) {
-    body.chatui-active .cui-settings-nav {
+    body.chatui-active .cui-root-rails.is-settings {
+        position: static;
         flex: 0 0 auto;
+        width: 100%;
+        height: auto;
+        max-height: 40vh;
+        transform: none;
+        box-shadow: none;
+    }
+
+    body.chatui-active .cui-root-rails.is-settings .cui-root-spine {
+        display: none;
+    }
+
+    body.chatui-active .cui-settings-nav {
+        flex: 1 1 auto;
         width: 100%;
         max-height: 40vh;
         border-right: none;
@@ -3931,6 +4178,11 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
    selector-chip menu (preset/model/persona — the same cui-paper popover
    shape as the ＋ menu, so it owes it the same visible thumb rather than
    inheriting whatever the platform default happens to be against parchment).
+
+   The spine's cast list is the deliberate eighth that opts *out*: it hides
+   its scrollbar instead (still scoped, still not global — see the rule at
+   .cui-root-spine-list for why 8px of track cannot be spent inside a 58px
+   rail without knocking the avatars off centre).
    --------------------------------------------------------------------------- */
 body.chatui-active .cui-root-message-list,
 body.chatui-active .cui-root-convlist-scroll,
