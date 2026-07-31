@@ -492,6 +492,21 @@ export function swipeChatuiMessage(
 }
 
 /**
+ * The action bar's swipe segment ticks (design §43): jump straight to
+ * `targetSwipeId` rather than stepping left/right one at a time.
+ */
+export function swipeChatuiMessageToIndex(
+    messageId: number | string,
+    targetSwipeId: number,
+    expectedChatKey: string,
+): void {
+    void enqueueChatBoundOperation(
+        expectedChatKey,
+        () => chatuiAdapter.messageActions.swipeMessageToIndexById(messageId, targetSwipeId),
+    ).catch((error: unknown) => reportChatBoundFailure('swipe message', error));
+}
+
+/**
  * Continue the last message (generate more onto it).
  * @returns {void}
  */

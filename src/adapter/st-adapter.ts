@@ -35,6 +35,7 @@ import {
     getDeleteEligibility,
     saveMessageEditById,
     swipeMessageById,
+    swipeMessageToIndexById,
     triggerMessageActionById,
 } from './messages.js';
 import {
@@ -119,6 +120,7 @@ export const chatuiAdapter = Object.freeze({
         copyMessageAsPlainText,
         saveMessageEditById,
         swipeMessageById,
+        swipeMessageToIndexById,
         triggerMessageActionById,
         deleteMessageWithIntent,
         getConfirmMessageDeleteSetting,
