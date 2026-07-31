@@ -100,9 +100,9 @@ export function PlusMenu({
                         aria-label="Close menu"
                         onClick={() => setIsOpen(false)}
                     />
-                    <div className="cui-root-plus-menu" role="menu">
+                    <div className="cui-root-plus-menu cui-paper" role="menu">
                         <header className="cui-root-plus-header">
-                            <span className="cui-root-plus-title">工具</span>
+                            <span className="cui-root-plus-title cui-paper-title">工具</span>
                             <button
                                 className="cui-root-plus-close"
                                 type="button"
@@ -136,7 +136,7 @@ export function PlusMenu({
                             {listTools.map(tool => (
                                 <button
                                     key={tool.id}
-                                    className="cui-root-plus-tool"
+                                    className="cui-root-plus-tool cui-paper-item"
                                     type="button"
                                     role="menuitem"
                                     onClick={() => runTool(tool)}
@@ -148,12 +148,12 @@ export function PlusMenu({
                         </div>
                         {wandItems.length > 0 && (
                             <>
-                                <div className="cui-root-plus-divider" role="separator" />
+                                <div className="cui-root-plus-divider cui-paper-sep" role="separator" />
                                 <div className="cui-root-plus-tools">
                                     {wandItems.map(item => (
                                         <button
                                             key={item.id}
-                                            className="cui-root-plus-tool"
+                                            className="cui-root-plus-tool cui-paper-item"
                                             type="button"
                                             role="menuitem"
                                             onClick={() => { setIsOpen(false); triggerChatuiWandItem(item.id, chatKey); }}

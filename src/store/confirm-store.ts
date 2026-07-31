@@ -10,10 +10,13 @@
  * (ui/components/ConfirmDialogHost.tsx) is the only reader that turns a
  * pending request into an actual <ConfirmDialog>.
  *
+ * It also owns the one piece of the dialog's keyboard model that is a rule
+ * rather than wiring: shouldAcceptConfirmKey(). See its own note below.
+ *
  * Two-way vs three-way: `variant` distinguishes a plain confirm/cancel dialog
  * from one with a third ("escalate") button — e.g. message delete's default
- * "Delete Swipe" escalating to "Delete Message" (DOM-DECOUPLING.md decision
- * #3's Tier 2 resolution: a ChatUI-owned dialog, not a direct ST popup call).
+ * 「仅删除此条」escalating to「删除整楼」(DOM-DECOUPLING.md decision #3's Tier 2
+ * resolution: a ChatUI-owned dialog, not a direct ST popup call).
  * This module is generic over that choice; it does not know anything about
  * messages or deletion.
  */
@@ -96,7 +99,13 @@ export function requestChatuiConfirm(input: ChatuiConfirmRequestInput): Promise<
         danger: input.danger ?? false,
         variant: input.variant,
         confirmLabel: input.confirmLabel,
-        cancelLabel: input.cancelLabel ?? 'Cancel',
+        // Chinese, because that is the language of the surface this renders
+        // on. Every caller passes an explicit label today, so this default is
+        // only ever the answer when someone forgets one — and the failure it
+        // used to produce was a lone English "Cancel" under a Chinese
+        // question, which is exactly the mismatch the delete dialog's wording
+        // was just changed to stop producing.
+        cancelLabel: input.cancelLabel ?? '取消',
         escalateLabel: input.variant === 'three-way' ? input.escalateLabel : undefined,
     };
 
@@ -136,6 +145,44 @@ export function resolveChatuiConfirm(id: string, outcome: ChatuiConfirmOutcome):
  */
 export function cancelChatuiConfirm(id: string): void {
     _settle(id, 'cancel');
+}
+
+/**
+ * How long a freshly-opened confirm dialog refuses an activation keystroke
+ * (design §9).
+ *
+ * The dialog hands focus to its *confirm* button, which is what lets a
+ * keystroke answer the question without the user reaching for the mouse. That
+ * is only safe because a delete is usually triggered from a keyboard-heavy
+ * moment — the composer, an inline editor — and a keystroke already in flight
+ * must not become the answer. 300ms is longer than any single keypress and
+ * far shorter than reading a sentence.
+ */
+export const CHATUI_CONFIRM_KEY_GUARD_MS = 300;
+
+/**
+ * Is this keystroke the user's answer, or the tail of what they were typing
+ * when the dialog appeared?
+ *
+ * Keyed on time, not on which key: the design names Enter, but a focused
+ * <button> is activated by Space just as natively, and the accident being
+ * guarded against ("a dialog appeared under hands that were already typing")
+ * does not care which of the two lands. The caller decides which keys are
+ * activation keys; this decides whether the window has closed.
+ *
+ * Pure on purpose: the component owns *when* the dialog opened and asks the
+ * clock, this owns the rule. Non-finite inputs fail closed — a missing or
+ * corrupt timestamp must not be able to authorize a deletion (`Infinity`
+ * would otherwise sail past any elapsed-time comparison), and neither must a
+ * clock that has moved backwards.
+ *
+ * @param {number} openedAtMs epoch ms at which the dialog was mounted
+ * @param {number} nowMs epoch ms of the keystroke
+ * @returns {boolean}
+ */
+export function shouldAcceptConfirmKey(openedAtMs: number, nowMs: number): boolean {
+    if (!Number.isFinite(openedAtMs) || !Number.isFinite(nowMs)) return false;
+    return nowMs - openedAtMs >= CHATUI_CONFIRM_KEY_GUARD_MS;
 }
 
 /** Reset ephemeral UI state on full ChatUI teardown, not on settings toggles. */

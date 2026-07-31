@@ -42,7 +42,7 @@
 | 不变量 | 验证 |
 | --- | --- |
 | confirm_message_delete 为 false 时跳过确认对话框，直接整条删除 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): confirm_message_delete === false skips the confirm dialog entirely and runs a full-message delete immediately` |
-| 仅删 swipe 资格具备 + confirm 开启时请求三态对话框（措辞与 ST 原生逐字一致），选择默认项按该消息的已选 swipe id 执行仅删 swipe | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with ST's own wording; choosing "confirm" runs the swipe-only mini-fork with the message's selected swipe id` |
+| 仅删 swipe 资格具备 + confirm 开启时请求三态对话框（措辞照设计稿 §9，2026-07-31 起不再与 ST 原生逐字一致），选择默认项按该消息的已选 swipe id 执行仅删 swipe | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with the design's own wording; choosing "confirm" runs the swipe-only mini-fork with the message's selected swipe id` |
 | 三态对话框选择「升级」项时改执行整条删除，绝不二次弹窗 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on — choosing "escalate" in the three-way dialog runs the full-message fork instead, with no second dialog` |
 | 任一对话框变体选择取消时零变更、零删除相关宿主调用 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): choosing "cancel" (either dialog variant) leaves the chat untouched and never calls any delete-execution host function` |
 | 不具备仅删 swipe 资格 + confirm 开启时请求纯两态对话框，确认后整条删除 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): not swipe-eligible + confirm on requests a plain two-way dialog; confirming deletes the whole message` |
@@ -553,6 +553,27 @@ promise 用 'cancel' 结算，绝不留空悬 promise），这是钉死的设计
 | 无待答请求时整体重置是无害空操作 | `test/confirm-store.test.mjs :: resetChatuiConfirmStore with nothing pending is a harmless no-op` |
 | 订阅在请求发起时收到该请求、回答后收到 null；取消订阅后不再收到通知 | `test/confirm-store.test.mjs :: subscribeChatuiConfirm notifies with the request on request and with null once answered; unsubscribing stops further notifications` |
 | 连续多轮请求各自拿到独一无二的 id | `test/confirm-store.test.mjs :: sequential requests each get a distinct id, even across many round trips` |
+
+### 15.1 吞键守卫（设计稿 §9）
+
+对话框把焦点交给**确认钮**（不再是取消钮），按键因此直接回答问题；换来的安全性
+不靠焦点位置，而靠一段时间守卫：弹出后 300ms 内的激活键一律吞掉。危险的从来不是
+「用户有意按了回车」，而是「弹窗在用户连打回车的手底下冒出来」。判定被抽成
+`shouldAcceptConfirmKey(openedAtMs, nowMs)` 这个纯函数，因此可以脱离 DOM 钉死；
+组件层只负责记下自己何时挂载、以及把「吞」落实成 preventDefault（否则已获焦的确认
+钮会自己原生点击一次）。
+
+守卫按**时间**而非按键判定，所以「激活键」由组件层定义为 Enter **与空格**两个：
+设计稿只点名 Enter，是因为它那份原型的按钮是不可聚焦的 span，空格根本够不着；本项
+目用的是真 `<button>`，空格同样会原生激活它，漏掉空格等于给守卫留一个正好一次按键
+宽的洞。空格没有「焦点不在按钮上时的兜底确认」——对着空处敲空格不是对任何问题的
+回答。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 守卫窗口是「左闭右开」的 300ms：同一瞬间、1ms、299ms 都拒绝，正好 300ms 及以后接受 | `test/confirm-store.test.mjs :: shouldAcceptConfirmKey refuses an activation keystroke for the whole guard window and accepts it from the boundary onward` |
+| 时间戳异常一律按拒绝处理（时钟倒流、Infinity、NaN、undefined）——坏时间戳绝不能反过来授权一次删除 | `test/confirm-store.test.mjs :: shouldAcceptConfirmKey fails closed on a clock that ran backwards or on a timestamp that is not a finite number` |
+| 判定是纯函数：不读存储状态，有无在场请求都给同一答案 | `test/confirm-store.test.mjs :: shouldAcceptConfirmKey is pure: it reads nothing from the store, so an open dialog, a settled one and no dialog at all give the same answer` |
 
 ## 16. 未覆盖缺口（❌ 补测待办）
 

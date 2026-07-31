@@ -1,24 +1,41 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-15
+Last updated: 2026-07-31
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
 `ROADMAP.md` is the live completeness map + priority backlog.
 
 Current development branch: `main`. The 2026-07-10/11 architecture hardening,
-Manuscript Flow restoration, and desktop floor navigation described below are
-kept as reviewable semantic batches.
+visual restoration, and desktop floor navigation described below are kept as
+reviewable semantic batches. Two unmerged corridor-theater refactor branches sit
+on top of it — see Current Visual Identity.
 
 ## Current Visual Identity
 
-ChatUI follows the Manuscript Flow contract in `DESIGN.md`: a title-page topbar,
-three tiers of hairline rules, open reading-flow messages, a rust-red user
-margin, a seal-shaped generation state, a quiet index sidebar, and a ledger
-composer. Desktop long-form reading also has a quiet left-spine floor index: it
-forms a local wave and reveals a short manuscript excerpt only while inspected.
-The palette and serif typography support that structure; they are not a skin
-over a generic bubble-chat layout.
+The visual identity is mid-transition. `DESIGN.md` now specifies the corridor
+theater (长廊剧场) direction — an ink-dark stage, a 58px character spine plus a
+252px playbill of conversation cards, xuan-paper popovers, cinnabar danger,
+dashed binding rules — and it replaced the Manuscript Flow contract as the north
+star on 2026-07-31. `main` has not caught up yet.
+
+What has landed lives on two branches that are **not merged**:
+`refactor/pr0-design-tokens` (`da23813`) rewrote the token layer and the type
+scale onto the ink-theatre palette, and `refactor/pr2-paper-popover` (`2d56365`,
+built on top of `da23813`) gave every menu one shared `.cui-paper` surface. That
+is the design system plus one of the ten handoff chapters; the sidebar
+information architecture, message flow, topbar, composer, and confirm dialog are
+untouched, so `main` still renders the Manuscript Flow surface. "New palette,
+old layout" is an accurate reading of the current build, not a rendering
+glitch.
+
+The Manuscript Flow grammar is not discarded wholesale — `DESIGN.md` keeps it as
+the grammar *inside* the stage: a title-page topbar, three tiers of hairline
+rules, open reading-flow messages, a rust user margin, a seal-shaped generation
+state, and a ledger composer. Desktop long-form reading keeps its own left-spine
+floor index (the handoff's rail spec is explicitly not adopted): it forms a local
+wave and reveals a short excerpt only while inspected. What the corridor theater
+changes is the navigation architecture around all of that.
 
 ---
 
@@ -166,11 +183,14 @@ real ST export functions — delete / swipe / rename / chat-switch are no longer
 simulated clicks. The old three-form sidebar cycle and third settings column have
 been replaced by the Codex-app-style two-pane model: `Sidebar | chat`, with
 settings as a mode swap that shows ChatUI-owned nav on the left and either
-ChatUI-native settings or a live ST drawer host on the right.
+ChatUI-native settings or a live ST drawer host on the right. This two-pane shell
+is what ships today; `DESIGN.md` §3 now targets `Spine | Playbill | Stage`, and
+that rework has not started.
 
 Desktop long conversations now expose a left-spine user-turn navigator beside a
 shared bounded reading column. One `2px` hairline represents one user message, with a
-fixed `6px` gap; short stacks are vertically centered and inset `16px` from the
+fixed `8px` gap (`85778e6` loosened it from the `6px` this section used to
+report); short stacks are vertically centered and inset `16px` from the
 main edge. The shared reading column is capped at `54rem`; the rail mounts only
 when the resulting left gutter leaves at least `12px` after its wave, so it never
 overlays prose. Hover previews that user's words plus the next character reply.

@@ -13,6 +13,13 @@ import { ConfirmDialog } from './ConfirmDialog.js';
  * requestChatuiConfirm()/the returned promise; this component only ever
  * turns the *current* request into buttons and reports back which one the
  * user pressed.
+ *
+ * The `key` is load-bearing, not decoration. The store lets a new request
+ * pre-empt an unanswered one, and without a key the dialog would be *updated*
+ * rather than remounted: it would keep the previous request's mount-time
+ * state, which now includes when its Enter guard started and whether it has
+ * focused its confirm button. A pre-empting delete confirm would inherit an
+ * already-expired guard — the exact case the guard exists for.
  */
 export function ConfirmDialogHost(): ComponentChild {
     const request = useChatuiConfirmRequest();
@@ -20,6 +27,7 @@ export function ConfirmDialogHost(): ComponentChild {
 
     return (
         <ConfirmDialog
+            key={request.id}
             title={request.title}
             message={request.message}
             confirmLabel={request.confirmLabel}
