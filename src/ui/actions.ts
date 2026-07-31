@@ -68,6 +68,11 @@ export {
 } from '../store/toast-store.js';
 
 export {
+    getLastVanishedChat as getLastVanishedChatuiChat,
+    subscribeVanishedChats as subscribeVanishedChatuiChats,
+} from '../store/vanished-chat-store.js';
+
+export {
     resolveChatuiConfirm,
     resetChatuiConfirmStore,
     shouldAcceptConfirmKey,

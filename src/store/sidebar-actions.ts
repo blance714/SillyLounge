@@ -45,6 +45,7 @@ import {
     prepareTempChatDeparture,
 } from './temp-chat-navigation.js';
 import { pushToast } from './toast-store.js';
+import { publishVanishedChat } from './vanished-chat-store.js';
 
 type ChatIdentity = { avatar: string; fileName: string } | null | undefined;
 type RecentRowsOptions = { max?: number; signal?: AbortSignal };
@@ -371,6 +372,11 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
                 // shelf's two buttons disagree about the same missing file.)
                 deleteComposerDraft(createCharacterChatKey(avatar, createConversationLocator(fileName)));
                 removeTempChat(avatar, fileName);
+                // Nothing deleted means no CHAT_DELETED, and the sidebar's
+                // cached listing still holds this file: without this the card
+                // does not go away, it turns into an ordinary history row
+                // pointing at nothing (vanished-chat-store.ts).
+                publishVanishedChat(avatar, fileName);
                 pushToast('info', '该对话已不存在，已移出列表');
                 return;
             }
@@ -628,6 +634,7 @@ export function openChatuiChatForCharacter(avatar: string, fileName: string): Pr
                 && !await chatuiAdapter.sidebarActions.hasCharacterChatFile(avatar, fileName)
             ) {
                 removeTempChat(avatar, fileName);
+                publishVanishedChat(avatar, fileName);
                 if (operation.isLatest()) pushToast('error', '草稿文件已不存在');
                 return;
             }
@@ -636,6 +643,11 @@ export function openChatuiChatForCharacter(avatar: string, fileName: string): Pr
                 // The host is authoritative: a stale quarantined lease whose
                 // file vanished must not become an immortal shelf row.
                 removeTempChat(avatar, fileName);
+                // Nor an immortal *ordinary* row, which is what the cached
+                // listing this row came from would otherwise keep serving —
+                // this branch is the ordinary card's version of the same
+                // discovery (vanished-chat-store.ts).
+                publishVanishedChat(avatar, fileName);
                 if (operation.isLatest()) pushToast('error', '角色或对话不存在');
             } else if (result === 'busy') {
                 if (operation.isLatest()) pushToast('info', '正在保存或生成，请稍候');
