@@ -43,12 +43,29 @@ const ACTIVATION_KEYS = new Set([' ', 'Enter']);
  * the focused confirm button would otherwise fire its own native click.
  * (preventDefault on keydown cancels the activation for both keys — verified
  * in a browser rather than assumed.) That is also why the accept path
- * deliberately does nothing when the keystroke is already aimed at a button
+ * deliberately does nothing when the keystroke is already aimed at a control
  * inside the dialog — the native activation is the one that runs, and calling
- * onConfirm() here as well would fire it twice. The window handler is
- * therefore only a fallback, for when focus has left the buttons entirely and
- * nothing native would answer; and it is an Enter-only fallback, since Space
- * pressed at nothing in particular is not an answer to anything.
+ * onConfirm() here as well would fire it twice.
+ *
+ * Past the guard the handler therefore sorts the keystroke by who is going to
+ * answer it, and it answers only in the one case where nobody else will:
+ *
+ *   - focus inside the dialog — the control answers for itself; stand down.
+ *   - focus outside the dialog — swallow it. This is aria-modal, and focus
+ *     escapes with a single Tab (nothing traps it, and confirm is the last
+ *     focusable in the portal), landing on a control hidden behind the veil.
+ *     preventDefault() does not stop propagation, so without the swallow one
+ *     Enter would both answer this dialog *and* reach that control — with
+ *     focus in the composer, deleting a message and sending one on the same
+ *     keystroke. It answers nothing; the dialog stays open.
+ *   - nothing focused (clicking the card's text leaves activeElement on
+ *     <body>) — nothing native is coming, so answer here. Bare Enter only:
+ *     Space pressed at nothing in particular is not an answer to anything,
+ *     and neither is a modified Enter.
+ *
+ * The escaped-focus swallow is a floor, not a fix for the missing focus trap:
+ * a real trap would keep focus in the dialog in the first place, and is worth
+ * having. Until then this at least guarantees one keystroke means one answer.
  *
  * One consequence, taken on purpose: if the user has tabbed to cancel, Enter
  * cancels rather than confirms. The design says "Enter confirms" of a dialog
@@ -111,13 +128,41 @@ export function ConfirmDialog({
                 return;
             }
 
-            // Past the guard, a button inside the dialog activates itself.
+            // Past the guard, the question is who answers. The window handler
+            // is only ever the *last* resort: it must run exactly when no
+            // native activation is coming, and stay out of the way otherwise.
             const target = event.target;
-            if (target instanceof HTMLButtonElement && cardRef.current?.contains(target)) return;
+            const nothingFocused = target === null
+                || target === document.body
+                || target === document.documentElement;
 
-            // Focus left the buttons (the user clicked the card's text, say),
-            // so nothing native will answer — do it here, for Enter only.
+            if (!nothingFocused) {
+                // Inside the dialog, the focused control answers for itself.
+                if (target instanceof Node && cardRef.current?.contains(target)) return;
+
+                // Outside it, focus has escaped the modal — one Tab from the
+                // confirm button is enough, since nothing traps it and confirm
+                // is the last focusable in the portal. Swallowing is not
+                // politeness here, it is the fix for a double answer: this
+                // handler runs at window *capture*, and preventDefault() alone
+                // does not stop propagation, so the key would go on to reach
+                // whatever sits behind the veil. With focus in the composer
+                // that meant one Enter both deleting the message and sending
+                // a new one (verified in Chromium). A keystroke aimed at a
+                // control the user cannot see is not an answer to this
+                // question either, so it answers nothing and the dialog stays.
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            // Nothing is focused — clicking the card's text lands here, since
+            // the card itself is not focusable — so no native activation is
+            // coming and this handler is the only thing that can answer.
+            // A bare Enter only: a modified Enter is not "the answer" anywhere
+            // else in this app, and must not become one here.
             if (event.key !== 'Enter') return;
+            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
             event.preventDefault();
             onConfirm();
         };
