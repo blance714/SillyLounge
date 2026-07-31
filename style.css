@@ -11,6 +11,8 @@
      2. ST DOM shield      — promote #chatui-root, park native surfaces
      3. Paper popover      — the shared menu surface (.cui-paper*)
      4. ChatUI root app    — the Preact-rendered UI (.cui-root-*)
+   …plus a reduced-motion coda at the very end of the file, which has to stay
+   at the end to win — see the note there before moving it.
 
    Every rule is scoped under body.chatui-active except :root properties.
    Class prefix: cui-  (no exceptions).
@@ -2230,22 +2232,6 @@ body.chatui-active .cui-root-generating-label {
     }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    body.chatui-active .cui-root-generating-seal {
-        animation: none;
-        opacity: 0.82;
-        transform: none;
-    }
-
-    body.chatui-active .cui-root-floor-tick {
-        transition: none;
-    }
-
-    body.chatui-active .cui-root-floor-range-label {
-        transition: none;
-    }
-}
-
 body.chatui-active .cui-root-scroll-bottom {
     position: absolute;
     left: 50%;
@@ -3227,5 +3213,42 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
 
     body.chatui-active .cui-settings-content {
         flex: 1 1 auto;
+    }
+}
+
+/* ---------------------------------------------------------------------------
+   Reduced motion  (keep last)
+
+   One place for every motion opt-out the app owes, and it sits at the end on
+   purpose: these overrides carry exactly the same specificity as the rules
+   they cancel, so a block placed mid-file loses to any animated rule declared
+   below it. That is not hypothetical: from where this block used to sit, just
+   under the generating seal, the plus sheet and the toast are declared later
+   and would have out-cascaded any opt-out written for them — the gap could
+   not have been closed in place. Anything animated from here on gets its
+   opt-out added here, at the bottom.
+
+   The three entrance animations need nothing but `animation: none`: each
+   element's resting style already *is* the animation's last frame, so
+   cancelling it lands them where they were going without restating anything.
+   --------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+    /* The seal is the one loop rather than an entrance, and it rests
+       mid-cycle, so its stopped frame has to be spelled out. */
+    body.chatui-active .cui-root-generating-seal {
+        animation: none;
+        opacity: 0.82;
+        transform: none;
+    }
+
+    body.chatui-active .cui-paper,
+    body.chatui-active .cui-root-plus-menu,
+    body.chatui-active .cui-root-toast {
+        animation: none;
+    }
+
+    body.chatui-active .cui-root-floor-tick,
+    body.chatui-active .cui-root-floor-range-label {
+        transition: none;
     }
 }
