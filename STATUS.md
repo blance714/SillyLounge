@@ -222,26 +222,40 @@ list; prompt dry-runs and quiet background generation do not adopt a draft; an
 uncertain rename keeps both possible filenames quarantined until raw state
 settles.
 
-Deleting a character's *last* chat (pr9 third baton) also lands on a
-quarantined draft rather than a permanent history entry, closing the one gap
-in "never leave a character selected with no conversation" (DESIGN §3,
-evaluation §5 3.6). `delete-transaction.ts` already had to move the durable
-chat pointer somewhere when no real chat survives to replace the deleted one;
-it now reports that fabricated name back (`fallbackChatFileName`) instead of
-letting it become an anonymous entry. `sidebar-actions.ts` queues a
-reload-scoped tombstone (`deletion-finalization.ts`'s
-`queueCharacterChatDraftQuarantine`, a `sessionStorage` sibling of the
-existing `CHAT_DELETED` replay tombstone) right before the mandatory reload
-the current-chat delete path already requires; on the next boot, once ST's
-own `getChatResult()` has materialized *some* file there (greeting or empty —
-that part of ST's behavior was already unconditional, not new),
-`finalizeChatuiDraftQuarantine` confirms the file is real and still that
-character's live current chat, then folds it into the same quarantine set
-`newChatuiChat()` uses — same 未完成草稿 card, same 丢弃 action, same lease
-rules. The confirm step lives in the adapter (read-only: raw listing + live
-identity) and the store owns the actual quarantine write, keeping the
-adapter/store boundary intact. Deleting down to a *remaining* real chat is
-unaffected — that path already worked and queues nothing new.
+Deleting a character's *last* chat (pr9 third baton, rewritten by the fourth)
+also lands on a quarantined draft rather than a permanent history entry,
+closing the one gap in "never leave a character selected with no conversation"
+(DESIGN §3, evaluation §5 3.6). `delete-transaction.ts` already had to move the
+durable chat pointer somewhere when no real chat survives to replace the
+deleted one; it now reports that fabricated name back
+(`fallbackChatFileName`) instead of letting it become an anonymous entry.
+`sidebar-actions.ts` queues a tombstone (`deletion-finalization.ts`'s
+`queueCharacterChatDraftQuarantine`, a `sessionStorage` sibling of the existing
+`CHAT_DELETED` replay tombstone) right before the mandatory reload the
+current-chat delete path already requires.
+
+The next boot does *not* check whether ST has materialized that file — it
+cannot. ST does so on a fire-and-forget chain APP_READY does not wait for
+(`initRossMods()` at script.js:772 never awaits `RA_autoloadchat()`), so the
+first version of this handoff asked the chat directory too early on every
+single boot, found nothing, and destroyed the intent; measured on a real
+1.18.0 host, the listing came back at t≈848ms and the file was only saved at
+t≈949ms. What replaced it keeps one condition — the fabricated name is this
+character's live current chat — and gets "the file is on disk" for free from
+ST's own await ordering, since `getChatResult()` awaits `saveChatConditional()`
+before it emits CHAT_CHANGED. `finalizeChatuiDraftQuarantine` therefore arms
+the intent for this page load and watches: immediately, in case ST's autoload
+got there first, then on CHAT_CHANGED. A chat change that is not the fallback
+file leaves the tombstone alone (its meaning is "if this name goes live, it is
+a draft", and landing elsewhere is no evidence against that); an intent the
+page never resolves is expired by the next boot, so nothing dangles and no
+wall-clock timeout was invented. Once it fires, the file folds into the same
+quarantine set `newChatuiChat()` uses — same 未完成草稿 card, same 丢弃
+action, same lease rules. The whole boot half is now request-free. The
+decision lives in the adapter (read-only over live identity) and the store
+owns the actual quarantine write, keeping the adapter/store boundary intact.
+Deleting down to a *remaining* real chat is unaffected — that path already
+worked and queues nothing new.
 
 That handoff also depends on the reload coming back on the same character,
 which it did not: `selectCharacterById()` moves only the live selection, and ST

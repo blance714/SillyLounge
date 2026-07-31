@@ -127,13 +127,71 @@ export async function finalizePendingCharacterChatDeletion(): Promise<void> {
 // above: only one current-chat delete can ever be in flight across one
 // reload, and a stale second entry would risk quarantining an unrelated
 // later file that happens to reuse the name.
+//
+// *When* this may be observed is the whole difficulty, and getting it wrong
+// is what made the first version of this handoff a race it could only lose.
+// That version ran on APP_READY and asked the chat directory whether the
+// fallback file existed yet. It never did: `initRossMods()` (script.js:772)
+// does not await `RA_autoloadchat()` (RossAscends-mods.js:697), and APP_READY
+// is emitted from a different async chain further down the same boot
+// (script.js:788), so the `saveChatConditional()` that materializes the file
+// always lands after APP_READY. (Measured on a real 1.18.0 host: the listing
+// read finished at t≈848ms, the tombstone was dropped at t≈855ms, and
+// POST /api/chats/save only went out at t≈949ms.) The check was asking about
+// something ST guarantees will happen but guarantees to do *after* the only
+// moment we were looking — it was never an invariant this repo owns.
+//
+// So the disk check is gone, and with it every network request this handoff
+// used to make. The guard that remains is identity — "this character's
+// current chat is the exact name we fabricated" — and ST's own await
+// ordering hands us the disk fact for free: `getChatResult()` (script.js:7625)
+// awaits `saveChatConditional()` before it emits CHAT_CHANGED, so by the time
+// any CHAT_CHANGED names our fallback file, that file is already on the
+// server. Observation therefore moves off APP_READY entirely and onto "the
+// live chat became this file", whenever that happens: at boot if ST's
+// autoload got there first, on a CHAT_CHANGED later in the same page if it
+// did not (or if autoload is off and the reader opens the character by hand).
+//
+// The tombstone is consequently *kept*, not destroyed, while the live chat is
+// something else — its meaning is "if this file name goes live, it is a
+// draft", and a boot that lands on another character (or on nothing) is no
+// evidence against that. Its lifetime is bounded without any wall-clock
+// constant: sessionStorage already scopes it to this tab, and
+// `armPendingCharacterChatDraftQuarantine()` below stamps the one boot that
+// owns it, so an intent that page never resolved is dropped by the next boot
+// rather than dangling.
 // ---------------------------------------------------------------------------
 
 const PENDING_DRAFT_QUARANTINE_KEY = 'chatui:pendingDraftQuarantine';
 
 export type PendingCharacterChatDraftQuarantine = Readonly<{ avatar: string; fileName: string }>;
 
-function readPendingCharacterChatDraftQuarantine(): PendingCharacterChatDraftQuarantine | null {
+/**
+ * The outcome of one look at the live chat, from `resolvePendingCharacterChatDraftQuarantine()`.
+ *
+ * - `quarantine`: the fallback file is live now; `pointer` is the confirmed
+ *   target and the tombstone has been consumed.
+ * - `waiting`: a tombstone is queued but something else holds the live chat;
+ *   it stays queued for the next signal.
+ * - `settled`: nothing is queued (never was, or already consumed) — the
+ *   caller can stop listening.
+ */
+export type CharacterChatDraftQuarantineMatch =
+    | Readonly<{ status: 'quarantine'; pointer: PendingCharacterChatDraftQuarantine }>
+    | Readonly<{ status: 'waiting' }>
+    | Readonly<{ status: 'settled' }>;
+
+const DRAFT_QUARANTINE_WAITING = Object.freeze({ status: 'waiting' as const });
+const DRAFT_QUARANTINE_SETTLED = Object.freeze({ status: 'settled' as const });
+
+type StoredCharacterChatDraftQuarantine = Readonly<{
+    avatar: string;
+    fileName: string;
+    /** Set by the one boot that has taken ownership of this intent. */
+    armed: boolean;
+}>;
+
+function readPendingCharacterChatDraftQuarantine(): StoredCharacterChatDraftQuarantine | null {
     let raw: string | null;
     try {
         raw = sessionStorage.getItem(PENDING_DRAFT_QUARANTINE_KEY);
@@ -151,7 +209,15 @@ function readPendingCharacterChatDraftQuarantine(): PendingCharacterChatDraftQua
     const record = parseRecord(parsed);
     const avatar = stringValue(record.avatar);
     const fileName = stripChatExt(record.fileName);
-    return avatar && fileName ? { avatar, fileName } : null;
+    return avatar && fileName ? { avatar, fileName, armed: record.armed === true } : null;
+}
+
+function writePendingCharacterChatDraftQuarantine(pending: StoredCharacterChatDraftQuarantine): void {
+    try {
+        sessionStorage.setItem(PENDING_DRAFT_QUARANTINE_KEY, JSON.stringify(pending));
+    } catch (error) {
+        console.error('[ChatUI] failed to persist draft-quarantine tombstone', error);
+    }
 }
 
 function clearPendingCharacterChatDraftQuarantine(): void {
@@ -166,52 +232,70 @@ function clearPendingCharacterChatDraftQuarantine(): void {
 export function queueCharacterChatDraftQuarantine(avatar: string, fileName: string): void {
     const bareName = stripChatExt(fileName);
     if (!avatar || !bareName) return;
-    try {
-        sessionStorage.setItem(
-            PENDING_DRAFT_QUARANTINE_KEY,
-            JSON.stringify({ avatar, fileName: bareName }),
-        );
-    } catch (error) {
-        console.error('[ChatUI] failed to persist draft-quarantine tombstone', error);
-    }
+    // Unarmed: the boot this reload is about to start is the one that owns it.
+    writePendingCharacterChatDraftQuarantine({ avatar, fileName: bareName, armed: false });
 }
 
 /**
- * Confirm and consume the pending draft-quarantine tombstone. Returns the
- * pointer to quarantine only once the fallback file is verified live: it now
- * exists on disk (ST's boot materialized it) *and* it is still this
- * character's actual current chat — nothing else claimed the slot between
- * queuing and this boot. Any other outcome drops the tombstone; a later,
- * unrelated chat that happens to reuse the fallback name must never be
- * quarantined by an old intent.
+ * Claim the pending draft-quarantine intent for this page load, and expire one
+ * a previous page load already claimed.
+ *
+ * Call exactly once per boot, before watching for the fallback file to go
+ * live. The returned pointer is only "there is work to do this session" — the
+ * authority on whether that work fires is
+ * `resolvePendingCharacterChatDraftQuarantine()` below, which re-reads storage
+ * every time.
+ *
+ * The arm stamp is the whole expiry policy, and it is deliberately counted in
+ * page loads rather than milliseconds: the intent belongs to the reload that
+ * `deleteChatuiChat` forced, so the honest bound is "the page it was queued
+ * for, and no later". A page that ends without resolving it (the reader
+ * reloaded again, closed the character, never came back) leaves a file that
+ * has by then already been shown as ordinary history — folding it into the
+ * quarantine set retroactively on some much later boot would be a surprise,
+ * not a repair.
+ */
+export function armPendingCharacterChatDraftQuarantine(): PendingCharacterChatDraftQuarantine | null {
+    const pending = readPendingCharacterChatDraftQuarantine();
+    if (!pending) return null;
+    if (pending.armed) {
+        clearPendingCharacterChatDraftQuarantine();
+        return null;
+    }
+    writePendingCharacterChatDraftQuarantine({ ...pending, armed: true });
+    return { avatar: pending.avatar, fileName: pending.fileName };
+}
+
+/**
+ * Check the pending draft-quarantine tombstone against the live chat, and
+ * consume it if this is the moment it names.
+ *
+ * The single condition is identity: this character's current chat is exactly
+ * the fabricated fallback name. Nothing here asks the server anything — see
+ * the section comment above for why the file's existence is already implied by
+ * whichever ST code path made it current, and why the old directory check
+ * could only ever look too early.
+ *
+ * A mismatch reports `waiting` and leaves the tombstone alone. Dropping it
+ * there was the second half of the original bug: "some other chat is current
+ * right now" is not evidence that the fallback file will never be, and with
+ * the intent gone the file it eventually materializes silently becomes
+ * permanent history.
  *
  * Read-only over adapter state on purpose: the temp-chat quarantine set
  * itself is store-layer state (temp-chat-store.ts), which the adapter must
  * not reach into (ARCHITECTURE.md's layering). The caller — sidebar-actions.ts,
  * the one place allowed to touch that store — commits the confirmed pointer.
  */
-export async function takePendingCharacterChatDraftQuarantine(): Promise<PendingCharacterChatDraftQuarantine | null> {
+export function resolvePendingCharacterChatDraftQuarantine(): CharacterChatDraftQuarantineMatch {
     const pending = readPendingCharacterChatDraftQuarantine();
-    if (!pending) return null;
-
-    let names: string[];
-    try {
-        names = await listRawCharacterChatNames(pending.avatar);
-    } catch (error) {
-        console.error('[ChatUI] failed to verify pending draft-quarantine target', error);
-        // Transient read failure: keep the tombstone for a later boot rather
-        // than dropping a target that may still need quarantining.
-        return null;
-    }
-    if (!names.includes(pending.fileName)) {
-        // ST's boot did not (yet, or ever) materialize the fallback file —
-        // nothing to quarantine.
-        clearPendingCharacterChatDraftQuarantine();
-        return null;
-    }
+    if (!pending) return DRAFT_QUARANTINE_SETTLED;
 
     const current = getCurrentChatIdentity();
+    if (current?.avatar !== pending.avatar || current.fileName !== pending.fileName) {
+        return DRAFT_QUARANTINE_WAITING;
+    }
+
     clearPendingCharacterChatDraftQuarantine();
-    if (current?.avatar !== pending.avatar || current.fileName !== pending.fileName) return null;
-    return pending;
+    return { status: 'quarantine', pointer: { avatar: pending.avatar, fileName: pending.fileName } };
 }

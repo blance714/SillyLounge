@@ -103,40 +103,59 @@
 | 同一间隙内聊天保存开始，同样回滚指针并放弃删除（覆盖两个析取分支） | `test/adapter-chats.test.mjs :: deleting the current chat rolls the pointer back and abandons the delete when chat saving begins in the gap between persisting the replacement and issuing DELETE` |
 | 删除角色仅剩的一条对话时，指针被移到一个尚不存在的兜底文件名，并把该文件名如实上报（供调用方在下次启动时纳入草稿隔离） | `test/adapter-chats.test.mjs :: deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back for draft quarantine` |
 
-pr9 第 3 棒新增的兜底规则（DESIGN §3、评估 §5 3.6）：删除当前对话后绝不能停在
-「角色已选中、没有任何对话」的中间态。同角色还有其它对话时沿用上面已有的替换指针
-逻辑；角色的对话被删空时，`delete-transaction.ts` 把指针指向一个尚未写入磁盘的
-兜底文件名并通过 `fallbackChatFileName` 上报——ST 自己的重载启动会在那个指针上物化
-出某个文件（问候语或空白，`getChatResult()` 无条件的 `saveChatConditional()`），
-`deletion-finalization.ts` 新增的 `queueCharacterChatDraftQuarantine` /
-`takePendingCharacterChatDraftQuarantine` 让下次启动确认那个文件确实存在、确实仍是
-该角色的当前对话后，把指针原样交还给 store 层（`sidebar-actions.ts` 的
-`finalizeChatuiDraftQuarantine`）折进 `temp-chat-store.ts` 的隔离集——和 ＋新对话
-走同一条路径，而不是悄悄变成一条没人要求保留的永久历史记录。adapter 层只读校验，
-真正写隔离集的动作留给 store 层，符合分层边界（`check-boundaries.mjs`）。
+pr9 第 3 棒新增、第 4 棒收尾时重写的兜底规则（DESIGN §3、评估 §5 3.6）：删除当前
+对话后绝不能停在「角色已选中、没有任何对话」的中间态。同角色还有其它对话时沿用上面
+已有的替换指针逻辑；角色的对话被删空时，`delete-transaction.ts` 把指针指向一个尚未
+写入磁盘的兜底文件名并通过 `fallbackChatFileName` 上报，`sidebar-actions.ts` 在强制
+刷新前排下一张 `sessionStorage` 凭证（`queueCharacterChatDraftQuarantine`），下次
+启动把那个文件折进 `temp-chat-store.ts` 的隔离集——和 ＋新对话走同一条路径，而不是
+悄悄变成一条没人要求保留的永久历史记录。
+
+**观察时机是这条规则的全部难点**，第一版就是在这里必输：它挂在 APP_READY 上、去查
+目录里有没有那个文件。ST 的 `initRossMods()`（script.js:772）不 await
+`RA_autoloadchat()`（RossAscends-mods.js:697），APP_READY 由另一条 async 链在
+script.js:788 发出，所以物化那个文件的 `saveChatConditional()` **永远**排在
+APP_READY 之后（真机 1.18.0 实测：目录读取 848ms 完成、凭证 855ms 被清、
+`POST /api/chats/save` 949ms 才发出）。那道磁盘核验问的是「ST 保证会发生、但保证发生
+在我们唯一的观察点之后」的事，本就不是本仓库该守的不变量。
+
+现在磁盘核验连同这条链路上的全部网络请求一起去掉了，只留身份核验——「该角色此刻的
+当前对话就是我们捏出来的那个文件名」——而文件已落盘这件事由 ST 自己的 await 顺序
+免费提供：`getChatResult()`（script.js:7625）先 await `saveChatConditional()`、之后
+才发 CHAT_CHANGED，所以任何一次「CHAT_CHANGED 时当前对话是兜底文件」都已蕴含文件在
+盘上。观察点也随之从 APP_READY 移到「兜底文件成为当前对话的那一刻」：启动时若 ST 的
+autoload 已经先到就当场成立，没到就等本页后续的 CHAT_CHANGED（autoload 关掉、读者
+自己点开该角色，同样成立）。
+
+凭证因此在不匹配时**保留**而不是销毁——它的语义是「这个文件名若成为当前对话即隔离」，
+一次落在别的角色/别的对话上并不是反证。有界性不靠任何时间常数：`sessionStorage` 本身
+已把它限定在本标签页内，`armPendingCharacterChatDraftQuarantine` 再给「拥有它的那一次
+页面加载」盖章，该页没有兑现的意图由下一次启动直接过期丢弃。adapter 层只读判定，真正
+写隔离集的动作留给 store 层，符合分层边界（`check-boundaries.mjs`）。
 
 | 不变量 | 验证 |
 | --- | --- |
-| 没有排队的兜底草稿隔离凭证时，确认函数直接返回 null，不发任何请求 | `test/adapter-chats.test.mjs :: takePendingCharacterChatDraftQuarantine resolves null and touches nothing when no tombstone was queued` |
+| 没有排队的兜底草稿隔离凭证时，认领函数直接返回 null，不发任何请求、不写任何存储 | `test/adapter-chats.test.mjs :: armPendingCharacterChatDraftQuarantine resolves null and touches nothing when no tombstone was queued` |
 | 缺角色 avatar 或文件名时排队函数是纯空操作，不写入任何凭证 | `test/adapter-chats.test.mjs :: queueCharacterChatDraftQuarantine with a missing avatar or filename is a no-op` |
-| 兜底文件被确认已物化且仍是该角色当前对话时，返回该指针并清空凭证，不遗留给下次误判 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone resolves the fallback pointer once the file is confirmed live and still the current chat, and clears itself` |
-| 兜底文件尚未被物化（不在目录列表）时返回 null 并清空凭证 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone resolves null and clears itself when the fallback file was never materialized` |
-| 文件已物化但当前对话已换成别的文件时返回 null 并清空凭证，绝不误隔离别的对话 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone resolves null and clears itself when a different chat is now current, without quarantining the wrong file` |
-| 目录读取瞬时失败时保留凭证以待下次启动重试，绝不因一次失败就丢弃仍需处理的目标 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone survives a transient read failure and resolves once a later boot can verify it` |
-| 删除角色仅剩对话时，`deleteChatuiChat` 在刷新前把兜底文件名连同既有的 CHAT_DELETED 回放凭证一起排队；下次启动 `finalizeChatuiDraftQuarantine` 把它折进临时会话隔离集、标记为活跃 | `test/sidebar-actions.test.mjs :: deleting a character's only chat queues the draft-quarantine tombstone before reload, and finalizeChatuiDraftQuarantine folds the fallback file ST's next boot materializes into the same temp-chat quarantine ＋新对话 uses` |
+| 启动时 ST 尚未载入兜底文件（真实时序）不算失败：凭证保留、判定为 waiting；兜底文件成为当前对话的那一刻才交还指针并清空凭证，且全程零网络请求 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone waits through the boot in which ST has not yet loaded the fallback file, then resolves the moment it becomes the live chat — without ever reading the chat directory` |
+| 当前对话是别的文件、或同名文件挂在别的角色下时一律 waiting：绝不误隔离别人，也绝不因此丢弃仍待兑现的意图 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone keeps waiting while an unrelated chat holds the live slot, and never quarantines it` |
+| 已被上一次页面加载认领却未兑现的凭证，由下一次启动过期丢弃，绝不无限悬挂 | `test/adapter-chats.test.mjs :: a draft-quarantine tombstone the previous page load already armed is expired by the next boot instead of dangling` |
+| 没有凭证时判定函数报 settled 并短路，连当前对话身份都不去读 | `test/adapter-chats.test.mjs :: resolvePendingCharacterChatDraftQuarantine reports settled without reading the live chat when no tombstone is queued` |
+| 删除角色仅剩对话时，`deleteChatuiChat` 在刷新前把兜底文件名连同既有的 CHAT_DELETED 回放凭证一起排队；下次启动 `finalizeChatuiDraftQuarantine` 先认领、再等 CHAT_CHANGED，兜底文件真正上台后才折进临时会话隔离集并标记为活跃，随即注销监听 | `test/sidebar-actions.test.mjs :: deleting a character's only chat queues the draft-quarantine tombstone before reload, and finalizeChatuiDraftQuarantine folds the fallback file into the same temp-chat quarantine ＋新对话 uses once ST's boot finally makes it live` |
 | 删除后仍有真实剩余对话时绝不排队草稿隔离凭证，也绝不污染隔离集 | `test/sidebar-actions.test.mjs :: deleting a chat that leaves a real remaining conversation never queues a draft-quarantine tombstone` |
-| 没有待处理凭证时 `finalizeChatuiDraftQuarantine` 是纯空操作，零网络请求、隔离集不变 | `test/sidebar-actions.test.mjs :: finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombstone is pending` |
+| 非兜底文件的 CHAT_CHANGED 既不隔离它、也不丢弃凭证，继续等真正那一条 | `test/sidebar-actions.test.mjs :: a pending draft quarantine ignores chat changes that are not its fallback file, and keeps waiting for the one that is` |
+| 没有待处理凭证时 `finalizeChatuiDraftQuarantine` 是纯空操作：零网络请求、隔离集不变、不留下任何 CHAT_CHANGED 监听 | `test/sidebar-actions.test.mjs :: finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombstone is pending` |
 
-pr9 第 4 棒补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时选择
-（`this_chid`）；ST 把持久化的 `active_character` 写在自己 `.character_select`
-点击处理器里（RossAscends-mods.js:849-854），任何不经过那行原生列表的路径都不会更新
-它。spine 成为唯一换角色入口后，这意味着**任何**刷新（删除当前对话强制的那次、手动
-刷新、停用扩展）都会回到读者上一次从 ST 原生列表里点过的角色。
+pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时
+选择（`this_chid`）；ST 把持久化的 `active_character` 写在自己
+`.character_select` 点击处理器里（RossAscends-mods.js:849-854），任何不经过那行原生
+列表的路径都不会更新它。spine 成为唯一换角色入口后，这意味着**任何**刷新（删除当前
+对话强制的那次、手动刷新、停用扩展）都会回到读者上一次从 ST 原生列表里点过的角色。
 `adapter/chats/navigation.ts` 的 `persistStActiveCharacter` 原样复刻那个处理器的三次
 调用；`sidebar-actions.ts` 的 `_reloadForChatTransaction` 则在自己发起的强制刷新前
 先 await 一次真正的 `saveSettings()`，因为 `saveSettingsDebounced()` 是全局共享的
-cancel-and-re-arm 计时器，刷新落在它 1000ms 窗口内就会静默丢掉这次写入（同一条理由
-见 `index.ts` 的 `disableChatuiLayers`）。
+cancel-and-re-arm 计时器，刷新落在它 1000ms 窗口内就会静默丢掉这次写入
+（同一条理由见 `index.ts` 的 `disableChatuiLayers`）。
 
 | 不变量 | 验证 |
 | --- | --- |

@@ -402,25 +402,71 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
 }
 
 /**
+ * One look at the live chat: fold the fallback file into the quarantine set if
+ * this is the moment the tombstone names.
+ *
+ * @returns {boolean} true once there is nothing left to watch for — either the
+ *   pointer was committed, or no tombstone is queued at all.
+ */
+function _resolveChatuiDraftQuarantine(): boolean {
+    let match;
+    try {
+        match = chatuiAdapter.sidebarActions.resolvePendingCharacterChatDraftQuarantine();
+    } catch (error) {
+        console.error('[ChatUI] failed to resolve draft-quarantine handoff', error);
+        // Keep watching: an unreadable tombstone this instant is not proof
+        // there is nothing to quarantine.
+        return false;
+    }
+    if (match.status === 'waiting') return false;
+    if (match.status === 'quarantine') {
+        try {
+            commitTempChatDraft(match.pointer, getTempChatDraftSnapshot());
+        } catch (error) {
+            console.error('[ChatUI] failed to commit draft-quarantine handoff', error);
+        }
+    }
+    return true;
+}
+
+/**
  * Complete the draft-quarantine handoff `deleteChatuiChat` queues when
  * deleting a character's last chat leaves it pointed at a fallback file
  * nothing had written yet. Call once at boot (after ST is ready), alongside
- * `finalizePendingCharacterChatDeletion`: by then ST's own boot has already
- * materialized *some* file at that pointer (greeting or empty), so this only
- * has to fold it into the same quarantine set ＋新对话 uses — the adapter
- * confirms the file is real and still this character's live current chat
- * before handing back a pointer at all, so a mismatch (something else loaded
- * in the meantime) simply does nothing here.
- * @returns {Promise<void>}
+ * `finalizePendingCharacterChatDeletion`.
+ *
+ * This does not assume ST's boot has already got there. It cannot: ST
+ * materializes that file on a fire-and-forget chain that APP_READY does not
+ * wait for (deletion-finalization.ts's section comment has the full ordering,
+ * with the byte-level trace of the boot where this used to lose every time).
+ * So the handoff arms itself for this page and then watches for the fallback
+ * file to *become* the live chat — immediately, in case ST's autoload already
+ * finished, and on every CHAT_CHANGED after that, which ST only emits once the
+ * file is saved. The listener stops the moment the intent is either committed
+ * or gone; while it is neither, an unrelated chat change is simply not the
+ * event we are waiting for.
+ *
+ * @returns {void}
  */
-export async function finalizeChatuiDraftQuarantine(): Promise<void> {
+export function finalizeChatuiDraftQuarantine(): void {
+    let pending: TempChatPointer | null = null;
     try {
-        const pending = await chatuiAdapter.sidebarActions.takePendingCharacterChatDraftQuarantine();
-        if (!pending) return;
-        commitTempChatDraft(pending, getTempChatDraftSnapshot());
+        pending = chatuiAdapter.sidebarActions.armPendingCharacterChatDraftQuarantine();
     } catch (error) {
-        console.error('[ChatUI] failed to finalize draft-quarantine handoff', error);
+        console.error('[ChatUI] failed to arm draft-quarantine handoff', error);
+        return;
     }
+    if (!pending) return;
+    if (_resolveChatuiDraftQuarantine()) return;
+
+    let stopWatching: (() => void) | null = null;
+    // `subscribe` registers synchronously, so the handler cannot run before
+    // stopWatching is assigned below.
+    stopWatching = chatuiAdapter.subscribe('CHAT_CHANGED', () => {
+        if (!_resolveChatuiDraftQuarantine()) return;
+        stopWatching?.();
+        stopWatching = null;
+    });
 }
 
 /**
