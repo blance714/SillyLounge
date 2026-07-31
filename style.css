@@ -973,6 +973,46 @@ body.chatui-active .cui-root-rails.is-mobile-open {
     transform: translateX(0);
 }
 
+/* Sliding out of sight is not leaving. `transform` moves the closed drawer off
+   the left edge but every button inside it stays focusable, so on a phone the
+   first Tab presses walk into a drawer nobody can see: measured, the playbill
+   card's 重命名/删除 buttons sit at left −73…−13px with their focus ring drawn
+   off-screen, and the reader gets eight presses of nothing before focus
+   reappears in the topbar.
+
+   `visibility: hidden` is the declaration that actually takes a subtree out of
+   the tab order and the accessibility tree, and it inherits, so one line
+   covers spine + playbill together. No JS is involved on purpose: the app has
+   no isMobile signal (no matchMedia anywhere in ui/), and `inert` keyed off
+   `!isSidebarMobileOpen` alone would black-hole the permanently-open desktop
+   rails. The breakpoint is the condition, so the breakpoint is where it goes.
+
+   The delay is the whole trick. On the way out visibility flips only after the
+   slide has finished, so the drawer stays painted while it travels; on the way
+   in the open-state rule's `transition-delay: 0s` is what the browser reads
+   for that direction, so the drawer is visible from the first frame. Under
+   prefers-reduced-motion the coda's `transition: none` drops both halves at
+   once, which is the right answer there: nothing slides, nothing lingers.
+
+   .is-settings is listed with .is-mobile-open because on a phone that class is
+   *not* a drawer at all (see the settings block near the end of this file): it
+   is the full-width settings nav, in flow, transform cleared — visible without
+   ever being "open". */
+@media (max-width: 768px) {
+    body.chatui-active .cui-root-rails {
+        visibility: hidden;
+        transition:
+            transform var(--cui-motion-base) ease,
+            visibility 0s linear var(--cui-motion-base);
+    }
+
+    body.chatui-active .cui-root-rails.is-mobile-open,
+    body.chatui-active .cui-root-rails.is-settings {
+        visibility: visible;
+        transition-delay: 0s;
+    }
+}
+
 body.chatui-active .cui-root-spine {
     flex: 0 0 auto;
     display: flex;
