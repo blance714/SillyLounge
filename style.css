@@ -326,6 +326,23 @@
     --cui-sidebar-indent: calc(
         var(--cui-sidebar-row-padding-x) + var(--cui-sidebar-avatar-size) + var(--cui-sidebar-row-gap)
     );
+
+    /* Scoped 8px scrollbar (README "其他": 滚动条 8px 自定义 / 原型 L18). The
+       app has two surfaces, so the recipe has two thumbs: the dark stage's
+       thumb is read straight off the 原型's literal rgba(232,223,206,.14) —
+       232/223/206 is --cui-color-text's own channel triple, so this is that
+       same mark expressed as a token instead of a re-typed literal. Paper
+       popovers would render that pale mark invisible against their light
+       ground, so they reuse --cui-paper-rule — the ink already defined for
+       paper's own binding line and separators — rather than inventing a
+       second hand-tuned paper opacity. Both thumbs share one width and one
+       radius; only the color forks. Never promoted to a bare
+       `::-webkit-scrollbar` — every consumer stays scoped to its own .cui-*
+       container (see §9.1's ban on a global rule). */
+    --cui-scrollbar-size: 8px;
+    --cui-scrollbar-radius: 4px;
+    --cui-scrollbar-thumb: color-mix(in srgb, var(--cui-color-text) 14%, transparent);
+    --cui-scrollbar-thumb-paper: var(--cui-paper-rule);
 }
 
 /* ---------------------------------------------------------------------------
@@ -3741,6 +3758,74 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
     body.chatui-active .cui-settings-content {
         flex: 1 1 auto;
     }
+}
+
+/* ---------------------------------------------------------------------------
+   Scoped scrollbars  (README "其他": 滚动条 8px 自定义 / 原型 L18)
+
+   §9.1 bans a global `::-webkit-scrollbar` — it would restyle every native
+   ST scrollbar sharing the page, not just this app's own surfaces — so each
+   scrollable region below opts in by its own .cui-* class instead. One
+   recipe, two thumbs (see the --cui-scrollbar-* tokens at :root for why):
+   dark-stage containers read the pale parchment mark, paper popovers read
+   their own binding-line ink so the thumb stays visible on the light ground.
+   Firefox gets the same two thumbs through `scrollbar-color`.
+
+   Seven containers, matching README's named list (消息流/侧栏/编辑
+   textarea/＋菜单/设置导航) plus the sidebar's second scroll region (the
+   draft shelf scrolls independently of the character list above it) and the
+   selector-chip menu (preset/model/persona — the same cui-paper popover
+   shape as the ＋ menu, so it owes it the same visible thumb rather than
+   inheriting whatever the platform default happens to be against parchment).
+   --------------------------------------------------------------------------- */
+body.chatui-active .cui-root-message-list,
+body.chatui-active .cui-root-convlist-scroll,
+body.chatui-active .cui-root-draft-shelf-list,
+body.chatui-active .cui-root-edit-textarea,
+body.chatui-active .cui-settings-nav {
+    scrollbar-width: thin;
+    scrollbar-color: var(--cui-scrollbar-thumb) transparent;
+}
+
+body.chatui-active .cui-root-plus-menu,
+body.chatui-active .cui-root-selchip-menu {
+    scrollbar-width: thin;
+    scrollbar-color: var(--cui-scrollbar-thumb-paper) transparent;
+}
+
+body.chatui-active .cui-root-message-list::-webkit-scrollbar,
+body.chatui-active .cui-root-convlist-scroll::-webkit-scrollbar,
+body.chatui-active .cui-root-draft-shelf-list::-webkit-scrollbar,
+body.chatui-active .cui-root-edit-textarea::-webkit-scrollbar,
+body.chatui-active .cui-settings-nav::-webkit-scrollbar,
+body.chatui-active .cui-root-plus-menu::-webkit-scrollbar,
+body.chatui-active .cui-root-selchip-menu::-webkit-scrollbar {
+    width: var(--cui-scrollbar-size);
+}
+
+body.chatui-active .cui-root-message-list::-webkit-scrollbar-track,
+body.chatui-active .cui-root-convlist-scroll::-webkit-scrollbar-track,
+body.chatui-active .cui-root-draft-shelf-list::-webkit-scrollbar-track,
+body.chatui-active .cui-root-edit-textarea::-webkit-scrollbar-track,
+body.chatui-active .cui-settings-nav::-webkit-scrollbar-track,
+body.chatui-active .cui-root-plus-menu::-webkit-scrollbar-track,
+body.chatui-active .cui-root-selchip-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+body.chatui-active .cui-root-message-list::-webkit-scrollbar-thumb,
+body.chatui-active .cui-root-convlist-scroll::-webkit-scrollbar-thumb,
+body.chatui-active .cui-root-draft-shelf-list::-webkit-scrollbar-thumb,
+body.chatui-active .cui-root-edit-textarea::-webkit-scrollbar-thumb,
+body.chatui-active .cui-settings-nav::-webkit-scrollbar-thumb {
+    background-color: var(--cui-scrollbar-thumb);
+    border-radius: var(--cui-scrollbar-radius);
+}
+
+body.chatui-active .cui-root-plus-menu::-webkit-scrollbar-thumb,
+body.chatui-active .cui-root-selchip-menu::-webkit-scrollbar-thumb {
+    background-color: var(--cui-scrollbar-thumb-paper);
+    border-radius: var(--cui-scrollbar-radius);
 }
 
 /* ---------------------------------------------------------------------------
