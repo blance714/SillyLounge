@@ -52,7 +52,10 @@
 规则线不是同一个 `border` 到处复用：
 
 1. **淡线 `--cui-rule-faint`**：正文 connector、思考边注、场刊内部分隔。
-2. **结构线 `--cui-rule-structure`**：topbar、spine/playbill、composer 等区域边界。
+2. **结构线 `--cui-rule-structure`**：topbar、spine/playbill 等区域边界。composer
+   不在此列（2026-07-31 pr4 第 3 棒更正）：它自己的横线是装饰行两段可变色的线
+   （`--cui-color-user-mark`/`--cui-color-accent` 两端，见 §4.4），不是一条固定
+   结构色的边框——composer 本身不再画 `border`。
 3. **强调线 `--cui-rule-accent`**：用户页边、当前对话、活跃书写区域。
 
 强调线必须稀少；若页面上每条线都发亮，就失去层级。
@@ -90,6 +93,13 @@
 - **处置方式（2026-07-31 拍板）：随各区域换肤逐区把间距/尺寸从 `rem` 收敛为 `px`**，
   一个区域一次改干净，不做一次性全局替换（全局替换既无法验收也无法回滚）。
   已收敛的区域不得再退回 `rem`，未收敛的区域不新增 `rem` 间距。
+  **已收敛**：topbar（`.cui-root-topbar*`、`.cui-root-shell-toggle`/`-close`）、
+  composer（`.cui-root-composer*`、`.cui-root-plus`/`-plus-btn`，不含 ＋菜单自身
+  的下拉内容）——pr4 第 3 棒。`--cui-content-max-width` 仍是 `rem`：它是跨区域共享
+  token（topbar/composer/messages/QR bar 都读它），且已被 §3.1 单独钉给侧栏那一棒，
+  不属于"哪个区域碰到就顺手收敛"的范围。`.cui-root-selchip*` 的共享基类同理不算
+  谁的区域，留给拥有该组件的批次。**未收敛**：spine/playbill、消息流正文、
+  ＋菜单下拉（tiles/tools/header）、附件 chips、设置页。
 
 ## 3. 页面结构
 
@@ -147,6 +157,15 @@
 - persona 与对话操作位于右侧工具区，视觉权重低于标题。
 - 窄屏可把 persona 收成仅图标按钮，但必须保留可访问名称。
 - topbar 内的下拉向页面下方打开，不得被根容器裁切。
+- eyebrow 走 README §7 给的 `10px` 副行字号（此前是 `9px`，与全局 `-2xs` 档撞车而非
+  刻意选的值——README 没写这一格该是几，但写了「副标题行 10px」，取 `-xs`）。
+- persona chip 换成朴素图标按钮（`padding 5px 9px`、圆角、颜色只随开关态变化），
+  不再穿 `.cui-root-selchip-btn` 在别处（菜单列表项）的下划线态——同一份
+  SelectorChip 标记（图标+文字+caret）按容器换皮，见 §4.4 的换皮记录，二者是
+  同一套手法（2026-07-31 拍板前就存在的组件不变，靠 scoped CSS 分场景，pr4 第 3 棒）。
+- 顶栏 ☰（手机）与 ⋯ 触发钮统一为约 `28-30px` 方形、`5px` 圆角（README 给
+  `6px`，取相邻既有 token）；侧栏抽屉的关闭钮共用同一形状，因为它们回答的是同一个
+  手势（pr4 第 3 棒）。
 
 ### 4.2 书脊 spine 与场刊 playbill
 
@@ -222,11 +241,32 @@
 
 ### 4.4 Ledger composer
 
-- composer 是开放的账本书写行，始终有结构横线，不是圆角输入胶囊。
-- 焦点只提高规则线的强调层级，不生成新的盒子或阴影容器。
-- placeholder 使用“写下这一夜……”；发送使用轻薄箭头，不使用高饱和实心按钮。
+- composer 是开放的账本书写行，始终有结构横线，不是圆角输入胶囊。这条横线不是
+  composer 盒子自己的 `border-top`：它是装饰行自己画出来的一条线（见下），composer
+  盒子本身不再画边框（pr4 第 3 棒，之前那道 `border-top: dashed` 是没有装饰行时的
+  占位实现，不是设计要的样子）。
+- **装饰行**（README §6）：固定 `32px` 左段 + preset/model 两枚 SelectorChip + 补满
+  剩余宽度的细线，一起读成"一条被 chip 打断的线"。单/多行 composer 现在**始终**
+  显示这一行——旧实现只在多行模式显示这条选择器带、单行模式把它塞进＋菜单顶部，
+  那是在"选择器带是一整行按钮、很占地方"的前提下才成立的降级；装饰行只有一枚
+  chip 高，不再有单行模式要藏它的理由，＋菜单的 `topSlot` 出口随之整个删除
+  （pr4 第 3 棒，属于对第 1 版单行降级的重新设计，不是简单调整）。
+- preset/model 这两枚 chip 与 topbar 的 persona chip 是同一个 SelectorChip 组件，
+  markup（图标+文字+caret）不变，只按容器换皮：装饰行里是等宽字体的小号胶囊、
+  隐藏 caret；topbar 里是朴素图标按钮。组件本身与它的菜单不因为搬家而改样子。
+- 焦点只提高规则线的强调层级，不生成新的盒子或阴影容器：装饰行两段线在
+  `:focus-within` 下变色（不是变宽），呼应设计稿真正的做法。
+- placeholder 使用"写下这一夜……"；发送使用轻薄箭头，不使用高饱和实心按钮——
+  停止生成态也要守这条：早先给停止按钮填了一层危险色背景，视觉上正是这条禁止
+  的"高饱和实底"，pr4 第 3 棒改成只变箭头颜色。
 - ＋菜单、附件 chips、QR 与 selector 仍可正常展开，但不得破坏主横线。
-- single / multi 两种模式沿用同一语法；多行增长不能挤走 topbar。
+- single / multi 两种模式沿用同一语法（装饰行、输入行、提示行三段结构一致）；
+  仅输入框的初始行数与是否随内容多行增长不同；多行增长不能挤走 topbar。
+- 输入框上方 `30px` 渐隐遮罩盖住消息流底部，锚定在舞台自身（`.cui-root-message-stage`）
+  而非 composer：ChatUI 的 composer 与舞台之间有真实留白（frame gap），不像设计稿
+  两者紧贴，遮罩要贴着它实际要淡出的滚动内容才有意义（pr4 第 3 棒）。
+- 底部提示行「⏎ 发送 · ⇧⏎ 换行」是刻意的低对比度装饰行（评估报告 §6 D2），
+  接受不过 AA，但颜色仍从 token 读，不写死 rgba。
 
 ## 5. 印玺生成态
 
