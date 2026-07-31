@@ -196,6 +196,11 @@
     --cui-font-tight: calc(var(--cui-font-root) * 0.8);    /* 12px — buttons */
     --cui-font-menu: calc(var(--cui-font-root) * 0.833);   /* 12.5px — menu items */
     --cui-font-card: calc(var(--cui-font-root) * 0.9);     /* 13.5px — card titles */
+    /* 14.5px — the composer textarea's own size (design §6), a half-step under
+       body prose. Deliberate, not a rounding of -base: the design sets message
+       body copy and the thing you're about to add to it at two different
+       sizes, so the two need distinct tokens rather than sharing -base. */
+    --cui-font-composer: calc(var(--cui-font-root) * 0.967);
     --cui-font-base: var(--cui-font-root);                 /* 15px — body copy */
     --cui-font-title: calc(var(--cui-font-root) * 1.333);  /* 20px — conversation title */
 
@@ -2675,40 +2680,108 @@ body.chatui-active .cui-root-generate-btn:focus-visible {
     outline: 1px solid var(--cui-outline-faint);
 }
 
+/* DESIGN §2.5: this composer's lengths are px, not rem, for the same reason
+   the topbar block above them is — see that comment. */
 body.chatui-active .cui-root-composer {
     position: relative;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 5.6px;
     width: min(100%, var(--cui-content-max-width));
-    margin: 0.25rem auto 0;
-    padding: 0.65rem 0 0.15rem;
-    border-top: 1px dashed var(--cui-rule-structure);
+    margin: 4px auto 0;
+    padding: 6.4px 0 2.4px;
     background: none;
     box-sizing: border-box;
 }
 
-body.chatui-active .cui-root-composer::before {
-    content: "";
-    position: absolute;
-    top: -1px;
-    left: 0;
-    width: 2.75rem;
-    height: 1px;
-    background-color: var(--cui-rule-accent);
-    transition: width var(--cui-motion-base) ease, background-color var(--cui-motion-base) ease;
+/* The ledger's own rule line (design §6; DESIGN §4.4's "始终有结构横线"): a
+   fixed-width left segment, the preset/model chips, and a hairline that fills
+   the rest of the row out to the trailing edge. This replaces the previous
+   placeholder — a dashed border-top plus a width-animating ::before accent —
+   with the design's actual construction: one broken rule, colored rather than
+   resized on focus. */
+body.chatui-active .cui-root-composer-deco {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
-body.chatui-active .cui-root-composer:focus-within::before {
-    width: 4.5rem;
-    background-color: var(--cui-color-seal);
+body.chatui-active .cui-root-composer-rule {
+    height: 1px;
+    background-color: var(--cui-color-user-mark);
+    transition: background-color var(--cui-motion-base) ease;
+}
+
+body.chatui-active .cui-root-composer-rule-left {
+    flex: 0 0 32px;
+}
+
+/* The hairline reads far fainter than the left segment at rest — the design's
+   own composerRuleC/composerHairC pair (原型 L288/L313) are not one color at
+   two strengths, so -right starts from the general text tint rather than the
+   accent the left segment and its own focus state use. */
+body.chatui-active .cui-root-composer-rule-right {
+    flex: 1 1 auto;
+    background-color: color-mix(in srgb, var(--cui-color-text) 13%, transparent);
+}
+
+body.chatui-active .cui-root-composer:focus-within .cui-root-composer-rule-left {
+    background-color: var(--cui-color-accent);
+}
+
+body.chatui-active .cui-root-composer:focus-within .cui-root-composer-rule-right {
+    background-color: color-mix(in srgb, var(--cui-color-accent) 40%, transparent);
+}
+
+/* Composer-deco chips get a compact, monospace-pill skin (design §6) — a
+   different look than the same SelectorChip renders in the topbar (§7) or a
+   paper menu, entirely from CSS scoped to this container. The component's
+   markup (icon + label + caret) never changes between the three; see the
+   relocation note at this row's JSX call site. The caret is hidden here: the
+   design's preset/model marks in this row carry no chevron at all (原型
+   L289/L302), and the pill reads better as a settled label than a control
+   with an affordance it does not also give the topbar chip. */
+body.chatui-active .cui-root-composer-deco .cui-root-selchips {
+    width: auto;
+    flex-wrap: nowrap;
+    gap: 5.6px;
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn {
+    min-height: 0;
+    max-width: 128px;
+    padding: 2px 8.8px;
+    border-radius: var(--cui-radius-pill);
+    box-shadow: none;
+    background-color: color-mix(in srgb, var(--cui-color-accent) 8%, transparent);
+    color: color-mix(in srgb, var(--cui-color-accent) 85%, transparent);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-2xs);
+    letter-spacing: var(--cui-tracking-wide);
+    opacity: 1;
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn:hover,
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--cui-color-accent) 14%, transparent);
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn[aria-expanded="true"] {
+    box-shadow: none;
+    color: var(--cui-color-accent);
+    background-color: color-mix(in srgb, var(--cui-color-accent) 14%, transparent);
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-caret {
+    display: none;
 }
 
 body.chatui-active .cui-root-composer-row {
     display: flex;
     align-items: flex-end;
-    gap: 0.45rem;
+    gap: 7.2px;
     width: 100%;
     padding-bottom: 0;
 }
@@ -2716,7 +2789,7 @@ body.chatui-active .cui-root-composer-row {
 body.chatui-active .cui-root-composer-input {
     flex: 1 1 auto;
     min-width: 0;
-    max-height: 12rem;
+    max-height: 140px;
     box-sizing: border-box;
     resize: none;
     overflow-y: auto;
@@ -2724,9 +2797,9 @@ body.chatui-active .cui-root-composer-input {
     background: none;
     color: var(--cui-color-text);
     font-family: var(--cui-font-body);
-    font-size: var(--cui-font-base);
-    line-height: 1.65;
-    padding: 0.42rem 0.45rem 0.52rem;
+    font-size: var(--cui-font-composer);
+    line-height: 1.7;
+    padding: 6px 4px;
     outline: none;
 }
 
@@ -2735,38 +2808,19 @@ body.chatui-active .cui-root-composer-input::placeholder {
     font-style: italic;
 }
 
-/* Selector B relocated into the ＋ menu top when single-line. */
-body.chatui-active .cui-root-plus-topslot {
-    padding: 0.15rem 0.5rem 0.5rem;
-    margin-bottom: 0.15rem;
-    border-bottom: 1px dashed var(--cui-paper-rule);
-}
-
-body.chatui-active .cui-root-plus-topslot .cui-root-selchips {
-    flex-wrap: wrap;
-    width: 100%;
-}
-
-/* Inside the ＋ menu the chip dropdown must open DOWNWARD: the menu is a
-   scroll/overflow container, so an upward-opening popup would be clipped. */
-body.chatui-active .cui-root-plus-topslot .cui-root-selchip-menu {
-    top: calc(100% + 0.35rem);
-    bottom: auto;
-}
-
 body.chatui-active .cui-root-composer-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.45rem;
-    height: 2.45rem;
+    width: 26px;
+    height: 26px;
     flex: 0 0 auto;
     border: 1px solid transparent;
     border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
-    font-size: var(--cui-font-card);
+    font-size: var(--cui-font-menu);
 }
 
 body.chatui-active .cui-root-composer-btn:hover {
@@ -2783,16 +2837,40 @@ body.chatui-active .cui-root-composer-btn:disabled {
     opacity: 0.55;
 }
 
+/* DESIGN §4.4: "发送使用轻薄箭头，不使用高饱和实心按钮". The old rule filled
+   this button's own background on generate — exactly the saturated-solid
+   look that line rules out. The design's stop state (原型 L795,
+   generating→'#d4936a') only ever recolors the glyph, so this does too. */
 body.chatui-active .cui-root-composer-stop {
-    background-color: color-mix(in srgb, var(--cui-color-danger) 22%, transparent);
+    color: var(--cui-color-danger);
 }
 
 body.chatui-active .cui-root-send-glyph {
-    color: var(--cui-color-seal);
+    color: color-mix(in srgb, var(--cui-color-accent) 60%, transparent);
     font-family: var(--cui-font-display);
-    font-size: var(--cui-font-title);
+    font-size: var(--cui-font-card);
     line-height: 1;
     transform: translateY(-0.04em);
+    transition: color var(--cui-motion-base) ease;
+}
+
+/* Draft text present = the arrow is "armed" and takes the full accent
+   (原型 L795 sendColor); an empty draft keeps the muted resting tone above. */
+body.chatui-active .cui-root-send-glyph.is-armed {
+    color: var(--cui-color-accent);
+}
+
+/* Design §6's bottom-right caption. Its rgba(.25) contrast sits under AA on
+   purpose — see the accept-note at this row's JSX call site (evaluation
+   report §6 D2) — so the token reference stays true to that value rather
+   than getting brightened into a functional label. */
+body.chatui-active .cui-root-composer-hint {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4.8px 4px 0;
+    color: color-mix(in srgb, var(--cui-color-text) 25%, transparent);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-2xs);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2809,14 +2887,14 @@ body.chatui-active .cui-root-plus-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.45rem;
-    height: 2.45rem;
+    width: 26px;
+    height: 26px;
     border: 1px solid transparent;
     border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
-    font-size: var(--cui-font-base);
+    font-size: var(--cui-font-menu);
 }
 
 body.chatui-active .cui-root-plus-btn:hover {
@@ -2826,6 +2904,18 @@ body.chatui-active .cui-root-plus-btn:hover {
 body.chatui-active .cui-root-plus-btn:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
     outline: 1px solid var(--cui-outline-faint);
+}
+
+/* Design §6: the trigger rotates open rather than swapping glyph — the icon
+   is the thing that turns, not the button around it, so the transform lives
+   on <i> and the button keeps its own hover/focus box untouched. */
+body.chatui-active .cui-root-plus-btn i {
+    display: inline-block;
+    transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+body.chatui-active .cui-root-plus-btn.is-open i {
+    transform: rotate(45deg);
 }
 
 /* height explicit: same <html>-becomes-containing-block quirk as the
