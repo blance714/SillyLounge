@@ -172,6 +172,17 @@ ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本
 在扩展已经关掉之后仍替他选中一个角色）。入队只可能推迟、不可能提前这次调用，所以
 「CHAT_CHANGED 监听必须先于落地注册」这条时序约束只会更牢。
 
+bootstrap 模式（`settings.enabled === false`）下唯一被摘掉的就是这一步落地
+（`finalizeChatuiDraftQuarantine({ completeLanding: false })`）：此时屏幕上只有 ST 自己
+的界面，一个被读者关掉的扩展不该在那上面替他选角色，而且没有 ChatUI 界面也就无人被
+「空台」困住——空台就是 ST 自己的行为。其余全部照跑，且理由都超出本页：**认领**是把
+凭证限死在它所属的那一次加载（不认领的话它会活到很久以后的某次启动，把读者早已当成
+普通历史的文件追认成草稿），**监听**则保证 ST 真写出兜底文件时它仍进隔离集（租约是持
+久化的，ChatUI 回来时它仍是草稿而不是无人认领的永久历史）。「关扩展→刷新→再开扩展」
+的归宿即由此确定：重新打开扩展只是挂载、不重跑本函数，也不需要重跑——凭证已为本页认
+领；文件已上台则租约在隔离集里等着，无人占台则凭证仍在等待且 spine 会把该角色摆出来
+（`peek`），读者可以自己走过去收尾；再刷新一次就按既有过期规则丢弃。
+
 凭证因此在不匹配时**保留**而不是销毁——它的语义是「这个文件名若成为当前对话即隔离」，
 一次落在别的角色/别的对话上并不是反证。有界性不靠任何时间常数：`sessionStorage` 本身
 已把它限定在本标签页内，`armPendingCharacterChatDraftQuarantine` 再给「拥有它的那一次
@@ -196,6 +207,8 @@ ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本
 | 角色卡已不存在、或 ST 拒绝这次选择时如实上报且不持久化，绝不假定落地 | `test/adapter-chats.test.mjs :: a pending chat transaction whose character is gone, or whose selection ST refuses, reports it and persists nothing` |
 | 空台启动时事务收尾走完全程：选上角色 → ST 写出兜底文件并发 CHAT_CHANGED → 折进隔离集、凭证消费、监听注销 | `test/sidebar-actions.test.mjs :: a boot that lands on nobody finishes the delete transaction itself: ChatUI selects the credential's character and the fallback file lands in quarantine` |
 | 启动落在别的角色上时绝不改动，凭证继续等待；读者之后走到该角色仍照常兑现 | `test/sidebar-actions.test.mjs :: a boot that landed on somebody else is never overridden: the credential simply keeps waiting` |
+| ChatUI 关着时（bootstrap 模式）绝不替读者在 ST 原生界面里选角色，但凭证照常认领、监听照常挂：ST 若真写出兜底文件仍折进持久化隔离集，ChatUI 回来时它还是草稿 | `test/sidebar-actions.test.mjs :: with ChatUI switched off the boot still arms and watches the credential, but never selects a character inside ST's own interface` |
+| 「关扩展→刷新→再开扩展」：bootstrap 页认领却没兑现的凭证由下一次启动过期丢弃，绝不在一页之后才选中某人，之后才上台的同名文件是普通历史而非被追认的草稿 | `test/sidebar-actions.test.mjs :: a credential the bootstrap page owned but never redeemed expires on the next boot instead of selecting somebody a page later` |
 | 这次落地走共享串行通道：通道里已有宿主工作时必须排队等它做完才进 ST，且排队期间 CHAT_CHANGED 监听已经注册（解析凭证的那个事件正是从落地内部发出的），入队不影响兑现 | `test/sidebar-actions.test.mjs :: the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it` |
 
 pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时

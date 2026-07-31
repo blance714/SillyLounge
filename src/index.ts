@@ -366,7 +366,17 @@ function init() {
     // nearly true — after this line the only thing that can still clear the
     // credential is the commit that puts a lease in its place, and that does
     // notify. The landing it may start is async and does not delay the mount.
-    finalizeChatuiDraftQuarantine();
+    //
+    // That landing is the one part of the handoff bootstrap mode must not do.
+    // Everything else here is session hygiene the reader benefits from with
+    // ChatUI off — the credential still expires on schedule, and a fallback
+    // file ST does write is still folded into the (persisted) quarantine
+    // rather than becoming permanent history. But selecting a character is a
+    // move on ST's own interface, the only interface on screen right now, and
+    // an extension the reader has switched off must not be making it. With no
+    // ChatUI UI there is nothing to strand either: the empty stage ST chose is
+    // simply ST's own behaviour, unaltered.
+    finalizeChatuiDraftQuarantine({ completeLanding: settings.enabled });
     if (settings.enabled) {
         const enabledCb = document.getElementById('chatui_enabled') as HTMLInputElement | null;
         setupOrDisable(enabledCb);

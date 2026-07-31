@@ -292,7 +292,13 @@ confirmed the delete; the reload is ChatUI's own doing), not a vote on their
 autoload preference — the adapter refuses the moment ST landed anywhere, group
 or character (`selectCharacterIfNobodyIsOnStage`), and the credential then
 keeps its ordinary meaning. It runs at most once per page load, is never
-retried, and never toasts.
+retried, and never toasts, and it goes through the shared serialized host lane
+like every other host mutation rather than beside it. In bootstrap mode
+(`settings.enabled === false`) it is the one part of the handoff that is
+switched off — ST's own interface is the only one on screen, and an extension
+the reader turned off must not pick a character in it; arming and the fold keep
+running, because they are what bound the credential to this page and keep a
+fallback file ST does write a recoverable draft.
 
 The character a delete like that empties is also on the spine now, which is
 what makes any of it reachable by hand at all. The spine's membership rule
