@@ -142,15 +142,50 @@ export async function finalizePendingCharacterChatDeletion(): Promise<void> {
 // moment we were looking — it was never an invariant this repo owns.
 //
 // So the disk check is gone, and with it every network request this handoff
-// used to make. The guard that remains is identity — "this character's
-// current chat is the exact name we fabricated" — and ST's own await
-// ordering hands us the disk fact for free: `getChatResult()` (script.js:7625)
-// awaits `saveChatConditional()` before it emits CHAT_CHANGED, so by the time
-// any CHAT_CHANGED names our fallback file, that file is already on the
-// server. Observation therefore moves off APP_READY entirely and onto "the
-// live chat became this file", whenever that happens: at boot if ST's
-// autoload got there first, on a CHAT_CHANGED later in the same page if it
-// did not (or if autoload is off and the reader opens the character by hand).
+// used to make. What remains is one guard, and it is an identity guard only:
+// "this character's current chat is the exact name we fabricated". Observation
+// moves off APP_READY entirely and onto "the live chat became this file",
+// whenever that happens: at boot if ST's autoload got there first, on a
+// CHAT_CHANGED later in the same page if it did not (or if autoload is off and
+// the reader opens the character by hand — either themselves, or through the
+// transaction completion sidebar-actions.ts runs when ST's boot came back on
+// nobody at all).
+//
+// Be precise about what that guard does and does not prove, because the two
+// paths differ and the first version of this comment claimed the stronger fact
+// for both. On the CHAT_CHANGED path the file really is on disk already:
+// `getChatResult()` (script.js:7625) awaits `saveChatConditional()` before it
+// emits the event, so the event cannot arrive early. The *immediate* check —
+// the one a real 1.18.0 boot actually takes, because autoload finishes before
+// APP_READY — reads `getCurrentChatDetails().sessionName`, which is
+// `characters[this_chid].chat` (script.js:8478): the durable pointer *we*
+// wrote before forcing the reload. It is proof of identity, not of a file.
+// Measured on that host, the lease was written at t=843ms and
+// POST /api/chats/save only went out at t=985ms — the quarantine leads the
+// file by ~142ms.
+//
+// Two consequences, both accepted deliberately rather than overlooked:
+//
+//  (a) if that `saveChatConditional()` fails outright, the lease is left
+//      pointing at a file that never appears. That is a recoverable state, not
+//      a corrupt one: restoring such a draft checks the raw listing first and
+//      drops the lease (sidebar-actions.ts's openChatuiChatForCharacter), and
+//      discarding it reports `absent` and drops the lease too
+//      (delete-transaction.ts). Nothing is lost and nothing is stuck.
+//  (b) within that ~142ms window, a 丢弃 would send DELETE before ST's CREATE,
+//      so the file would materialize afterwards holding no lease — the exact
+//      "fallback file becomes ordinary history" outcome this handoff exists to
+//      prevent. It is accepted because the window is not humanly reachable:
+//      the draft card has to render, be found and be clicked, and its confirm
+//      dialog accepted, inside a tenth of a second of the page appearing.
+//
+// Closing (b) properly would mean moving the immediate check onto a signal
+// that is guaranteed to be later than the save — which is precisely the
+// CHAT_CHANGED path — and that signal is the one a real boot has already
+// emitted before this code first runs. Waiting for the *next* one would strand
+// every ordinary autoload boot. The honest position is the one written here:
+// the immediate branch is an identity check, the window is documented, and no
+// claim is made that it proves the file exists.
 //
 // The tombstone is consequently *kept*, not destroyed, while the live chat is
 // something else — its meaning is "if this file name goes live, it is a
@@ -288,9 +323,11 @@ export function peekPendingCharacterChatDraftQuarantine(): PendingCharacterChatD
  *
  * The single condition is identity: this character's current chat is exactly
  * the fabricated fallback name. Nothing here asks the server anything — see
- * the section comment above for why the file's existence is already implied by
- * whichever ST code path made it current, and why the old directory check
- * could only ever look too early.
+ * the section comment above for why the old directory check could only ever
+ * look too early, and for exactly how much the remaining check proves (on a
+ * CHAT_CHANGED, that the file is saved; called immediately at boot, only that
+ * the pointer names it, plus the ~142ms window and the two consequences that
+ * come with that distinction).
  *
  * A mismatch reports `waiting` and leaves the tombstone alone. Dropping it
  * there was the second half of the original bug: "some other chat is current

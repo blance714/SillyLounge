@@ -63,6 +63,24 @@ export function write(config: any) {
  * the granularity `saveSettings()` offers and the granularity the shared
  * debounce loses.
  *
+ * Two honest limits, recorded because "the flush returned" is weaker than "the
+ * write landed" and callers reload immediately after awaiting this:
+ *
+ * - `saveSettings()` swallows its own transport failures (try/catch + a
+ *   toastr, script.js:8055-8058) and never rejects, so a caller's catch block
+ *   is unreachable for a failed request. It is still worth keeping for a
+ *   throwing *stub* or a future ST that does reject.
+ * - it also returns without saving anything in two states, re-arming the very
+ *   debounce this call exists to defeat: `!settingsReady` (script.js:7992) and
+ *   `TempResponseLength.isCustomized()` (script.js:7998). Both re-queue
+ *   through `saveSettingsDebounced()`, so a reload that follows lands right
+ *   back in the dropped-write case. Neither is reachable from a settled page
+ *   in practice — settings are ready long before ChatUI mounts, and the
+ *   temporary response-length override only exists mid-generation, which every
+ *   reloading path already refuses to run during — but neither is *impossible*
+ *   either, and this function cannot tell the difference between them and a
+ *   real save.
+ *
  * @returns {Promise<void>}
  */
 export async function flushSettings(): Promise<void> {
