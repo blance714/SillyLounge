@@ -1630,6 +1630,27 @@ body.chatui-active .cui-root-message-stage {
     );
 }
 
+/* Design §6 pt.4: a 30px fade mask over the seam where the message stream
+   meets the composer. It is a pseudo-element of the stage rather than of the
+   composer (where the 原型 anchors it, `top:-30px` on the composer's own
+   wrapper): our composer sits a real 0.75rem below the stage's bottom edge
+   (.cui-root-app's gap plus the composer's own margin-top — see the
+   .cui-root-scroll-bottom offset comment) rather than flush against it, so
+   only a mask anchored to the stage's own bottom edge actually overlaps the
+   scrolling content it is meant to fade. z-index sits below the floor rail
+   (6) and the scroll-bottom capsule (7) so it never dims either of those. */
+body.chatui-active .cui-root-message-stage::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 30px;
+    z-index: 4;
+    background: linear-gradient(to bottom, transparent, var(--cui-color-ground));
+    pointer-events: none;
+}
+
 /* Desktop-only user-turn navigator. A compact, vertically centered tick window
    sits inside the manuscript gutter; overflow is virtualized by the component. */
 body.chatui-active .cui-root-floor-rail {
@@ -2604,10 +2625,17 @@ body.chatui-active .cui-root-scroll-bottom {
     position: absolute;
     left: 0;
     right: 0;
-    /* Design: ~23px of air between the capsule and the composer's dashed rule.
-       12px of that is already paid by the frame — .cui-root-app's 0.5rem column
-       gap plus the composer's own 0.25rem top margin — so this offset is the
-       remainder, not the whole distance. */
+    /* Design: ~23px of air between the capsule and the composer's own top
+       edge (原型's capsule sits at `top:-52px` inside a composer wrapper
+       whose own height puts that ~24px below the capsule's bottom). 12px of
+       that is already paid by the frame — .cui-root-app's 0.5rem column gap
+       plus the composer's own 0.25rem top margin — so this offset is the
+       remainder, not the whole distance. Verified unaffected by the
+       decoration row landing inside the composer (pr4 baton 3): that row's
+       own rule line sits well inside the composer's padding, but this
+       capsule was always measured to the composer's outer box, not to
+       whatever draws at its top edge — real Chromium measurement after
+       the row landed still reads ~23px, unchanged. */
     bottom: 0.7rem;
     z-index: 7;
     width: fit-content;
