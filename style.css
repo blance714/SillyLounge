@@ -43,6 +43,13 @@
     --cui-color-shadow: rgba(0, 0, 0, 0.55);
     --cui-color-user-mark: #96633f;
     --cui-color-user-mark-hover: #a8734c;
+    /* The reader's own warm tone — the one the design gives to whatever on the
+       page is *yours* rather than the character's: the user's speaker name in
+       the message header (§4) and the unfinished-draft tag on a playbill card
+       (§1). It sits between the gold accent and the rust user mark on purpose,
+       so a header row reads as two voices rather than one color and its
+       shadow. Not derivable from either neighbour, so it is declared. */
+    --cui-color-user-voice: #c08a6a;
 
     /* Two structural darks the layout regions need, and neither is consumed
        yet: the spine ground waits on the character rail that arrives with the
@@ -277,6 +284,13 @@
     --cui-message-user-radius: 0;
     --cui-message-user-bg: transparent;
     --cui-message-user-rule: 2px solid var(--cui-rule-accent);
+    /* The character half of the same shape. The design replaces bubbles with a
+       left rule (§4), and gives the two speakers rules of different colors —
+       so the character gets one too, pitched down to the faint structural ink.
+       Both variants then share one indent, which is what keeps the two speakers
+       reading as one continuous column rather than two staggered ones. */
+    --cui-message-char-padding: 0 0 0 1rem;
+    --cui-message-char-rule: 2px solid var(--cui-rule-faint);
 
     /* Plus-menu pinned tile vs. unpinned tool row: same button semantics,
        two hardcoded looks on the same DOM shape — the second of the 3
@@ -1537,7 +1551,11 @@ body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-
     }
 }
 
-/* collapsed forms: hide the grouped list body just like the old convlist */
+/* The stage's warm wash (design 布局总览 §3): a low ellipse of lamplight over
+   the top of the reading column, as if the scene were lit from the proscenium.
+   It belongs here rather than on <main> because the floor rail is an absolutely
+   positioned overlay outside the layout flow — this is the element that
+   actually spans the lit area. */
 body.chatui-active .cui-root-message-stage {
     position: relative;
     display: flex;
@@ -1545,6 +1563,11 @@ body.chatui-active .cui-root-message-stage {
     flex-direction: column;
     width: 100%;
     min-height: 0;
+    background-image: radial-gradient(
+        ellipse 70% 45% at 50% 0%,
+        color-mix(in srgb, var(--cui-color-user-mark) 7%, transparent),
+        transparent 65%
+    );
 }
 
 /* Desktop-only user-turn navigator. A compact, vertically centered tick window
@@ -1769,6 +1792,13 @@ body.chatui-active .cui-root-floor-popover-number {
     }
 }
 
+/* `gap` is forbidden on this container, and the 0 is load-bearing rather than a
+   default left lying around: it has two flex children with different meanings —
+   the virtualized message space, and the generating indicator that mounts
+   beside it while a reply is being written. Any gap here is therefore spacing
+   that only exists during generation, i.e. a stream that visibly jumps when
+   generation starts and stops. Inter-message spacing lives on
+   .cui-root-virtual-message-row's padding-bottom instead. */
 body.chatui-active .cui-root-message-list {
     display: flex;
     flex-direction: column;
@@ -1799,15 +1829,47 @@ body.chatui-active .cui-root-virtual-message-row {
     width: 100%;
     box-sizing: border-box;
     flex-direction: column;
-    padding-bottom: 1.3rem;
+    /* Design §4 asks for 26px between messages. It has to be the row's own
+       padding: `gap` on .cui-root-message-list would also land between the last
+       row and the generating indicator, which is that container's second flex
+       child — so the stream would gain 26px of empty space the moment
+       generation starts and lose it again when it ends. See the note on
+       .cui-root-message-list. */
+    padding-bottom: 1.625rem;
 }
 
 body.chatui-active .cui-root-message {
     display: flex;
     flex-direction: column;
-    gap: 0.38rem;
+    /* Design §4 sets every part of a message 10px below the one above it —
+       header to thinking block to body to action row. One gap, not four
+       margins. */
+    gap: 0.62rem;
     max-width: min(100%, 52rem);
     box-sizing: border-box;
+}
+
+/* Entrance, whole-block (design 汇总: `fade-in`). Deliberately *not* per
+   character: the body arrives as one formatted HTML string through
+   dangerouslySetInnerHTML, so there is no per-token node to stagger, and
+   inventing one would mean hand-tokenizing the host formatter's output.
+   Deliberately *not* on every message either: rows here are virtualized, so a
+   blanket entrance would replay itself every time an old message scrolled back
+   into the mounted window. Only the newest message can actually be new, so it
+   is the only one that animates. */
+body.chatui-active .cui-root-message.is-latest {
+    animation: cui-message-in 0.3s ease both;
+}
+
+@keyframes cui-message-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
 }
 
 body.chatui-active .cui-root-message-user {
@@ -1825,6 +1887,12 @@ body.chatui-active .cui-root-message-system {
     align-self: stretch;
 }
 
+body.chatui-active .cui-root-message-character {
+    padding: var(--cui-message-char-padding);
+    border-left: var(--cui-message-char-rule);
+}
+
+/* A system notice is not a voice on stage, so it takes no rule and no indent. */
 body.chatui-active .cui-root-message-system {
     align-items: center;
     opacity: 0.75;
@@ -1833,10 +1901,13 @@ body.chatui-active .cui-root-message-system {
 body.chatui-active .cui-root-message-meta {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.62rem;
     min-width: 0;
-    font-size: var(--cui-font-xs);
-    opacity: 0.72;
+    /* Design §4 sets the header row at 11px and dims it as a whole with color,
+       not opacity: the speaker name carries its own hue and an opacity on the
+       row would wash that hue out along with everything else. */
+    font-size: var(--cui-font-sm);
+    color: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
 }
 
 body.chatui-active .cui-root-avatar {
@@ -1861,26 +1932,42 @@ body.chatui-active .cui-root-avatar img {
     object-fit: cover;
 }
 
+/* The speaker name takes the header row's own 11px (design §4 gives it a face,
+   a weight and a tracking, but no size of its own — it *is* the row). It used
+   to be lifted to 13.5px, which was compensation for a row that had been set at
+   10px instead of 11px; the row is right now, so the compensation goes. */
 body.chatui-active .cui-root-message-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    /* The meta row is now the design's 10px, which is a size for the floor
-       number and timestamp beside it — not for the speaker. The name had no
-       size of its own and rode on the row, so it needs one to stay the
-       heading it is. */
-    font-size: var(--cui-font-card);
     font-weight: 600;
     font-family: var(--cui-font-display);
-    text-transform: uppercase;
     /* Design §4 puts the speaker name on the mid tracking tier. */
     letter-spacing: var(--cui-tracking-wide);
+    /* The character's gold is the default so anything that borrows this header
+       treatment — the generating indicator — gets the character's voice
+       without restating it; the user's own tone overrides below. */
+    color: var(--cui-color-accent);
+}
+
+body.chatui-active .cui-root-message-user .cui-root-message-name {
+    color: var(--cui-color-user-voice);
 }
 
 body.chatui-active .cui-root-message-connector {
     flex: 1 1 auto;
     height: 1px;
     background: linear-gradient(to right, var(--cui-rule-structure), var(--cui-rule-faint));
+}
+
+/* The user's connector is drawn in the same rust as the user's own rule, so a
+   glance down the column tells the two speakers apart even before the names. */
+body.chatui-active .cui-root-message-user .cui-root-message-connector {
+    background: linear-gradient(
+        to right,
+        color-mix(in srgb, var(--cui-color-user-mark) 26%, transparent),
+        color-mix(in srgb, var(--cui-color-user-mark) 16%, transparent)
+    );
 }
 
 /* The header's third part: one stamp, set tight, so 「第 N 楼 · 时间」 reads as
@@ -1898,8 +1985,10 @@ body.chatui-active .cui-root-message-floor,
 body.chatui-active .cui-root-message-time,
 body.chatui-active .cui-root-message-swipe {
     flex-shrink: 0;
-    font-size: var(--cui-font-2xs);
-    opacity: 0.75;
+    /* Design §4: the stamp is 10px, one step under the row it sits in, and one
+       step quieter again. */
+    font-size: var(--cui-font-xs);
+    opacity: 0.7;
 }
 
 body.chatui-active .cui-root-message-floor + .cui-root-message-time::before {
@@ -1907,11 +1996,31 @@ body.chatui-active .cui-root-message-floor + .cui-root-message-time::before {
     margin-right: 0.3em;
 }
 
+/* Design §4's prose setting: 15px serif, 1.9 leading, pre-wrap. The size is
+   stated rather than inherited because it is a decision of the design, not a
+   consequence of wherever this block happens to be mounted. */
 body.chatui-active .cui-root-message-body {
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-    line-height: 1.82;
+    font-size: var(--cui-font-base);
+    line-height: 1.9;
     font-family: var(--cui-font-body);
+}
+
+/* Quotation and emphasis inside a message body belong to ChatUI, not to the
+   host: .mes_text is on this element so ST's own theme would otherwise color
+   spoken lines with whatever palette the user's SillyTavern theme carries, and
+   the one thing on this stage that must stay on-palette is the dialogue. Gold
+   for what is said aloud, a step down from the prose for what is merely
+   stressed. */
+body.chatui-active .cui-root-message-body.mes_text q,
+body.chatui-active .cui-root-reasoning-body.mes_text q {
+    color: var(--cui-color-accent-hover);
+}
+
+body.chatui-active .cui-root-message-body.mes_text em,
+body.chatui-active .cui-root-reasoning-body.mes_text em {
+    color: color-mix(in srgb, var(--cui-color-text) 72%, transparent);
 }
 
 body.chatui-active .cui-root-message-body q::before,
@@ -2057,32 +2166,63 @@ body.chatui-active .cui-root-code-lang {
     pointer-events: none;
 }
 
+/* Design §4's thinking block: a dashed rule to the left of an aside the reader
+   may or may not open. Colors are stated per part rather than dimmed as a whole
+   with opacity, so the trigger can brighten on hover without the container
+   having to. */
 body.chatui-active .cui-root-reasoning {
     width: 100%;
-    margin: 0.15rem 0 0.25rem;
-    border-left: 1px dashed var(--cui-rule-faint);
-    padding-left: 0.65rem;
-    opacity: 0.82;
+    margin: 0;
+    border-left: 1px dashed var(--cui-rule-structure);
+    padding-left: 0.875rem;
 }
 
 body.chatui-active .cui-root-reasoning-summary {
     cursor: pointer;
     font-size: var(--cui-font-sm);
-    font-weight: 600;
-    opacity: 0.78;
+    color: color-mix(in srgb, var(--cui-color-text) 50%, transparent);
+    transition: color var(--cui-motion-base);
+    /* The native disclosure triangle is the one glyph on this stage nobody
+       drew; the design ends the trigger line with a small caret instead. */
+    list-style: none;
 }
 
-body.chatui-active .cui-root-reasoning-duration {
-    margin-left: 0.45rem;
-    font-weight: 400;
-    opacity: 0.65;
+body.chatui-active .cui-root-reasoning-summary::-webkit-details-marker {
+    display: none;
+}
+
+body.chatui-active .cui-root-reasoning-summary::after {
+    content: "▾";
+    display: inline-block;
+    margin-left: 0.35rem;
+    font-size: var(--cui-font-2xs);
+    opacity: 0.6;
+    transform: rotate(-90deg);
+    transition: transform var(--cui-motion-base);
+}
+
+body.chatui-active .cui-root-reasoning[open] > .cui-root-reasoning-summary::after {
+    transform: none;
+}
+
+body.chatui-active .cui-root-reasoning-summary:hover,
+body.chatui-active .cui-root-reasoning-summary:focus-visible {
+    color: color-mix(in srgb, var(--cui-color-text) 80%, transparent);
+}
+
+body.chatui-active .cui-root-reasoning-icon {
+    margin-right: 0.35rem;
+    font-size: var(--cui-font-xs);
+    opacity: 0.8;
 }
 
 body.chatui-active .cui-root-reasoning-body {
-    margin-top: 0.45rem;
+    margin-top: 0.5rem;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-    line-height: 1.62;
+    font-size: var(--cui-font-menu);
+    line-height: 1.75;
+    color: color-mix(in srgb, var(--cui-color-text) 52%, transparent);
     font-family: var(--cui-font-body);
     font-style: italic;
 }
@@ -2288,22 +2428,64 @@ body.chatui-active .cui-root-menu {
     }
 }
 
+/* An empty stage, set the way the design sets its other empty states (§2): a
+   quiet serif line, not a system message. `display` is restated for [hidden]
+   because a flex box would otherwise out-rank the attribute's own display:none.
+ */
 body.chatui-active .cui-root-empty {
-    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2rem 1rem;
     text-align: center;
-    opacity: 0.6;
+    font-family: var(--cui-font-body);
 }
 
+body.chatui-active .cui-root-empty[hidden] {
+    display: none;
+}
+
+body.chatui-active .cui-root-empty-title {
+    font-size: var(--cui-font-card);
+    font-weight: 600;
+    letter-spacing: var(--cui-tracking-wide);
+    color: color-mix(in srgb, var(--cui-color-text) 55%, transparent);
+}
+
+body.chatui-active .cui-root-empty-note {
+    font-size: var(--cui-font-sm);
+    line-height: 1.9;
+    color: color-mix(in srgb, var(--cui-color-text) 38%, transparent);
+}
+
+/* Stands where the reply will stand: same column, same indent, same header
+   treatment as a character message — but a transparent rule, because nothing
+   has been said yet. Borrowing .cui-root-message-char-* keeps the two boxes
+   identical by construction rather than by two numbers kept in sync. */
 body.chatui-active .cui-root-generating {
+    display: flex;
+    flex-direction: column;
+    gap: 0.62rem;
+    align-self: stretch;
+    width: 100%;
+    max-width: min(100%, 52rem);
+    box-sizing: border-box;
+    margin: 0.05rem 0 0.25rem;
+    padding: var(--cui-message-char-padding);
+    border-left: 2px solid transparent;
+    color: color-mix(in srgb, var(--cui-color-seal) 74%, var(--cui-color-text));
+    font-family: var(--cui-font-body);
+    animation: cui-message-in 0.3s ease both;
+}
+
+body.chatui-active .cui-root-generating-line {
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
-    align-self: flex-start;
-    margin: 0.05rem 0 0.25rem;
-    padding: 0 0.15rem;
-    color: color-mix(in srgb, var(--cui-color-seal) 74%, var(--cui-color-text));
-    font-family: var(--cui-font-body);
-    font-size: var(--cui-font-xs);
+    /* Design §4: 11px, one step above the header's stamp — this is the line the
+       reader is actually waiting on. */
+    font-size: var(--cui-font-sm);
 }
 
 body.chatui-active .cui-root-generating-seal {
@@ -3361,12 +3543,15 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
     body.chatui-active .cui-root-plus-menu,
     body.chatui-active .cui-root-toast,
     body.chatui-active .cui-root-dialog-overlay,
-    body.chatui-active .cui-root-dialog {
+    body.chatui-active .cui-root-dialog,
+    body.chatui-active .cui-root-message.is-latest,
+    body.chatui-active .cui-root-generating {
         animation: none;
     }
 
     body.chatui-active .cui-root-floor-tick,
-    body.chatui-active .cui-root-floor-range-label {
+    body.chatui-active .cui-root-floor-range-label,
+    body.chatui-active .cui-root-reasoning-summary::after {
         transition: none;
     }
 }

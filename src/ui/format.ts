@@ -7,11 +7,12 @@ export function formatTimestamp(value: string | number | null): string {
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Reasoning durations, in the language the rest of the UI speaks. */
 export function formatDuration(duration: string | number | null): string {
     const ms = Number(duration);
     if (!Number.isFinite(ms) || ms <= 0) return '';
     const seconds = Math.max(1, Math.round(ms / 1000));
-    return `${seconds}s`;
+    return `${seconds} 秒`;
 }
 
 export function formatBytes(value: number | null): string {

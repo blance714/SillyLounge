@@ -48,7 +48,7 @@ function MessageItemComponent({
     return (
         <article
             ref={rootRef}
-            className={`cui-root-message cui-root-message-${message.role}`}
+            className={`cui-root-message cui-root-message-${message.role}${message.ui.isLast ? ' is-latest' : ''}`}
             data-cui-message-id={String(message.id)}
             data-cui-message-role={message.role}
         >
