@@ -387,6 +387,12 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 容量覆盖全对话时窗口起点恒为 0 | `test/floor-rail-math.test.mjs :: centerWindowStart: capacity covering the whole conversation always yields windowStart 0` |
 | 容量 1 时窗口恰好跟随激活刻度 | `test/floor-rail-math.test.mjs :: centerWindowStart: degenerate capacity 1 tracks the active tick exactly, one turn per window` |
 | 容量 0 时仍有确定性结果且不越界 | `test/floor-rail-math.test.mjs :: centerWindowStart: degenerate capacity 0 is still deterministic and clamps within range` |
+| swipe 分段刻度窗口的容量恒为 5（设计 §43 定值） | `test/swipe-segment-math.test.mjs :: SWIPE_SEGMENT_CAPACITY is 5 — the design's fixed tick-row width` |
+| 总数不超过窗口容量时全量显示且不进入「窗口化」状态 | `test/swipe-segment-math.test.mjs :: computeSwipeSegmentWindow: total at or under the cap always shows every swipe, unwindowed` |
+| 总数为 0 时结果确定，不是空指针或 NaN | `test/swipe-segment-math.test.mjs :: computeSwipeSegmentWindow: total 0 is deterministic and yields an empty, unwindowed window` |
+| 总数刚超过窗口容量时按当前项居中并标记窗口化，窗口宽度恒等于容量 | `test/swipe-segment-math.test.mjs :: computeSwipeSegmentWindow: total just past the cap (6) centers the active tick and reports windowed` |
+| 长历史下窗口起点与原型 `Math.max(0, Math.min(activeIndex-2, total-5))` 逐点一致，且激活项恒落在窗口内 | `test/swipe-segment-math.test.mjs :: computeSwipeSegmentWindow: a long swipe history (total=101) mirrors the prototype's Math.max/Math.min formula exactly` |
+| 窗口宽度与起点永不越出 `[0, total]` 边界 | `test/swipe-segment-math.test.mjs :: computeSwipeSegmentWindow: never returns a window wider than the total, even for tiny totals above the cap` |
 | 贴底门 80px 与「回到最新」门 240px 是两个独立常量，且前者恒小于后者 | `test/follow-scroll-math.test.mjs :: follow-scroll gates: the two thresholds are 80px and 240px, and the jump gate is the far one` |
 | 距底距离恒为 scrollHeight - scrollTop - clientHeight（不是滚动偏移本身） | `test/follow-scroll-math.test.mjs :: readFollowGates: distance is the content below the viewport, not the scroll offset` |
 | 贴底门严格开区间：79px 仍粘滞、恰好 80px 已松手 | `test/follow-scroll-math.test.mjs :: readFollowGates: the follow gate holds up to but not at 80px` |
