@@ -68,6 +68,8 @@ export {
 export {
     resolveChatuiConfirm,
     resetChatuiConfirmStore,
+    shouldAcceptConfirmKey,
+    CHATUI_CONFIRM_KEY_GUARD_MS,
 } from '../store/confirm-store.js';
 
 export {

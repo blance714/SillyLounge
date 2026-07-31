@@ -8,7 +8,7 @@ import type { ChatuiAction, ChatuiMessage } from '../../types.js';
 import { ActionButton } from './ActionButton.js';
 import { MenuItem } from './MenuItem.js';
 
-type MenuAction = { label: string; iconClass: string; onClick: () => void };
+type MenuAction = { label: string; iconClass: string; onClick: () => void; danger?: boolean };
 
 /**
  * Portals its dropdown to document.body: this button lives inside the
@@ -66,7 +66,7 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                         onClick={() => setAnchor(null)}
                     />
                     <div
-                        className="cui-root-menu"
+                        className="cui-root-menu cui-paper"
                         style={{ position: 'fixed', top: `${anchor.top}px`, right: `${anchor.right}px` }}
                     >
                         {items.map(item => (
@@ -74,6 +74,7 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                                 key={item.label}
                                 label={item.label}
                                 iconClass={item.iconClass}
+                                danger={item.danger}
                                 onClick={() => { setAnchor(null); item.onClick(); }}
                             />
                         ))}
@@ -100,7 +101,7 @@ export function MessageActions({
     const branch: MenuAction = { label: 'Branch', iconClass: 'fa-solid fa-code-branch', onClick: () => dispatch('branch') };
     const checkpoint: MenuAction = { label: 'Checkpoint', iconClass: 'fa-solid fa-flag-checkered', onClick: () => dispatch('checkpoint') };
     const hide: MenuAction = { label: 'Hide', iconClass: 'fa-solid fa-eye-slash', onClick: () => dispatch('hide') };
-    const del: MenuAction = { label: 'Delete', iconClass: 'fa-solid fa-trash', onClick: () => dispatch('delete') };
+    const del: MenuAction = { label: 'Delete', iconClass: 'fa-solid fa-trash', onClick: () => dispatch('delete'), danger: true };
 
     // User messages tile every action inline — 平铺全显，无 overflow (DESIGN §5.C):
     // Copy is always rendered below, so the rest join it as flat buttons. Character
