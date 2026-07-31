@@ -69,7 +69,7 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                     <button
                         className="cui-root-menu-backdrop"
                         type="button"
-                        aria-label="关闭"
+                        aria-label="关闭菜单"
                         onClick={() => setAnchor(null)}
                     />
                     <div

@@ -81,10 +81,10 @@ export function PlusMenu({
             <button
                 className={`cui-root-plus-btn${isOpen ? ' is-open' : ''}`}
                 type="button"
-                aria-label="更多操作"
+                aria-label="附件与工具"
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
-                title="更多操作"
+                title="附件与工具"
                 onClick={() => setIsOpen(open => !open)}
             >
                 <i className="fa-solid fa-plus" />

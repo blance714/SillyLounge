@@ -93,7 +93,7 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
                     <button
                         className="cui-root-selchip-backdrop"
                         type="button"
-                        aria-label="Close"
+                        aria-label="关闭菜单"
                         onClick={() => setIsOpen(false)}
                     />
                     <ul className="cui-root-selchip-menu cui-paper" role="listbox">
