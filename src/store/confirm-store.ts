@@ -10,6 +10,9 @@
  * (ui/components/ConfirmDialogHost.tsx) is the only reader that turns a
  * pending request into an actual <ConfirmDialog>.
  *
+ * It also owns the one piece of the dialog's keyboard model that is a rule
+ * rather than wiring: shouldAcceptConfirmEnter(). See its own note below.
+ *
  * Two-way vs three-way: `variant` distinguishes a plain confirm/cancel dialog
  * from one with a third ("escalate") button — e.g. message delete's default
  * "Delete Swipe" escalating to "Delete Message" (DOM-DECOUPLING.md decision
@@ -136,6 +139,37 @@ export function resolveChatuiConfirm(id: string, outcome: ChatuiConfirmOutcome):
  */
 export function cancelChatuiConfirm(id: string): void {
     _settle(id, 'cancel');
+}
+
+/**
+ * How long a freshly-opened confirm dialog refuses Enter (design §9).
+ *
+ * The dialog hands focus to its *confirm* button, which is what makes Enter
+ * answer the question without the user reaching for the mouse. That is only
+ * safe because a delete is usually triggered from a keyboard-heavy moment —
+ * the composer, an inline editor — and a stray keystroke already in flight
+ * must not become the answer. 300ms is longer than any single keypress and
+ * far shorter than reading a sentence.
+ */
+export const CHATUI_CONFIRM_ENTER_GUARD_MS = 300;
+
+/**
+ * Is this Enter the user's answer, or the tail of what they were typing when
+ * the dialog appeared?
+ *
+ * Pure on purpose: the component owns *when* the dialog opened and asks the
+ * clock, this owns the rule. Non-finite inputs fail closed — a missing or
+ * corrupt timestamp must not be able to authorize a deletion (`Infinity`
+ * would otherwise sail past any elapsed-time comparison), and neither must a
+ * clock that has moved backwards.
+ *
+ * @param {number} openedAtMs epoch ms at which the dialog was mounted
+ * @param {number} nowMs epoch ms of the keystroke
+ * @returns {boolean}
+ */
+export function shouldAcceptConfirmEnter(openedAtMs: number, nowMs: number): boolean {
+    if (!Number.isFinite(openedAtMs) || !Number.isFinite(nowMs)) return false;
+    return nowMs - openedAtMs >= CHATUI_CONFIRM_ENTER_GUARD_MS;
 }
 
 /** Reset ephemeral UI state on full ChatUI teardown, not on settings toggles. */
