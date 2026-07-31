@@ -1,6 +1,11 @@
 import React, { createPortal, useEffect, useRef } from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { shouldAcceptConfirmEnter } from '../actions.js';
+import { shouldAcceptConfirmKey } from '../actions.js';
+
+/** The two keys a focused <button> activates itself with. Both have to be
+ *  guarded: the design only names Enter because its own dialog's buttons were
+ *  non-focusable spans, so Space could never have reached them. */
+const ACTIVATION_KEYS = new Set([' ', 'Enter']);
 
 /**
  * ChatUI-owned confirm dialog (no native ST popup). Portals to document.body:
@@ -24,18 +29,26 @@ import { shouldAcceptConfirmEnter } from '../actions.js';
  * What replaces the safety is a time guard rather than a focus trick. The
  * dangerous case was never "the user pressed Enter deliberately"; it was "the
  * user was mid-keystroke in the composer when a dialog appeared under their
- * hands". So Enter is refused for the first 300ms and accepted after — see
- * shouldAcceptConfirmEnter() in store/confirm-store.ts, which owns that rule
- * as a pure function so it can be tested without a DOM. This component only
- * records when it mounted and asks.
+ * hands". So an activation keystroke is refused for the first 300ms and
+ * accepted after — see shouldAcceptConfirmKey() in store/confirm-store.ts,
+ * which owns that rule as a pure function so it can be tested without a DOM.
+ * This component only records when it mounted and asks.
  *
- * Note the guard has to *swallow* Enter, not merely decline to act on it: the
- * focused confirm button would otherwise fire its own native click. That is
- * also why the accept path deliberately does nothing when the keystroke is
- * already aimed at a button inside the dialog — the native activation is the
- * one that runs, and calling onConfirm() here as well would fire it twice.
- * The window handler is therefore only a fallback, for when focus has left
- * the buttons entirely and nothing native would answer.
+ * "Activation keystroke" is Enter *and* Space. The design names only Enter,
+ * but its dialog's buttons are non-focusable spans; ours are real buttons,
+ * which Space activates just as natively, so leaving Space out would have
+ * left the guard with a hole exactly the width of one keystroke.
+ *
+ * Note the guard has to *swallow* the key, not merely decline to act on it:
+ * the focused confirm button would otherwise fire its own native click.
+ * (preventDefault on keydown cancels the activation for both keys — verified
+ * in a browser rather than assumed.) That is also why the accept path
+ * deliberately does nothing when the keystroke is already aimed at a button
+ * inside the dialog — the native activation is the one that runs, and calling
+ * onConfirm() here as well would fire it twice. The window handler is
+ * therefore only a fallback, for when focus has left the buttons entirely and
+ * nothing native would answer; and it is an Enter-only fallback, since Space
+ * pressed at nothing in particular is not an answer to anything.
  *
  * One consequence, taken on purpose: if the user has tabbed to cancel, Enter
  * cancels rather than confirms. The design says "Enter confirms" of a dialog
@@ -87,9 +100,9 @@ export function ConfirmDialog({
                 onCancel();
                 return;
             }
-            if (event.key !== 'Enter') return;
+            if (!ACTIVATION_KEYS.has(event.key)) return;
 
-            if (!shouldAcceptConfirmEnter(openedAtRef.current, Date.now())) {
+            if (!shouldAcceptConfirmKey(openedAtRef.current, Date.now())) {
                 // Swallow it whole: preventDefault kills the native activation
                 // of the focused confirm button, stopPropagation keeps the
                 // keystroke from reaching whatever the user was typing into.
@@ -103,7 +116,8 @@ export function ConfirmDialog({
             if (target instanceof HTMLButtonElement && cardRef.current?.contains(target)) return;
 
             // Focus left the buttons (the user clicked the card's text, say),
-            // so nothing native will answer — do it here.
+            // so nothing native will answer — do it here, for Enter only.
+            if (event.key !== 'Enter') return;
             event.preventDefault();
             onConfirm();
         };

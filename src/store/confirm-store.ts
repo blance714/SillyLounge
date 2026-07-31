@@ -11,7 +11,7 @@
  * pending request into an actual <ConfirmDialog>.
  *
  * It also owns the one piece of the dialog's keyboard model that is a rule
- * rather than wiring: shouldAcceptConfirmEnter(). See its own note below.
+ * rather than wiring: shouldAcceptConfirmKey(). See its own note below.
  *
  * Two-way vs three-way: `variant` distinguishes a plain confirm/cancel dialog
  * from one with a third ("escalate") button — e.g. message delete's default
@@ -142,20 +142,27 @@ export function cancelChatuiConfirm(id: string): void {
 }
 
 /**
- * How long a freshly-opened confirm dialog refuses Enter (design §9).
+ * How long a freshly-opened confirm dialog refuses an activation keystroke
+ * (design §9).
  *
- * The dialog hands focus to its *confirm* button, which is what makes Enter
- * answer the question without the user reaching for the mouse. That is only
- * safe because a delete is usually triggered from a keyboard-heavy moment —
- * the composer, an inline editor — and a stray keystroke already in flight
+ * The dialog hands focus to its *confirm* button, which is what lets a
+ * keystroke answer the question without the user reaching for the mouse. That
+ * is only safe because a delete is usually triggered from a keyboard-heavy
+ * moment — the composer, an inline editor — and a keystroke already in flight
  * must not become the answer. 300ms is longer than any single keypress and
  * far shorter than reading a sentence.
  */
-export const CHATUI_CONFIRM_ENTER_GUARD_MS = 300;
+export const CHATUI_CONFIRM_KEY_GUARD_MS = 300;
 
 /**
- * Is this Enter the user's answer, or the tail of what they were typing when
- * the dialog appeared?
+ * Is this keystroke the user's answer, or the tail of what they were typing
+ * when the dialog appeared?
+ *
+ * Keyed on time, not on which key: the design names Enter, but a focused
+ * <button> is activated by Space just as natively, and the accident being
+ * guarded against ("a dialog appeared under hands that were already typing")
+ * does not care which of the two lands. The caller decides which keys are
+ * activation keys; this decides whether the window has closed.
  *
  * Pure on purpose: the component owns *when* the dialog opened and asks the
  * clock, this owns the rule. Non-finite inputs fail closed — a missing or
@@ -167,9 +174,9 @@ export const CHATUI_CONFIRM_ENTER_GUARD_MS = 300;
  * @param {number} nowMs epoch ms of the keystroke
  * @returns {boolean}
  */
-export function shouldAcceptConfirmEnter(openedAtMs: number, nowMs: number): boolean {
+export function shouldAcceptConfirmKey(openedAtMs: number, nowMs: number): boolean {
     if (!Number.isFinite(openedAtMs) || !Number.isFinite(nowMs)) return false;
-    return nowMs - openedAtMs >= CHATUI_CONFIRM_ENTER_GUARD_MS;
+    return nowMs - openedAtMs >= CHATUI_CONFIRM_KEY_GUARD_MS;
 }
 
 /** Reset ephemeral UI state on full ChatUI teardown, not on settings toggles. */
