@@ -1122,6 +1122,39 @@ test('deleting a chat absent from the raw directory listing reports it as absent
     }
 });
 
+// The other half of what `absent` means. A quarantined draft that ST has not
+// written yet is a conversation with no file, and it is *live*: the next
+// saveChatConditional() — a message, a swipe, walking away — puts the file
+// back. Reported as absence, the caller settles it like a real deletion and
+// drops the quarantine lease, so the file ST re-materializes a moment later is
+// permanent history nobody is holding, which is exactly the outcome the draft
+// quarantine exists to prevent.
+test('a missing file that is still the live chat is not absence: the conversation is alive and unsaved, so the lease must survive', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'ghost-chat' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'ghost-chat.jsonl' });
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a', 'chat-b'));
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        const result = await del.deleteCharacterChat('bob.png', 'ghost-chat');
+
+        assert.deepEqual(result, {
+            deleted: false,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: false,
+            absent: false,
+            fallbackChatFileName: null,
+        });
+        assert.equal(host.fetch.calls.length, 1, 'still no destructive request for a file that was never listed');
+    } finally {
+        await host.dispose();
+    }
+});
+
 test('a directory listing that could not be read is never reported as absence', async () => {
     const host = await createFakeStHost();
     try {

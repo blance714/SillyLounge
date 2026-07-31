@@ -355,10 +355,12 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
         try {
             const result = await chatuiAdapter.sidebarActions.deleteCharacterChat(avatar, fileName);
             if (result.absent) {
-                // The file is already gone from the host's own listing, so the
-                // reader's intent ("this conversation should not exist") is
-                // satisfied and only ChatUI's own bookkeeping is left. Settle
-                // it exactly as a real deletion would and say so plainly.
+                // The conversation exists nowhere — not in the host's listing,
+                // and not as the chat the runtime is standing in (the adapter
+                // withholds `absent` for that one on purpose). So the reader's
+                // intent ("this conversation should not exist") is satisfied
+                // and only ChatUI's own bookkeeping is left. Settle it exactly
+                // as a real deletion would and say so plainly.
                 //
                 // Reading this as a failure is what stranded a quarantined
                 // draft whose file had vanished: 丢弃 is this call, so the one

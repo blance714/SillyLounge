@@ -266,8 +266,11 @@ forcing the reload. It proves identity, not a file on disk; measured on the
 same host, the lease was written at t=843ms and `POST /api/chats/save` only
 went out at t=985ms. Two consequences are accepted rather than overlooked: a
 `saveChatConditional()` that fails outright leaves a lease pointing at a file
-that never appears (recoverable — restoring checks the raw listing and drops
-the lease, and discarding now reports `absent` and drops it too), and a 丢弃
+that never appears (recoverable through the *dormant* card — restoring checks
+the raw listing and drops the lease, and discarding now reports `absent` and
+drops it too; while the reader is still standing in that chat the conversation
+is alive and merely unsaved, so the delete transaction withholds `absent` there
+and the lease survives the next save that writes the file back), and a 丢弃
 inside that ~142ms window would send DELETE before ST's CREATE, leaving the
 file unleased. The window is not humanly reachable — the card must render, be
 found, be clicked and its confirm accepted within a tenth of a second of the

@@ -56,11 +56,29 @@ export async function deleteCharacterChat(
         console.error('[ChatUI] failed to verify chat before deletion', error);
         return unchanged;
     }
-    // Nothing to delete, and nothing failed. Reporting this as an ordinary
-    // failure was a dead end for the caller: a quarantined draft whose file
-    // had gone could never be discarded, because discarding *is* this call,
-    // so the card and its lease stayed on the shelf forever.
-    if (!chatNames.includes(bareName)) return { ...unchanged, absent: true };
+    if (!chatNames.includes(bareName)) {
+        // Nothing to delete, and nothing failed. Reporting this as an ordinary
+        // failure was a dead end for the caller: a quarantined draft whose file
+        // had gone could never be discarded, because discarding *is* this call,
+        // so the card and its lease stayed on the shelf forever.
+        //
+        // But 「no file」 is not 「no conversation」, and the difference is the
+        // whole of this guard. When the missing name is the chat the runtime is
+        // *standing in*, that conversation is very much alive — it is simply
+        // unsaved — and the next `saveChatConditional()` (a message, a swipe, an
+        // edit, walking away) writes the file straight back. Telling the caller
+        // 「absent, settle it as a real deletion」 there makes it drop the
+        // quarantine lease off a live draft, and the file ST re-materializes a
+        // moment later is then permanent history nobody is holding — the exact
+        // outcome the whole draft-quarantine handoff exists to prevent
+        // (deletion-finalization.ts). So absence is asserted only about files
+        // nothing live is claiming; a live one falls back to the plain 「nothing
+        // was deleted」 result, which keeps the lease and stays retryable the
+        // moment the file exists again.
+        const liveNow = getCurrentChatIdentity();
+        const deletingLive = liveNow?.avatar === avatar && liveNow.fileName === bareName;
+        return { ...unchanged, absent: !deletingLive };
+    }
 
     // Resolve the replacement from the raw directory listing. Unlike chat
     // search, this does not silently omit malformed JSONL files.

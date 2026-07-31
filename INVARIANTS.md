@@ -83,6 +83,7 @@
 | 删除请求缺参时不发任何网络请求，直接返回未变更 | `test/adapter-chats.test.mjs :: deleting with a missing avatar or filename resolves unchanged without contacting the host at all` |
 | 待删文件不存在时只做一次存在性检查、绝不发出破坏性请求，并如实上报 `absent`（供调用方清掉自己那条已无文件可指的租约） | `test/adapter-chats.test.mjs :: deleting a chat absent from the raw directory listing reports it as absent after one existence check, without issuing the destructive request` |
 | 目录读取失败绝不冒充「文件不存在」：读不到不等于不在，否则会丢掉仍持有真实文件的隔离租约 | `test/adapter-chats.test.mjs :: a directory listing that could not be read is never reported as absence` |
+| 「没有文件」不等于「没有这场对话」：待删名字正是运行时当前所在的会话时绝不上报 `absent`（它只是还没落盘，下一次保存就会写回来；报 absent 会让调用方丢掉活草稿的租约，落盘后变成无人认领的永久历史） | `test/adapter-chats.test.mjs :: a missing file that is still the live chat is not absence: the conversation is alive and unsaved, so the lease must survive` |
 | 丢弃一条文件已消失的隔离草稿必须清掉租约并如实告知，绝不报「删除失败」（丢弃就是这一次调用，报失败等于租约永远清不掉） | `test/sidebar-actions.test.mjs :: discarding a quarantined draft whose file has already vanished drops the lease instead of reporting a failure that can never be retried` |
 | 删除非当前、非指针会话时干净成功并广播 CHAT_DELETED | `test/adapter-chats.test.mjs :: deleting a non-current chat that is not the character-card pointer resolves cleanly and emits CHAT_DELETED` |
 | 删除后核实读取暂时性失败时有界重试，直到确认文件消失才报 deleted | `test/adapter-chats.test.mjs :: the post-delete existence check retries through transient read failures and resolves deleted once the listing confirms removal` |
@@ -137,7 +138,9 @@ CHAT_CHANGED（autoload 关掉、读者自己点开该角色，或由下面那�
 早约 142ms。两条已知边界如实记在这里，并且是**接受**而不是遗漏：
 
 - 若那次 `saveChatConditional()` 直接失败，会留下一条指向永不出现的文件的草稿租约。
-  这是可恢复态而非坏态：恢复它会先查原始目录并清掉租约
+  这是可恢复态而非坏态，而且恢复刻意走**休眠卡**而不是活着的那一条：读者还站在这场
+  对话里时，它只是「没落盘」而不是「不存在」，删除事务因此拒绝把它判成 `absent`，好
+  让租约撑过下一次把文件写回来的保存；读者离开之后，恢复它会先查原始目录并清掉租约
   （`openChatuiChatForCharacter`），丢弃它会拿到 `absent` 同样清掉租约
   （`delete-transaction.ts`），两条路都不卡住。
 - 那约 142ms 窗口内点「丢弃」，DELETE 会跑在 ST 的 CREATE 前面，文件随后被创建却不再

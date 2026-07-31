@@ -62,14 +62,22 @@ export type DeleteCharacterChatResultDto = Readonly<{
     uncertain: boolean;
     reloadRequired: boolean;
     /**
-     * The host's own raw directory listing says this file is not there, so
-     * there was nothing to delete and nothing failed. Distinct from every
-     * other `deleted: false` outcome — those mean the delete was attempted or
-     * abandoned and the file is (or may still be) on disk — because ChatUI's
-     * own state may still name it: a quarantine lease for a draft whose file
-     * vanished is otherwise unremovable, since its only removal path is the
-     * delete this reports on. Never true when the listing itself failed: an
-     * unreadable directory is not evidence of absence.
+     * This conversation does not exist anywhere: the host's own raw directory
+     * listing does not have the file, and nothing live is claiming the name
+     * either. So there was nothing to delete and nothing failed. Distinct from
+     * every other `deleted: false` outcome — those mean the delete was
+     * attempted or abandoned and the file is (or may still be) on disk —
+     * because ChatUI's own state may still name it: a quarantine lease for a
+     * draft whose file vanished is otherwise unremovable, since its only
+     * removal path is the delete this reports on.
+     *
+     * Two things it is deliberately never true for:
+     * - a listing that could not be read — an unreadable directory is not
+     *   evidence of absence;
+     * - the chat the runtime is *standing in* — that conversation is alive and
+     *   merely unsaved, and the next save writes its file back, so settling it
+     *   as a real deletion would strand the re-materialized file with no lease
+     *   (delete-transaction.ts has the full argument).
      */
     absent: boolean;
     /**

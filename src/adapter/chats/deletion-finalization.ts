@@ -168,7 +168,12 @@ export async function finalizePendingCharacterChatDeletion(): Promise<void> {
 //
 //  (a) if that `saveChatConditional()` fails outright, the lease is left
 //      pointing at a file that never appears. That is a recoverable state, not
-//      a corrupt one: restoring such a draft checks the raw listing first and
+//      a corrupt one, and the recovery is deliberately routed through the
+//      *dormant* card rather than the live one. While the reader is still
+//      standing in that chat the conversation exists (unsaved) and the delete
+//      transaction refuses to call it absent, precisely so the lease survives
+//      the next save that writes the file back; the moment the reader is
+//      somewhere else, restoring the card checks the raw listing first and
 //      drops the lease (sidebar-actions.ts's openChatuiChatForCharacter), and
 //      discarding it reports `absent` and drops the lease too
 //      (delete-transaction.ts). Nothing is lost and nothing is stuck.
