@@ -183,9 +183,14 @@ export function useSidebarBasics(): {
  * through `useSidebarBasics`'s `isCurrent` (which already honours the group
  * case), and the leases through `useTempChats`. The third — the pending
  * draft-quarantine credential — is a `sessionStorage` record with no change
- * notification, and needs none: the only thing that ever clears it is the
- * commit that puts a lease in its place, so the lease store's own update is
- * exactly when this is re-read.
+ * notification, and needs none, but only because of where the boot settles it:
+ * `finalizeChatuiDraftQuarantine()` runs before this tree mounts (index.ts), so
+ * by the first render the credential has already been either claimed for this
+ * page or expired. After that the only thing that ever clears it is the commit
+ * that puts a lease in its place, so the lease store's own update is exactly
+ * when this is re-read. Read it any earlier than that boot step and an expired
+ * credential would seat a character for the rest of the session, since nothing
+ * would ever invalidate this memo again.
  *
  * `isGroupActive` is the whole of ChatUI's group knowledge today: the header
  * says whether the open chat is a group, and there is no adapter query that

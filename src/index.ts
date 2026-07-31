@@ -345,23 +345,38 @@ function init() {
     initTempChatStore();
     injectSettingsUI();
     window.addEventListener(CHATUI_DISABLE_EVENT, disableFromUi);
+    // Second handoff of the reload a current-chat delete forces: if that delete
+    // emptied the character's whole history, ST's boot is materializing a
+    // fallback file this session (not settings.enabled) needs to fold into the
+    // draft quarantine regardless of whether the ChatUI UI is currently on.
+    // Deliberately not "has materialized": that file lands *after* APP_READY on
+    // a chain this event does not wait for, so the call below arms and watches
+    // rather than checks — see sidebar-actions.ts's
+    // finalizeChatuiDraftQuarantine doc comment.
+    //
+    // Ahead of the mount on purpose. Its synchronous half decides the fate of
+    // the `sessionStorage` credential — claim it for this page, or expire one a
+    // previous page already claimed — and the spine reads that same credential
+    // during render as one of its membership sources (ui/spine-cast.ts). A
+    // `sessionStorage` record notifies nobody, so a first render that observed
+    // an expired credential would seat a character with nothing to its name for
+    // the rest of the session: the memo has no reason to run again, because the
+    // expiry touches neither the cast nor the lease store. Settling it first
+    // makes the reactivity argument in useSpineCharacters true rather than
+    // nearly true — after this line the only thing that can still clear the
+    // credential is the commit that puts a lease in its place, and that does
+    // notify. The landing it may start is async and does not delay the mount.
+    finalizeChatuiDraftQuarantine();
     if (settings.enabled) {
         const enabledCb = document.getElementById('chatui_enabled') as HTMLInputElement | null;
         setupOrDisable(enabledCb);
     }
     // A current-chat delete reloads before emitting CHAT_DELETED so arbitrary
     // third-party listeners can never observe/save the stale deleted runtime.
-    // APP_READY guarantees the replacement chat is now reconstructed.
+    // APP_READY guarantees the replacement chat is now reconstructed. Kept
+    // after the mount: this one emits into ST's event bus for *listeners*, and
+    // ChatUI's own UI is one of them.
     void finalizePendingCharacterChatDeletion();
-    // Same reload, second handoff: if that delete emptied the character's
-    // whole history, ST's boot is materializing a fallback file this session
-    // (not settings.enabled) needs to fold into the draft quarantine
-    // regardless of whether the ChatUI UI is currently on. Deliberately not
-    // "has materialized": that file lands *after* APP_READY on a chain this
-    // event does not wait for, so the call below arms and watches rather than
-    // checks — see sidebar-actions.ts's finalizeChatuiDraftQuarantine doc
-    // comment.
-    finalizeChatuiDraftQuarantine();
 }
 
 // autoFireAfterEmit — APP_READY re-emits to late subscribers, so this is safe.

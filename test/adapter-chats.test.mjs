@@ -1718,6 +1718,13 @@ test('a draft-quarantine tombstone the previous page load already armed is expir
         assert.equal(finalization.armPendingCharacterChatDraftQuarantine(), null);
         assert.equal(host.sessionStorage.length, 0, 'the expired intent must not survive into a third boot');
         assert.deepEqual(finalization.resolvePendingCharacterChatDraftQuarantine(), { status: 'settled' });
+        // The spine reads this credential as a membership source and gets no
+        // notification when it changes (ui/spine-cast.ts, useSpineCharacters).
+        // Once the boot has expired it there must be nothing left to read, or a
+        // render that arrives afterwards seats a character with nothing to its
+        // name for the rest of the session.
+        assert.equal(finalization.peekPendingCharacterChatDraftQuarantine(), null,
+            'an expired credential must be invisible to the readers that only peek');
         assert.equal(host.fetch.calls.length, 0);
     } finally {
         await host.dispose();
