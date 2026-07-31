@@ -4,7 +4,7 @@
 // edit argument matrix. Source: src/adapter/messages.ts
 // (getDeleteEligibility, getConfirmMessageDeleteSetting,
 // deleteMessageWithIntent, _deleteSwipeById, swipeMessage,
-// toggleHideMessage, copyMessage, createBranch, createCheckpoint,
+// toggleHideMessage, copyMessageSource, createBranch, createCheckpoint,
 // saveMessageEditById, triggerMessageActionById). These delegate to
 // @st/script's exported saveChatDebounced/refreshSwipeButtons/
 // updateEditArrowClasses/syncSwipeToMes/swipe/saveChatConditional/
@@ -18,11 +18,14 @@
 // every branch of ST's native .mes_edit_delete policy is pinned exactly, not
 // just "was called".
 //
-// DOM-DECOUPLING.md Tier 1: copy / branch / checkpoint / hide never require a
-// live `.mes` node and read nothing but `getContext().chat` (via
+// DOM-DECOUPLING.md Tier 1: copySource / branch / checkpoint / hide never
+// require a live `.mes` node and read nothing but `getContext().chat` (via
 // getMessageById), so a plain numeric id — no `.mes` element, real or fake —
 // drives every one of them, including through the shared
-// triggerMessageActionById dispatch entry point. regen is unchanged this
+// triggerMessageActionById dispatch entry point. The plain 「复制」 does not
+// pass through that entry point at all — it reduces the formatted HTML the row
+// rendered from, which only the store holds — so what is pinned here is the
+// reduction itself plus its clipboard hand-off. regen is unchanged this
 // tier: it still resolves `#chat .mes[mesid="X"]` via getMessageElementById,
 // a compound selector the fake DOM deliberately doesn't support (see
 // test/helpers/fake-st-host.mjs's module doc comment), so it remains a
@@ -581,7 +584,7 @@ test('_deleteSwipeById: throws for an out-of-range swipe id, without mutating sw
     }
 });
 
-test('copyMessage: reads the live message by id and forwards its mes text to copyText, with no DOM element required', async () => {
+test('copyMessageSource: reads the live message by id and forwards its mes text to copyText, with no DOM element required', async () => {
     const host = await createFakeStHost();
     try {
         const messages = await host.importModule('adapter/messages.js');
@@ -593,7 +596,7 @@ test('copyMessage: reads the live message by id and forwards its mes text to cop
             copied = text;
         };
 
-        await messages.copyMessage(TARGET_ID);
+        await messages.copyMessageSource(TARGET_ID);
 
         assert.equal(copied, 'copy this exact text');
     } finally {
@@ -601,7 +604,7 @@ test('copyMessage: reads the live message by id and forwards its mes text to cop
     }
 });
 
-test('copyMessage: rejects a negative or non-integer message id before touching the host', async () => {
+test('copyMessageSource: rejects a negative or non-integer message id before touching the host', async () => {
     const host = await createFakeStHost();
     try {
         const messages = await host.importModule('adapter/messages.js');
@@ -610,11 +613,11 @@ test('copyMessage: rejects a negative or non-integer message id before touching 
         };
 
         await assert.rejects(
-            () => messages.copyMessage('not-a-number'),
+            () => messages.copyMessageSource('not-a-number'),
             /Invalid message id for copy/,
         );
         await assert.rejects(
-            () => messages.copyMessage(-1),
+            () => messages.copyMessageSource(-1),
             /Invalid message id for copy/,
         );
     } finally {
@@ -622,7 +625,7 @@ test('copyMessage: rejects a negative or non-integer message id before touching 
     }
 });
 
-test('copyMessage: throws when no message record exists at that id, without calling copyText', async () => {
+test('copyMessageSource: throws when no message record exists at that id, without calling copyText', async () => {
     const host = await createFakeStHost();
     try {
         const messages = await host.importModule('adapter/messages.js');
@@ -632,9 +635,104 @@ test('copyMessage: throws when no message record exists at that id, without call
         };
 
         await assert.rejects(
-            () => messages.copyMessage(0),
+            () => messages.copyMessageSource(0),
             /Message record not found for copy: 0/,
         );
+    } finally {
+        await host.dispose();
+    }
+});
+
+// The plain 「复制」 reduction. Hand-built trees rather than parsed HTML: the
+// fake host's DOM parses nothing (see its module doc comment), so `DOMParser`
+// is a real-browser-only seam — but the reduction it feeds is pure, and the
+// reduction is where every judgement call lives, so that is what gets pinned.
+function textNode(value) {
+    return { nodeType: 3, nodeValue: value, nodeName: '#text' };
+}
+
+function elementNode(nodeName, childNodes = []) {
+    return { nodeType: 1, nodeName, childNodes };
+}
+
+test('_plainTextFromNode: block boundaries and <br> become the line breaks a reader sees, and inline markup contributes nothing but its text', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+
+        const body = elementNode('BODY', [
+            elementNode('P', [
+                textNode('她'),
+                elementNode('EM', [textNode('抬起头')]),
+                textNode('。'),
+                elementNode('BR'),
+                textNode('「你来了。」'),
+            ]),
+            elementNode('P', [textNode('第二段。')]),
+        ]);
+
+        assert.equal(
+            messages._plainTextFromNode(body),
+            '她抬起头。\n「你来了。」\n\n第二段。',
+        );
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('_plainTextFromNode: list items break per row, table cells separate along the row, and comment/attribute nodes are dropped entirely', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+
+        const body = elementNode('BODY', [
+            elementNode('UL', [
+                elementNode('LI', [textNode('一')]),
+                elementNode('LI', [textNode('二')]),
+            ]),
+            // nodeType 8 is a comment: neither element nor text, so the walk
+            // must not reach into it at all.
+            { nodeType: 8, nodeName: '#comment', nodeValue: ' hidden ' },
+            elementNode('TABLE', [
+                elementNode('TR', [
+                    elementNode('TD', [textNode('左')]),
+                    elementNode('TD', [textNode('右')]),
+                ]),
+            ]),
+        ]);
+
+        assert.equal(messages._plainTextFromNode(body), '一\n\n二\n\n左\t右');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('plainTextFromMessageHtml: empty formatted HTML reduces to an empty string without reaching for a parser', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        // DOMParser does not exist in this harness at all, so this asserts the
+        // early return as much as the value: reaching the parser would throw.
+        assert.equal(messages.plainTextFromMessageHtml(''), '');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('copyMessageAsPlainText: forwards the reduced text to copyText and never reads the chat array', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+        host.context.chat = null; // the plain copy must not touch it
+
+        let copied = 'never called';
+        host.registry.copyText = (text) => {
+            copied = text;
+        };
+
+        await messages.copyMessageAsPlainText('');
+
+        assert.equal(copied, '');
     } finally {
         await host.dispose();
     }
@@ -852,7 +950,7 @@ test('toggleHideMessage: rejects a negative or non-integer message id before tou
     }
 });
 
-test('triggerMessageActionById: copy/branch/checkpoint/hide all resolve with no #chat .mes element present in the DOM (Tier 1)', async () => {
+test('triggerMessageActionById: copySource/branch/checkpoint/hide all resolve with no #chat .mes element present in the DOM (Tier 1)', async () => {
     const host = await createFakeStHost();
     try {
         const messages = await host.importModule('adapter/messages.js');
@@ -873,7 +971,7 @@ test('triggerMessageActionById: copy/branch/checkpoint/hide all resolve with no 
 
         // None of these may throw "Message element not found" — that gate is
         // gone for exactly these four.
-        await messages.triggerMessageActionById(TARGET_ID, 'copy');
+        await messages.triggerMessageActionById(TARGET_ID, 'copySource');
         await messages.triggerMessageActionById(TARGET_ID, 'branch');
         await messages.triggerMessageActionById(TARGET_ID, 'checkpoint');
         await messages.triggerMessageActionById(TARGET_ID, 'hide');
