@@ -253,7 +253,12 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
 
 ## 当前分支与工作树
 
-当前开发分支为 `main`;桌面楼层导航纳入当前功能基线。
+当前开发分支为 `main`；桌面楼层导航的当前基线是 `2px` 高 / `8px` 间距（`10px` 节距，
+`85778e6` 从 `6px` 放宽而来）、边缘淡出与预览气泡内左对齐的楼层号，并按 `DESIGN.md`
+§4.3 保留自有样式与交互——设计稿的楼层轨规格不采用。视觉身份自 2026-07-31 起转向
+长廊剧场：token/字阶（`da23813`，`refactor/pr0-design-tokens`）与宣纸浮层
+（`2d56365`，`refactor/pr2-paper-popover`，其亲提交链含 `da23813`）两层已落地，但
+**两个分支都尚未合并**，其余区域仍是旧皮；侧栏三栏化按 `DESIGN.md` §3/§3.1 待做。
 2026-07-10/11 hardening、Manuscript Flow 视觉复归、new-chat quarantine 修复与楼层导航均已
 进入提交历史;本地 validated runtime 也已发布并通过 assembled-tree 检查。仓库现已由
 `.github/workflows/publish-dist.yml` 在每次推送 `main` 后执行完整验证、固定版本的真实
