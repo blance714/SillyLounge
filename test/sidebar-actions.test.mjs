@@ -417,3 +417,38 @@ test('a boot that landed on somebody else is never overridden: the credential si
         await host.dispose();
     }
 });
+
+test('discarding a quarantined draft whose file has already vanished drops the lease instead of reporting a failure that can never be retried', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+
+        const router = createRouter(host);
+        // The host's own listing: the draft file is not there. (The lease can
+        // outlive its file whenever the save that was supposed to create it
+        // failed — see deletion-finalization.ts's section comment — or when
+        // anything outside ChatUI removed it.)
+        router.queue('/api/characters/chats', rawListing('chat-a'));
+
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+        const toastStore = await host.importModule('store/toast-store.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+
+        tempChatStore.setTempChat({ avatar: 'bob.png', fileName: 'ghost-draft' });
+        assert.equal(tempChatStore.isTempChat('bob.png', 'ghost-draft'), true);
+
+        await sidebarActions.deleteChatuiChat('bob.png', 'ghost-draft');
+
+        assert.deepEqual(tempChatStore.getTempChats(), [],
+            '丢弃 is the only path that can drop a lease; refusing here left the card on the shelf forever');
+        assert.equal(tempChatStore.getTempChat(), null);
+        assert.deepEqual(
+            toastStore.getToasts().map(toast => [toast.kind, toast.text]),
+            [['info', '该对话已不存在，已移出列表']],
+            'and the reader is told what actually happened, not that their delete failed',
+        );
+        assert.equal(host.fetch.calls.length, 1, 'no destructive request for a file that is not there');
+    } finally {
+        await host.dispose();
+    }
+});

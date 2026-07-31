@@ -81,7 +81,9 @@
 | 正向重命名在回读持续失败耗尽预算后报 uncertain+reloadRequired | `test/adapter-chats.test.mjs :: a current-chat forward rename gives up and reports uncertain+reloadRequired once the retry budget is exhausted by a sustained readback outage` |
 | 重命名安全对账在持续故障下最终放弃并要求刷新，不永久占用串行通道 | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety gives up and reports uncertain+reloadRequired once the retry budget is exhausted by a sustained outage` |
 | 删除请求缺参时不发任何网络请求，直接返回未变更 | `test/adapter-chats.test.mjs :: deleting with a missing avatar or filename resolves unchanged without contacting the host at all` |
-| 待删文件不存在时只做一次存在性检查，绝不发出破坏性请求 | `test/adapter-chats.test.mjs :: deleting a chat absent from the raw directory listing resolves unchanged after one existence check, without issuing the destructive request` |
+| 待删文件不存在时只做一次存在性检查、绝不发出破坏性请求，并如实上报 `absent`（供调用方清掉自己那条已无文件可指的租约） | `test/adapter-chats.test.mjs :: deleting a chat absent from the raw directory listing reports it as absent after one existence check, without issuing the destructive request` |
+| 目录读取失败绝不冒充「文件不存在」：读不到不等于不在，否则会丢掉仍持有真实文件的隔离租约 | `test/adapter-chats.test.mjs :: a directory listing that could not be read is never reported as absence` |
+| 丢弃一条文件已消失的隔离草稿必须清掉租约并如实告知，绝不报「删除失败」（丢弃就是这一次调用，报失败等于租约永远清不掉） | `test/sidebar-actions.test.mjs :: discarding a quarantined draft whose file has already vanished drops the lease instead of reporting a failure that can never be retried` |
 | 删除非当前、非指针会话时干净成功并广播 CHAT_DELETED | `test/adapter-chats.test.mjs :: deleting a non-current chat that is not the character-card pointer resolves cleanly and emits CHAT_DELETED` |
 | 删除后核实读取暂时性失败时有界重试，直到确认文件消失才报 deleted | `test/adapter-chats.test.mjs :: the post-delete existence check retries through transient read failures and resolves deleted once the listing confirms removal` |
 | 核实读取成功但文件仍在时立即如实报 deleted:false，不进入轮询 | `test/adapter-chats.test.mjs :: a listing that successfully reads back but still shows the file resolves deleted:false immediately, without polling` |

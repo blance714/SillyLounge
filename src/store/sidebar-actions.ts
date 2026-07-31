@@ -354,6 +354,24 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
     return enqueueHostTask(async () => {
         try {
             const result = await chatuiAdapter.sidebarActions.deleteCharacterChat(avatar, fileName);
+            if (result.absent) {
+                // The file is already gone from the host's own listing, so the
+                // reader's intent ("this conversation should not exist") is
+                // satisfied and only ChatUI's own bookkeeping is left. Settle
+                // it exactly as a real deletion would and say so plainly.
+                //
+                // Reading this as a failure is what stranded a quarantined
+                // draft whose file had vanished: 丢弃 is this call, so the one
+                // path that could drop the lease refused to, and the card
+                // stayed on the shelf for the rest of the session. (Restoring
+                // such a draft already recovered — openChatuiChatForCharacter
+                // checks the file first and drops the lease — which made the
+                // shelf's two buttons disagree about the same missing file.)
+                deleteComposerDraft(createCharacterChatKey(avatar, createConversationLocator(fileName)));
+                removeTempChat(avatar, fileName);
+                pushToast('info', '该对话已不存在，已移出列表');
+                return;
+            }
             if (result.deleted) {
                 deleteComposerDraft(createCharacterChatKey(avatar, createConversationLocator(fileName)));
                 removeTempChat(avatar, fileName);

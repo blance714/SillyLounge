@@ -41,6 +41,7 @@ export async function deleteCharacterChat(
         reconciled: true,
         uncertain: false,
         reloadRequired: false,
+        absent: false,
         fallbackChatFileName: null,
     } as const;
     if (!avatar || !bareName) return unchanged;
@@ -49,10 +50,17 @@ export async function deleteCharacterChat(
     try {
         chatNames = await listRawCharacterChatNames(avatar);
     } catch (error) {
+        // Deliberately not `absent`: a directory we could not read says
+        // nothing about whether the file is in it, and treating that as
+        // absence would drop a quarantine lease still holding a real file.
         console.error('[ChatUI] failed to verify chat before deletion', error);
         return unchanged;
     }
-    if (!chatNames.includes(bareName)) return unchanged;
+    // Nothing to delete, and nothing failed. Reporting this as an ordinary
+    // failure was a dead end for the caller: a quarantined draft whose file
+    // had gone could never be discarded, because discarding *is* this call,
+    // so the card and its lease stayed on the shelf forever.
+    if (!chatNames.includes(bareName)) return { ...unchanged, absent: true };
 
     // Resolve the replacement from the raw directory listing. Unlike chat
     // search, this does not silently omit malformed JSONL files.
@@ -206,6 +214,7 @@ export async function deleteCharacterChat(
             reconciled: false,
             uncertain: true,
             reloadRequired: deletingCurrent,
+            absent: false,
             fallbackChatFileName: null,
         };
     }
@@ -224,6 +233,7 @@ export async function deleteCharacterChat(
             reconciled,
             uncertain,
             reloadRequired: deletingCurrent && !reconciled,
+            absent: false,
             fallbackChatFileName: null,
         };
     }
@@ -236,6 +246,7 @@ export async function deleteCharacterChat(
             reconciled: true,
             uncertain: false,
             reloadRequired: true,
+            absent: false,
             // nextName is the fabricated fallback exactly when no real chat
             // (preferred or otherwise) survived to replace the one just
             // deleted — i.e. this character's history is now empty. Report
@@ -256,6 +267,7 @@ export async function deleteCharacterChat(
         reconciled: true,
         uncertain: false,
         reloadRequired: false,
+        absent: false,
         fallbackChatFileName: null,
     };
 }

@@ -1082,6 +1082,7 @@ test('deleting with a missing avatar or filename resolves unchanged without cont
             reconciled: true,
             uncertain: false,
             reloadRequired: false,
+            absent: false,
             fallbackChatFileName: null,
         };
 
@@ -1093,7 +1094,7 @@ test('deleting with a missing avatar or filename resolves unchanged without cont
     }
 });
 
-test('deleting a chat absent from the raw directory listing resolves unchanged after one existence check, without issuing the destructive request', async () => {
+test('deleting a chat absent from the raw directory listing reports it as absent after one existence check, without issuing the destructive request', async () => {
     const host = await createFakeStHost();
     try {
         configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'other-chat' });
@@ -1108,9 +1109,41 @@ test('deleting a chat absent from the raw directory listing resolves unchanged a
             reconciled: true,
             uncertain: false,
             reloadRequired: false,
+            // Not just "nothing happened": the caller may still be holding a
+            // quarantine lease for this file, and discarding a draft *is* this
+            // call — reported as a plain failure, that lease could never be
+            // dropped and its card stayed on the shelf forever.
+            absent: true,
             fallbackChatFileName: null,
         });
         assert.equal(host.fetch.calls.length, 1, 'must not call /api/chats/delete for a file that was never listed');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a directory listing that could not be read is never reported as absence', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'other-chat' });
+        host.fetch.setHandler(() => {
+            throw new Error('network down');
+        });
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        const result = await del.deleteCharacterChat('bob.png', 'chat-a');
+
+        assert.deepEqual(result, {
+            deleted: false,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: false,
+            // An unreadable directory says nothing about what is in it. Calling
+            // this absence would drop a quarantine lease that is still holding
+            // a real file — the exact leak the quarantine exists to prevent.
+            absent: false,
+            fallbackChatFileName: null,
+        });
     } finally {
         await host.dispose();
     }
@@ -1132,7 +1165,7 @@ test('deleting a non-current chat that is not the character-card pointer resolve
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, absent: false, fallbackChatFileName: null });
         assert.equal(deletedPayload, 'chat-a');
     } finally {
         await host.dispose();
@@ -1160,7 +1193,7 @@ test('the post-delete existence check retries through transient read failures an
         const del = await host.importModule('adapter/chats/delete-transaction.js');
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, absent: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/characters/chats'), 4,
             'the two transient failures should each have been retried before the third, successful read');
     } finally {
@@ -1191,7 +1224,7 @@ test('a listing that successfully reads back but still shows the file resolves d
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, absent: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/characters/chats'), 2,
             'a single successful read that still lists the file must not be retried as if it were ambiguous');
         assert.equal(deletedEmitted, false);
@@ -1220,7 +1253,7 @@ test('deleting the current chat persists the replacement pointer before deleting
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: true, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: true, absent: false, fallbackChatFileName: null });
         assert.equal(deletedEmitted, false,
             'a current-chat delete must never emit into the stale current-chat runtime; the caller reloads instead');
     } finally {
@@ -1257,6 +1290,7 @@ test("deleting a character's only remaining chat persists a fabricated fallback 
             reconciled: true,
             uncertain: false,
             reloadRequired: true,
+            absent: false,
             fallbackChatFileName: 'Bob - 2026-01-01 @00h00',
         });
     } finally {
@@ -1297,7 +1331,7 @@ test('the post-delete existence poll gives up and reports uncertain, without rol
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true, absent: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/characters/chats'), 1 + 3,
             'the pre-delete check plus exactly maxAttempts existence-poll attempts');
         assert.equal(router.callCount('/api/characters/merge-attributes'), 1,
@@ -1340,7 +1374,7 @@ test('deleting the current chat abandons the operation and requires a reload whe
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true, absent: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/chats/delete'), 0,
             'losing the pointer race must abandon the deletion before the destructive request is ever sent');
         assert.equal(host.context.characters[0].chat, 'chat-a.jsonl',
@@ -1373,7 +1407,7 @@ test('deleting a non-current chat that loses the character-card pointer race sti
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, absent: false, fallbackChatFileName: null });
         assert.equal(deletedPayload, 'chat-a',
             'the file is still safely removed by its real name, independent of who won the pointer');
         assert.equal(host.context.characters[0].chat, 'someone-elses-chat',
@@ -1424,7 +1458,7 @@ test('deleting the current chat rolls the pointer back and abandons the delete w
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, absent: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/chats/delete'), 0,
             'generation starting in the await gap must abandon the delete before the destructive request is sent');
         assert.equal(router.callCount('/api/characters/merge-attributes'), 2,
@@ -1464,7 +1498,7 @@ test('deleting the current chat rolls the pointer back and abandons the delete w
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, absent: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/chats/delete'), 0,
             'chat saving beginning in the await gap must abandon the delete before the destructive request is sent');
         assert.equal(router.callCount('/api/characters/merge-attributes'), 2,
