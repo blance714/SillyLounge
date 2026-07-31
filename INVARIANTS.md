@@ -161,6 +161,20 @@
 （2026-07-19，2026-07-19 复审后修订）：copy / branch / checkpoint / hide 改为按 id
 直调，不再要求存活的 `.mes` 节点。
 
+**复制一分为二（2026-07-31，设计 §45）**：菜单里「复制」与「复制原文（含标记）」
+是两件不同的事，因此是两条不同的通路。「复制原文」＝ `copyMessageSource(mesId)`
+＝原来的 `copyMessage`，逐字节转发 `chat[id].mes`，与原生 `.mes_copy`
+（script.js:11752-11763）一致，仍走共享按 id 分发入口（动作名 `copySource`）。
+「复制」＝ `copyMessageAsPlainText(html)`，把**已经渲染过的那段格式化 HTML**归约
+成读者看见的散文。它收 HTML 而不是 id 是有原因的：ST 的格式化器每次调用都会重解
+非确定性宏（`{{random::a,b}}`），在这里重新格式化就会把一段从未出现在屏幕上的文本
+塞进剪贴板——chat-store 的格式化 HTML 缓存本就是为这件事存在的，所以正文由
+store 从 DTO 取出后交给 adapter（编排见 §2 的 `triggerChatuiMessageAction`），
+adapter 只负责归约与剪贴板。归约用 `DOMParser`（惰性文档，正文里的 `<img src>`
+不会因为一次复制而发起网络请求），解析这一步是**只在真实浏览器里成立的接缝**——
+假宿主 DOM 不解析 HTML——所以判断全落在纯函数 `_plainTextFromNode` 上并在那里钉死，
+与 `_deleteFullMessageById` 的 `mesEl?.remove()` 同一处置。
+
 Tier 2（2026-07-19）：delete（整条）也分叉为薄分叉，DOM-*容忍*而非 DOM 门卫——不
 再调用 ST 的 `deleteMessage()`，也不再要求存活的 `.mes` 节点（chat_truncation=1
 下唯一常驻渲染的是末条消息，非末条消息必须依然能删）。确认弹窗与「删哪一部分」
@@ -316,9 +330,13 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 删除的 swipe 不是当前活跃 swipe 时，护栏绝不多余触发 syncSwipeToMes，但仍持久化并广播事件 | `test/messages.test.mjs :: _deleteSwipeById: leaves mes untouched (no syncSwipeToMes call) when the deleted swipe was not the message's active swipe` |
 | 仅剩一个 swipe 时拒绝删除且不产生任何变更（镜像 ST「不能删最后一个 swipe」的警告） | `test/messages.test.mjs :: _deleteSwipeById: throws without mutating when the message has only one swipe left` |
 | swipe id 越界时拒绝删除且不产生任何变更 | `test/messages.test.mjs :: _deleteSwipeById: throws for an out-of-range swipe id, without mutating swipes` |
-| copy 按 id 读取实时消息并原样转发 mes 文本，全程无需 DOM 元素 | `test/messages.test.mjs :: copyMessage: reads the live message by id and forwards its mes text to copyText, with no DOM element required` |
-| copy 在消息 id 非法时先抛错，绝不触达宿主 | `test/messages.test.mjs :: copyMessage: rejects a negative or non-integer message id before touching the host` |
-| copy 在找不到消息记录时抛错且绝不调用 copyText | `test/messages.test.mjs :: copyMessage: throws when no message record exists at that id, without calling copyText` |
+| 「复制原文」按 id 读取实时消息并原样转发 mes 文本（与原生 `.mes_copy` 逐字节一致），全程无需 DOM 元素 | `test/messages.test.mjs :: copyMessageSource: reads the live message by id and forwards its mes text to copyText, with no DOM element required` |
+| 「复制原文」在消息 id 非法时先抛错，绝不触达宿主 | `test/messages.test.mjs :: copyMessageSource: rejects a negative or non-integer message id before touching the host` |
+| 「复制原文」在找不到消息记录时抛错且绝不调用 copyText | `test/messages.test.mjs :: copyMessageSource: throws when no message record exists at that id, without calling copyText` |
+| 「复制」的正文归约：块级边界与 `<br>` 落成读者看见的换行，行内标记只贡献文字本身 | `test/messages.test.mjs :: _plainTextFromNode: block boundaries and <br> become the line breaks a reader sees, and inline markup contributes nothing but its text` |
+| 「复制」的正文归约：列表逐条换行、表格单元格沿行分隔，注释等非元素非文本节点整体丢弃 | `test/messages.test.mjs :: _plainTextFromNode: list items break per row, table cells separate along the row, and comment/attribute nodes are dropped entirely` |
+| 空的格式化 HTML 直接归约为空串，根本不去碰解析器 | `test/messages.test.mjs :: plainTextFromMessageHtml: empty formatted HTML reduces to an empty string without reaching for a parser` |
+| 「复制」只把归约后的文本交给 copyText，全程不读 chat 数组（正文来自 store 缓存的已渲染 HTML，不是重新格式化） | `test/messages.test.mjs :: copyMessageAsPlainText: forwards the reduced text to copyText and never reads the chat array` |
 | branch 原样转发消息 id 给 branchChat，全程无需 DOM 元素 | `test/messages.test.mjs :: createBranch: forwards the message id to branchChat, with no DOM element required` |
 | branch 在消息 id 非法时先抛错，绝不触达宿主 | `test/messages.test.mjs :: createBranch: rejects a negative or non-integer message id before touching the host` |
 | checkpoint 原样转发消息 id 给 createNewBookmark，全程无需 DOM 元素 | `test/messages.test.mjs :: createCheckpoint: forwards the message id to createNewBookmark, with no DOM element required` |
@@ -329,7 +347,7 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 已隐藏消息只调 unhide，绝不同时触发 hide | `test/messages.test.mjs :: toggleHideMessage: is_system true delegates to unhideChatMessage(mesId) only` |
 | 可见消息只调 hide，绝不同时触发 unhide | `test/messages.test.mjs :: toggleHideMessage: is_system false delegates to hideChatMessage(mesId) only` |
 | 隐藏切换在消息 id 非法时先抛错 | `test/messages.test.mjs :: toggleHideMessage: rejects a negative or non-integer message id before touching the host` |
-| 共享按 id 分发入口对 copy/branch/checkpoint/hide 撤销了「必须存在 `.mes` 节点」的一票否决门卫，DOM 全无时仍能全部成功 | `test/messages.test.mjs :: triggerMessageActionById: copy/branch/checkpoint/hide all resolve with no #chat .mes element present in the DOM (Tier 1)` |
+| 共享按 id 分发入口对 copySource/branch/checkpoint/hide 撤销了「必须存在 `.mes` 节点」的一票否决门卫，DOM 全无时仍能全部成功 | `test/messages.test.mjs :: triggerMessageActionById: copySource/branch/checkpoint/hide all resolve with no #chat .mes element present in the DOM (Tier 1)` |
 | delete 不再经共享分发入口执行（Tier 2）：一个运行期传入的 'delete' 字符串落到显式安全的 default no-op 分支，零变更、零宿主调用——真正的编排在 store/chat-actions.ts | `test/messages.test.mjs :: triggerMessageActionById: "delete" is not dispatched here at all (Tier 2) — a silent no-op, zero mutation, zero host calls; orchestration lives in store/chat-actions.ts now` |
 | 共享按 id 分发入口对 regen 保留「必须存在 `.mes` 节点」门卫，本 tier 不变（生成菜单路径，与 edit/delete 无关） | `test/messages.test.mjs :: triggerMessageActionById: "regen" still throws when no #chat .mes element is present (unchanged this tier — a generation-menu path, untouched by the edit fork)` |
 | edit 不再经共享分发入口执行（Tier 3）：本就从未被真实 UI 经它触发过；一个运行期传入的 'edit' 字符串落到与 'delete' 相同的显式安全 default no-op 分支，零变更 | `test/messages.test.mjs :: triggerMessageActionById: "edit" is not dispatched here at all (Tier 3) — never reachable from the real UI to begin with (entering edit mode is local Preact state), a runtime "edit" string falls through to the same silent default no-op "delete" already uses` |

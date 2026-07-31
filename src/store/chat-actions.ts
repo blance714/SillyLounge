@@ -11,11 +11,19 @@ import {
     enqueueHostTask,
     HostOperationCancelledError,
 } from './host-operation-queue.js';
+import { getMessageDtoById } from './chat-store.js';
 import { pushToast, dismissToast } from './toast-store.js';
 import { requestChatuiConfirm } from './confirm-store.js';
 import type { ChatuiConfirmOutcome } from './confirm-store.js';
 
-export type ChatuiMessageAction = 'copy' | 'regen' | 'delete' | 'branch' | 'checkpoint' | 'hide';
+export type ChatuiMessageAction =
+    | 'copy'
+    | 'copySource'
+    | 'regen'
+    | 'delete'
+    | 'branch'
+    | 'checkpoint'
+    | 'hide';
 export type ChatuiSelectorKind = 'preset' | 'model' | 'persona';
 export type ChatuiSwipeDirection = 'left' | 'right';
 export type ChatuiToastKind = 'info' | 'success' | 'error';
@@ -304,9 +312,31 @@ function deleteChatuiMessage(messageId: number | string, expectedChatKey: string
     })();
 }
 
+/** Design §45 gives each copy its own confirmation, because they differ. */
+const COPY_SUCCESS_TOAST: Partial<Record<ChatuiMessageAction, string>> = {
+    copy: '已复制',
+    copySource: '已复制原文',
+};
+
+/**
+ * The plain 「复制」 copies the message as it was read, so it must reduce the
+ * *same* formatted HTML the row rendered from. Re-running ST's formatter would
+ * re-resolve its non-deterministic macros ({{random::a,b}}) and hand over a
+ * version of the message that was never on screen — which is why chat-store
+ * caches that HTML in the first place. The DTO is that cache's public read, so
+ * the text and the pixels can never disagree.
+ */
+function copyRenderedChatuiMessage(messageId: number | string): Promise<void> {
+    const message = getMessageDtoById(messageId);
+    if (!message) {
+        throw new Error(`[ChatUI] No materialized message to copy at id ${messageId}`);
+    }
+    return chatuiAdapter.messageActions.copyMessageAsPlainText(message.html);
+}
+
 /**
  * @param {number|string} messageId
- * @param {'copy'|'regen'|'delete'|'branch'|'checkpoint'|'hide'} action
+ * @param {'copy'|'copySource'|'regen'|'delete'|'branch'|'checkpoint'|'hide'} action
  * @returns {void}
  */
 export function triggerChatuiMessageAction(
@@ -319,23 +349,20 @@ export function triggerChatuiMessageAction(
         return;
     }
 
+    const run = action === 'copy'
+        ? () => copyRenderedChatuiMessage(messageId)
+        : () => chatuiAdapter.messageActions.triggerMessageActionById(messageId, action);
     const operation = action === 'regen'
-        ? enqueueGenerationOperation(
-            expectedChatKey,
-            'regenerate',
-            () => chatuiAdapter.messageActions.triggerMessageActionById(messageId, action),
-        )
-        : enqueueChatBoundOperation(
-            expectedChatKey,
-            () => chatuiAdapter.messageActions.triggerMessageActionById(messageId, action),
-        );
+        ? enqueueGenerationOperation(expectedChatKey, 'regenerate', run)
+        : enqueueChatBoundOperation(expectedChatKey, run);
+    const successToast = COPY_SUCCESS_TOAST[action];
     void operation
         .then(() => {
-            if (action === 'copy') notifyChatui('success', '已复制');
+            if (successToast) notifyChatui('success', successToast);
         })
         .catch((error: unknown) => {
             if (isChatuiLifecycleCancellation(error)) return;
-            if (action === 'copy') {
+            if (successToast) {
                 console.error('[ChatUI] copy message failed', error);
                 notifyChatui('error', '复制失败');
             } else {
