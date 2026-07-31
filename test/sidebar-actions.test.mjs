@@ -417,6 +417,137 @@ test('a boot that landed on somebody else is never overridden: the credential si
     }
 });
 
+test('with ChatUI switched off the boot still arms and watches the credential, but never selects a character inside ST\'s own interface', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characters = [
+            { avatar: 'bob.png', name: 'Bob', chat: 'Bob - 2026-01-01 @00h00.jsonl', chat_size: 0, date_last_chat: 0, fav: false },
+        ];
+        host.fetch.setHandler(() => {
+            throw new Error('the boot half of the draft-quarantine handoff must issue no request');
+        });
+        // A selection that would fully succeed if it were attempted — the point
+        // is that it is never attempted, and a stub that merely threw would be
+        // swallowed by the landing's own error handling and prove nothing.
+        const selections = [];
+        host.registry.setActiveCharacter = () => {};
+        host.registry.setActiveGroup = () => {};
+        host.registry.saveSettingsDebounced = () => {};
+        host.registry.selectCharacterById = async (index) => {
+            selections.push(index);
+            host.context.characterId = index;
+            host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+            await host.eventSource.emit('CHAT_CHANGED', 'Bob - 2026-01-01 @00h00');
+        };
+
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+        // A stock host with ChatUI off: nobody on stage, and no ChatUI UI that
+        // could be stranded by leaving it that way.
+        liveChat(host, null);
+        host.context.groupId = undefined;
+
+        sidebarActions.finalizeChatuiDraftQuarantine({ completeLanding: false });
+        await sidebarActions.waitForChatuiSidebarActionsIdle();
+        await new Promise(resolve => setImmediate(resolve));
+
+        assert.deepEqual(selections, [],
+            'the reader switched ChatUI off: an extension with no interface on screen must not pick a '
+            + 'character inside ST\'s own one');
+        assert.equal(host.context.characterId, undefined, 'the empty stage ST chose stays ST\'s own doing');
+        assert.equal(host.sessionStorage.length, 1, 'the credential is claimed for this page, not consumed');
+        assert.equal(
+            host.eventSource.listenerCount('CHAT_CHANGED'),
+            1,
+            'and the fold is still watching: the lease is what keeps ST\'s fallback file a recoverable draft '
+            + 'instead of permanent history, whether or not ChatUI\'s UI is currently on',
+        );
+
+        // ST's own autoload gets there after all — the half that must keep
+        // working with the extension switched off.
+        liveChat(host, 'Bob - 2026-01-01 @00h00');
+        await host.eventSource.emit('CHAT_CHANGED', 'Bob - 2026-01-01 @00h00');
+
+        assert.deepEqual(
+            tempChatStore.getTempChat(),
+            { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' },
+            'the persisted lease is there for whenever ChatUI comes back',
+        );
+        assert.equal(host.sessionStorage.length, 0, 'and the credential is consumed by the fold, as always');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a credential the bootstrap page owned but never redeemed expires on the next boot instead of selecting somebody a page later', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characters = [
+            { avatar: 'bob.png', name: 'Bob', chat: 'Bob - 2026-01-01 @00h00.jsonl', chat_size: 0, date_last_chat: 0, fav: false },
+        ];
+        host.fetch.setHandler(() => {
+            throw new Error('the boot half of the draft-quarantine handoff must issue no request');
+        });
+        const selections = [];
+        host.registry.setActiveCharacter = () => {};
+        host.registry.setActiveGroup = () => {};
+        host.registry.saveSettingsDebounced = () => {};
+        host.registry.selectCharacterById = async (index) => {
+            selections.push(index);
+            host.context.characterId = index;
+            host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+            await host.eventSource.emit('CHAT_CHANGED', 'Bob - 2026-01-01 @00h00');
+        };
+
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+
+        // Page 1 — 关扩展: ChatUI is off, ST came back on nobody, and nothing
+        // ever made the fallback file live.
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+        liveChat(host, null);
+        host.context.groupId = undefined;
+        sidebarActions.finalizeChatuiDraftQuarantine({ completeLanding: false });
+        await sidebarActions.waitForChatuiSidebarActionsIdle();
+        assert.equal(host.sessionStorage.length, 1, 'page 1 ends with the credential still pending');
+
+        // 刷新 → 再开扩展. sessionStorage is what survives that reload (module
+        // state does not; the leftover CHAT_CHANGED listener below is this
+        // harness's artefact, not something a real page keeps).
+        sidebarActions.finalizeChatuiDraftQuarantine({ completeLanding: true });
+        await sidebarActions.waitForChatuiSidebarActionsIdle();
+        await new Promise(resolve => setImmediate(resolve));
+
+        assert.equal(
+            host.sessionStorage.length,
+            0,
+            'the page that owned the credential is over: expiry is the only correct fate, and it is why the '
+            + 'bootstrap page had to arm it at all',
+        );
+        assert.deepEqual(selections, [], 'nobody is selected on the strength of a dead credential');
+        assert.equal(host.context.characterId, undefined, 'and the stage ST chose is still ST\'s');
+
+        // The file ST finally writes long afterwards is ordinary history, not a
+        // draft adopted retroactively.
+        liveChat(host, 'Bob - 2026-01-01 @00h00');
+        await host.eventSource.emit('CHAT_CHANGED', 'Bob - 2026-01-01 @00h00');
+        assert.deepEqual(tempChatStore.getTempChats(), []);
+        assert.equal(
+            host.eventSource.listenerCount('CHAT_CHANGED'),
+            0,
+            'and the settled credential retires the watch rather than leaving it armed forever',
+        );
+    } finally {
+        await host.dispose();
+    }
+});
+
 test("the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it", async () => {
     const host = await createFakeStHost();
     try {

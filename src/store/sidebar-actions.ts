@@ -561,9 +561,36 @@ async function _completePendingChatTransactionLanding(avatar: string): Promise<v
  * CHAT_CHANGED that resolves the credential is emitted from inside that very
  * call.
  *
+ * `completeLanding: false` keeps everything above except that last move, and
+ * exists for the one caller that must not make it: bootstrap mode, where
+ * ChatUI's own interface is switched off and the reader is looking at ST's
+ * native UI. Selecting a character *there* would be an invisible extension
+ * moving a stage it does not own, so the reader keeps the empty stage ST gave
+ * them. Everything else still has to run, and for reasons that outlive this
+ * page: arming is what bounds the credential to the load it belongs to (an
+ * un-armed one would survive into some far later boot and retroactively
+ * quarantine a file the reader has been treating as ordinary history), and the
+ * watch is what keeps the fallback file — if ST's autoload does write it — a
+ * recoverable draft instead of permanent history nobody asked to keep. The
+ * lease is persisted, so it is still a draft whenever ChatUI comes back.
+ *
+ * That is also the whole of the credential's fate when the reader switches
+ * ChatUI off, reloads, and switches it back on. Turning it back on does not
+ * re-run this (`index.ts` only mounts), and would change nothing if it did:
+ * the credential is already armed for this page. If the fallback file went
+ * live, the lease is waiting in the quarantine set; if nobody ever took the
+ * stage, the credential is still pending and the spine seats that character
+ * the moment ChatUI's UI is back (ui/spine-cast.ts reads it through `peek`),
+ * so the reader can walk over and finish the transaction by hand. The next
+ * reload after that expires it, exactly as it expires any credential the page
+ * that owned it never redeemed.
+ *
+ * @param {{ completeLanding?: boolean }} [options]
  * @returns {void}
  */
-export function finalizeChatuiDraftQuarantine(): void {
+export function finalizeChatuiDraftQuarantine(
+    { completeLanding = true }: { completeLanding?: boolean } = {},
+): void {
     let pending: TempChatPointer | null = null;
     try {
         pending = chatuiAdapter.sidebarActions.armPendingCharacterChatDraftQuarantine();
@@ -583,6 +610,7 @@ export function finalizeChatuiDraftQuarantine(): void {
         stopWatching = null;
     });
 
+    if (!completeLanding) return;
     void enqueueHostTask(() => _completePendingChatTransactionLanding(pending.avatar));
 }
 
