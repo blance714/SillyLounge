@@ -187,6 +187,12 @@
     --cui-font-2xs: calc(var(--cui-font-root) * 0.6);      /* 9px — dense meta, counts */
     --cui-font-xs: calc(var(--cui-font-root) * 0.667);     /* 10px — meta, eyebrows */
     --cui-font-sm: calc(var(--cui-font-root) * 0.733);     /* 11px — notes, action rows */
+    /* 11.5px — the design's inline-control tier: the 「回到最新」 capsule (§47),
+       the persona chip, inline links like 「从空白新建」. It reads as one step
+       quieter than a button without dropping to meta size. Half a pixel from
+       -sm is a real distinction here: -sm is text you skim past, this is text
+       you click. */
+    --cui-font-chip: calc(var(--cui-font-root) * 0.767);   /* 11.5px — chips, pills, inline links */
     --cui-font-tight: calc(var(--cui-font-root) * 0.8);    /* 12px — buttons */
     --cui-font-menu: calc(var(--cui-font-root) * 0.833);   /* 12.5px — menu items */
     --cui-font-card: calc(var(--cui-font-root) * 0.9);     /* 13.5px — card titles */
@@ -210,6 +216,11 @@
        an inscription rather than a word: speaker names (§4), the composer's
        preset chip (§6), the confirm dialog's escalate link (§9). */
     --cui-tracking-wide: 0.08em;
+    /* One step above -wide, spent only on labels that float free on a surface
+       of their own rather than sitting in a row of text: the 「回到最新」
+       capsule (§47) and the greeting picker's 「开场 N」 (§5, not built yet).
+       Detached type needs the extra air to hold together as an object. */
+    --cui-tracking-pill: 0.1em;
     --cui-tracking-btn: 0.12em;
     /* -label has no consumer yet, and that is a statement rather than an
        oversight: both places the design spends .16em on — the draft card's
@@ -1858,10 +1869,14 @@ body.chatui-active .cui-root-message {
    into the mounted window. Only the newest message can actually be new, so it
    is the only one that animates. */
 body.chatui-active .cui-root-message.is-latest {
-    animation: cui-message-in 0.3s ease both;
+    animation: cui-fade-in 0.3s ease both;
 }
 
-@keyframes cui-message-in {
+/* The design's one general entrance (汇总: `fade-in`), so it is named for the
+   motion rather than for its first caller — the newest message, the generating
+   indicator and the 「回到最新」 capsule all arrive the same way, and a
+   message-specific name would have made the third one look like a borrow. */
+@keyframes cui-fade-in {
     from {
         opacity: 0;
         transform: translateY(6px);
@@ -2476,7 +2491,7 @@ body.chatui-active .cui-root-generating {
     border-left: 2px solid transparent;
     color: color-mix(in srgb, var(--cui-color-seal) 74%, var(--cui-color-text));
     font-family: var(--cui-font-body);
-    animation: cui-message-in 0.3s ease both;
+    animation: cui-fade-in 0.3s ease both;
 }
 
 body.chatui-active .cui-root-generating-line {
@@ -2526,29 +2541,61 @@ body.chatui-active .cui-root-generating-label {
     }
 }
 
+/* 「回到最新」 (design §47). Not a round icon button but a labelled capsule
+   floating over the composer: it appears while the reader is deliberately
+   somewhere else in the conversation, so it has to say what it does in words
+   rather than ask them to decode an arrow. It stays a child of the stage — the
+   stage is what scrolls, and what the capsule offers is a scroll position.
+
+   Centered with auto margins rather than translateX(-50%): the entrance below
+   animates `transform`, and a centering transform would be overwritten by it
+   (and, under `both`, left overwritten after it ended). Two jobs, one property
+   — so the layout job moves off the property the animation owns. */
 body.chatui-active .cui-root-scroll-bottom {
     position: absolute;
-    left: 50%;
-    bottom: 0.85rem;
+    left: 0;
+    right: 0;
+    /* Design: ~23px of air between the capsule and the composer's dashed rule.
+       12px of that is already paid by the frame — .cui-root-app's 0.5rem column
+       gap plus the composer's own 0.25rem top margin — so this offset is the
+       remainder, not the whole distance. */
+    bottom: 0.7rem;
     z-index: 7;
-    transform: translateX(-50%);
+    width: fit-content;
+    margin-inline: auto;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 2.4rem;
-    height: 2.4rem;
-    border: 1px solid var(--cui-color-border);
+    gap: 0.44rem;
+    padding: 0.31rem 0.88rem;
+    border: 1px solid color-mix(in srgb, var(--cui-color-user-mark) 50%, transparent);
     border-radius: var(--cui-radius-pill);
-    background-color: var(--cui-color-surface);
-    color: var(--cui-color-text);
+    background-color: color-mix(in srgb, var(--cui-color-surface) 92%, transparent);
+    color: color-mix(in srgb, var(--cui-color-text) 75%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-chip);
+    letter-spacing: var(--cui-tracking-pill);
+    white-space: nowrap;
     cursor: pointer;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-    opacity: 0.92;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    transition: color var(--cui-motion-base) ease, border-color var(--cui-motion-base) ease;
+    animation: cui-fade-in 0.2s ease both;
+}
+
+/* The design's chevron is a gold a shade deeper than the accent — the same
+   in-between warm the accent rule is already mixed to, so it is read from
+   there instead of minting a fourth gold. */
+body.chatui-active .cui-root-scroll-bottom i {
+    font-size: var(--cui-font-xs);
+    color: var(--cui-rule-accent);
 }
 
 body.chatui-active .cui-root-scroll-bottom:hover,
 body.chatui-active .cui-root-scroll-bottom:focus-visible {
-    opacity: 1;
+    border-color: var(--cui-color-user-mark);
+    color: var(--cui-color-text);
+}
+
+body.chatui-active .cui-root-scroll-bottom:focus-visible {
     outline: 1px solid var(--cui-outline-faint);
 }
 
@@ -3545,7 +3592,8 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
     body.chatui-active .cui-root-dialog-overlay,
     body.chatui-active .cui-root-dialog,
     body.chatui-active .cui-root-message.is-latest,
-    body.chatui-active .cui-root-generating {
+    body.chatui-active .cui-root-generating,
+    body.chatui-active .cui-root-scroll-bottom {
         animation: none;
     }
 

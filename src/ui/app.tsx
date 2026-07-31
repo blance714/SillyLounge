@@ -280,15 +280,16 @@ function ChatuiApp(): ComponentChild {
                               <span className="cui-root-empty-title">台上还空着</span>
                               <span className="cui-root-empty-note">写下第一楼，这一场就开了。</span>
                           </div>
+                          {/* The label is the accessible name: no aria-label, so the
+                              two can never drift apart. */}
                           <button
                               className="cui-root-scroll-bottom"
                               type="button"
                               hidden={!awayFromLatest}
-                              aria-label="回到底部"
-                              title="回到底部"
                               onClick={scrollToBottom}
                           >
-                              <i className="fa-solid fa-arrow-down" />
+                              <i className="fa-solid fa-angles-down" aria-hidden="true" />
+                              回到最新
                           </button>
                       </div>
                       {state.chat.lastMessageNeedsGenerate && !state.chat.isGenerating && (
