@@ -335,6 +335,7 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 「复制原文」在找不到消息记录时抛错且绝不调用 copyText | `test/messages.test.mjs :: copyMessageSource: throws when no message record exists at that id, without calling copyText` |
 | 「复制」的正文归约：块级边界与 `<br>` 落成读者看见的换行，行内标记只贡献文字本身 | `test/messages.test.mjs :: _plainTextFromNode: block boundaries and <br> become the line breaks a reader sees, and inline markup contributes nothing but its text` |
 | 「复制」的正文归约：列表逐条换行、表格单元格沿行分隔，注释等非元素非文本节点整体丢弃 | `test/messages.test.mjs :: _plainTextFromNode: list items break per row, table cells separate along the row, and comment/attribute nodes are dropped entirely` |
+| 「复制」的正文归约：角色卡自带的 `<style>` 块（ST 自己的 `decodeStyleTags` 会把它原样放回正文 HTML）绝不当作散文读出，前后段落照常相接 | `test/messages.test.mjs :: _plainTextFromNode: a <style> block a character card carries is never read as prose, and the paragraphs around it still join normally` |
 | 空的格式化 HTML 直接归约为空串，根本不去碰解析器 | `test/messages.test.mjs :: plainTextFromMessageHtml: empty formatted HTML reduces to an empty string without reaching for a parser` |
 | 「复制」只把归约后的文本交给 copyText，全程不读 chat 数组（正文来自 store 缓存的已渲染 HTML，不是重新格式化） | `test/messages.test.mjs :: copyMessageAsPlainText: forwards the reduced text to copyText and never reads the chat array` |
 | branch 原样转发消息 id 给 branchChat，全程无需 DOM 元素 | `test/messages.test.mjs :: createBranch: forwards the message id to branchChat, with no DOM element required` |
