@@ -18,6 +18,7 @@ import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { getConfig, initConfigStore } from './store/config-store.js';
 import { initTempChatStore } from './store/temp-chat-store.js';
 import { enqueueHostTask, sealHostOperationQueueForReload } from './store/host-operation-queue.js';
+import { finalizeChatuiDraftQuarantine } from './store/sidebar-actions.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 import { finalizePendingCharacterChatDeletion } from './adapter/chats.js';
@@ -352,6 +353,12 @@ function init() {
     // third-party listeners can never observe/save the stale deleted runtime.
     // APP_READY guarantees the replacement chat is now reconstructed.
     void finalizePendingCharacterChatDeletion();
+    // Same reload, second handoff: if that delete emptied the character's
+    // whole history, ST's boot just materialized a fallback file this
+    // session (not settings.enabled) needs to fold into the draft quarantine
+    // regardless of whether the ChatUI UI is currently on — see
+    // sidebar-actions.ts's finalizeChatuiDraftQuarantine doc comment.
+    void finalizeChatuiDraftQuarantine();
 }
 
 // autoFireAfterEmit — APP_READY re-emits to late subscribers, so this is safe.

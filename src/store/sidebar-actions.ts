@@ -338,6 +338,19 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
                 if (result.deleted) {
                     chatuiAdapter.sidebarActions.queueCurrentCharacterChatDeletionFinalization(avatar, fileName);
                 }
+                if (result.fallbackChatFileName) {
+                    // This character's history is now empty: the durable
+                    // pointer was moved to a name nothing has written yet.
+                    // ST's reload boot will materialize *something* there
+                    // regardless (greeting or empty) — queue it for the next
+                    // boot to fold into the same draft quarantine ＋新对话
+                    // uses, so it never becomes a permanent history entry the
+                    // reader never asked to keep (DESIGN §3, evaluation §5 3.6).
+                    chatuiAdapter.sidebarActions.queueCharacterChatDraftQuarantine(
+                        avatar,
+                        result.fallbackChatFileName,
+                    );
+                }
                 window.location.reload();
             } else if (result.uncertain) {
                 pushToast('error', '无法确认删除结果，请刷新对话列表');
@@ -355,6 +368,28 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
             pushToast('error', '删除失败');
         }
     });
+}
+
+/**
+ * Complete the draft-quarantine handoff `deleteChatuiChat` queues when
+ * deleting a character's last chat leaves it pointed at a fallback file
+ * nothing had written yet. Call once at boot (after ST is ready), alongside
+ * `finalizePendingCharacterChatDeletion`: by then ST's own boot has already
+ * materialized *some* file at that pointer (greeting or empty), so this only
+ * has to fold it into the same quarantine set ＋新对话 uses — the adapter
+ * confirms the file is real and still this character's live current chat
+ * before handing back a pointer at all, so a mismatch (something else loaded
+ * in the meantime) simply does nothing here.
+ * @returns {Promise<void>}
+ */
+export async function finalizeChatuiDraftQuarantine(): Promise<void> {
+    try {
+        const pending = await chatuiAdapter.sidebarActions.takePendingCharacterChatDraftQuarantine();
+        if (!pending) return;
+        commitTempChatDraft(pending, getTempChatDraftSnapshot());
+    } catch (error) {
+        console.error('[ChatUI] failed to finalize draft-quarantine handoff', error);
+    }
 }
 
 /**

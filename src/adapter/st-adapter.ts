@@ -61,6 +61,8 @@ import {
 import {
     deleteCharacterChat,
     queueCurrentCharacterChatDeletionFinalization,
+    queueCharacterChatDraftQuarantine,
+    takePendingCharacterChatDraftQuarantine,
     getCurrentChatHeader,
     getCurrentChatIdentity,
     hasCharacterChatFile,
@@ -158,6 +160,8 @@ export const chatuiAdapter = Object.freeze({
         renameCharacterChat,
         deleteCharacterChat,
         queueCurrentCharacterChatDeletionFinalization,
+        queueCharacterChatDraftQuarantine,
+        takePendingCharacterChatDraftQuarantine,
         listCharacterConversationHeaders,
         listRecentCharacterChatRows,
         listChatsForCharacterAvatar,

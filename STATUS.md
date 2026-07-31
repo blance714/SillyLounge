@@ -222,6 +222,27 @@ list; prompt dry-runs and quiet background generation do not adopt a draft; an
 uncertain rename keeps both possible filenames quarantined until raw state
 settles.
 
+Deleting a character's *last* chat (pr9 third baton) also lands on a
+quarantined draft rather than a permanent history entry, closing the one gap
+in "never leave a character selected with no conversation" (DESIGN §3,
+evaluation §5 3.6). `delete-transaction.ts` already had to move the durable
+chat pointer somewhere when no real chat survives to replace the deleted one;
+it now reports that fabricated name back (`fallbackChatFileName`) instead of
+letting it become an anonymous entry. `sidebar-actions.ts` queues a
+reload-scoped tombstone (`deletion-finalization.ts`'s
+`queueCharacterChatDraftQuarantine`, a `sessionStorage` sibling of the
+existing `CHAT_DELETED` replay tombstone) right before the mandatory reload
+the current-chat delete path already requires; on the next boot, once ST's
+own `getChatResult()` has materialized *some* file there (greeting or empty —
+that part of ST's behavior was already unconditional, not new),
+`finalizeChatuiDraftQuarantine` confirms the file is real and still that
+character's live current chat, then folds it into the same quarantine set
+`newChatuiChat()` uses — same 未完成草稿 card, same 丢弃 action, same lease
+rules. The confirm step lives in the adapter (read-only: raw listing + live
+identity) and the store owns the actual quarantine write, keeping the
+adapter/store boundary intact. Deleting down to a *remaining* real chat is
+unaffected — that path already worked and queues nothing new.
+
 The committed 2026-07-10/11 hardening closes the main correctness gaps found in
 the architecture review:
 
