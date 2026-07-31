@@ -25,7 +25,11 @@
 :root {
     --cui-sheet-z: 200;
     --cui-popup-z: 150;
+    /* Two different scrims, because the design asks for two: the drawer/menu
+       backdrop is a dimmer you still read the app through, the modal veil is
+       the one that says "answer this first". Same family, one step apart. */
     --cui-overlay-bg: rgba(0, 0, 0, 0.45);
+    --cui-veil-bg: rgba(0, 0, 0, 0.5);
 
     /* Color roles: ink-theatre palette — deep ink ground, parchment text,
        gold-brown accent. Every consumer below reads these, so this block
@@ -84,9 +88,12 @@
 
     /* Paper surface: the light popover/dialog ground and the ink that sits on
        it. Written one pass ahead of the surface that would use it, on the
-       argument that the palette is one system; the shared paper popover now
-       consumes all of it except --cui-paper-btn-text, which is still waiting
-       on the design's paper buttons (§2/§9). */
+       argument that the palette is one system; the shared paper popover and
+       the confirm dialog now consume all of it except --cui-paper-btn-text.
+       That one was expected to land with the dialog's confirm button, and did
+       not: the design's answer there is an outline drawn in ink, so nothing
+       on paper carries a light label yet. Its remaining call site is the empty
+       state's solid「浏览文件」button (§2). */
     --cui-paper-top: #b9ab8c;
     --cui-paper-bottom: #a89877;
     --cui-paper-text: #1c140b;
@@ -134,18 +141,18 @@
 
     /* Semantic/status colors: collapses 5 previously-unrelated hardcoded reds
        (composer stop button, toast error, sidebar row-act-danger + error
-       text, settings-nav-disable hover) plus ConfirmDialog's danger pair and
-       the success toast green into one canonical set.
-       Danger is now two tokens, not one, because the palette uses two
-       different reds for two different jobs: a light cinnabar that stays
-       legible as *ink* on the dark ground, and a saturated fill for the rare
-       solid danger surface. The single old token was being used for both,
-       which is why adopting the light value alone would have dropped the
-       filled confirm button to ~2.3:1 against its own white label.
+       text, settings-nav-disable hover) plus the success toast green into one
+       canonical set.
+       Danger on the dark ground is *ink*, never a fill. A second, saturated
+       token existed for exactly one surface — the solid confirm button — on
+       the argument that the light cinnabar would sit near 2.3:1 under a white
+       label. The design's answer to that button is an outline drawn in paper
+       ink (§9), so the solid surface is gone and the contrast problem with
+       it; the token went with them rather than staying on as a value nothing
+       is allowed to use.
        Success stays a universal functional green — not part of the
        aesthetic identity. */
     --cui-color-danger: #d47a6a;
-    --cui-color-danger-fill: #d43a2f;
     --cui-color-danger-hover: #a04a38;
     --cui-color-success: #3fa45b;
     --cui-color-info: var(--cui-color-accent, var(--cui-color-border));
@@ -1121,7 +1128,13 @@ body.chatui-active .cui-root-chat-row-act-danger:hover {
 
 /* ── ChatUI-owned confirm dialog ─────────────────────────────────────────────── */
 
-/* height explicit: same <html>-becomes-containing-block quirk as the
+/* The confirm dialog is the same sheet of paper as every menu (design §9 is
+   §8's surface at a different size), so the card carries `cui-paper` and this
+   block only says how this one sheet differs: its width, its margins, the
+   binding line two pixels further in, and its own elevation and entrance. The
+   grain is not restated here — one feTurbulence data-URI for the whole app.
+
+   height explicit: same <html>-becomes-containing-block quirk as the
    sidebar backdrop (see comment there) — inset:0 alone silently collapses
    to 0 height once ST puts <body> at position:fixed on mobile widths. */
 body.chatui-active .cui-root-dialog-overlay {
@@ -1134,76 +1147,150 @@ body.chatui-active .cui-root-dialog-overlay {
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    background-color: var(--cui-overlay-bg);
+    background-color: var(--cui-veil-bg);
+    animation: cui-veil-in 0.2s ease;
+}
+
+/* Opacity only. The veil is already covering the whole viewport on frame one;
+   sliding or scaling it would be motion with nothing behind it. */
+@keyframes cui-veil-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }
 
 body.chatui-active .cui-root-dialog {
-    width: min(22rem, 92vw);
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-lg);
-    padding: 1rem;
-    background-color: var(--cui-color-surface);
-    color: var(--cui-color-text);
-    box-shadow: 0 12px 40px var(--cui-color-shadow);
+    position: relative;
+    box-sizing: border-box;
+    /* 340px is the design's measure; the min() only protects narrow phones. */
+    width: min(340px, 92vw);
+    padding: 20px 22px 16px 34px;
+    /* Surface (ground, grain, border, radius, ink, inner glow) comes from
+       .cui-paper. A dialog sits higher off the stage than a menu, so only the
+       drop shadow — the half that is elevation rather than paper — is
+       restated; the inner glow stays the shared token. */
+    box-shadow:
+        0 24px 70px rgba(0, 0, 0, 0.75),
+        var(--cui-paper-glow);
+    animation: cui-dialog-in 0.22s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+/* The sheet lands rather than fades: a menu drops 6px straight down in .12s,
+   the dialog comes up 10px from slightly small over .22s. */
+@keyframes cui-dialog-in {
+    from { opacity: 0; transform: translateY(10px) scale(0.975); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Wider margin than a menu's: 16px, because the dialog's text block starts
+   further in than a menu row does (design §9 vs §8). */
+body.chatui-active .cui-root-dialog::before {
+    left: 16px;
 }
 
 body.chatui-active .cui-root-dialog-title {
-    margin-bottom: 0.5rem;
+    color: var(--cui-paper-danger-strong);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-base);
     font-weight: 700;
 }
 
 body.chatui-active .cui-root-dialog-message {
-    margin-bottom: 1rem;
-    opacity: 0.8;
+    margin-top: 8px;
+    color: color-mix(in srgb, var(--cui-paper-text) 72%, transparent);
+    font-family: var(--cui-font-display);
     font-size: var(--cui-font-tight);
-    line-height: 1.5;
+    line-height: 1.8;
 }
 
+/* The dashed rule between the question and the answer is this row's own top
+   border rather than a spacer element, so it is there whether or not the
+   caller passed a message. */
 body.chatui-active .cui-root-dialog-actions {
     display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 14px;
+    margin-top: 16px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--cui-paper-rule);
 }
 
+/* Base = the "cancel" look: a word, not a control. Everything a paper button
+   has in common lives here; confirm and escalate override only their ink and
+   their edge. */
 body.chatui-active .cui-root-dialog-btn {
-    min-height: 2.1rem;
-    padding: 0 0.9rem;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-sm);
+    padding: 4px 6px;
+    border: none;
+    border-radius: var(--cui-radius-paper);
     background: none;
-    color: var(--cui-color-text);
+    color: color-mix(in srgb, var(--cui-paper-text) 55%, transparent);
     cursor: pointer;
-    font-family: var(--cui-font-family);
+    font-family: var(--cui-font-display);
     font-size: var(--cui-font-tight);
+    letter-spacing: var(--cui-tracking-btn);
 }
 
 body.chatui-active .cui-root-dialog-btn:hover {
-    background-color: color-mix(in srgb, var(--cui-color-text) 9%, transparent);
+    color: var(--cui-paper-text);
 }
 
+/* Focus has to be visible on paper too, and the dialog hands focus to the
+   confirm button on open — a dashed mark in the accent ink, matching every
+   other rule this surface draws. */
+body.chatui-active .cui-root-dialog-btn:focus-visible {
+    outline: 1px dashed var(--cui-paper-accent);
+    outline-offset: 2px;
+}
+
+/* Cancel is the only button pushed to the trailing edge; that is what leaves
+   the escalate link sitting alone on the left. */
+body.chatui-active .cui-root-dialog-cancel {
+    margin-left: auto;
+}
+
+/* Confirm is an outline button (design §9): transparent ground, ink edge, and
+   a hover that deepens exactly one step — no invert, no fill, no shadow. A
+   solid red button was the earlier answer here and is deliberately not this
+   one; on paper it read as a web form's submit, not as a decision. */
+body.chatui-active .cui-root-dialog-confirm {
+    padding: 4px 10px;
+    border: 1px solid color-mix(in srgb, var(--cui-paper-accent) 70%, transparent);
+    color: var(--cui-paper-accent);
+    font-weight: 600;
+}
+
+body.chatui-active .cui-root-dialog-confirm:hover {
+    border-color: var(--cui-paper-accent-strong);
+    color: var(--cui-paper-accent-strong);
+}
+
+/* Destructive confirms swap the ink to cinnabar and change nothing else — the
+   weight of the action is carried by the color, not by a heavier shape. */
 body.chatui-active .cui-root-dialog-confirm.is-danger {
-    border-color: transparent;
-    /* The fill token, not the ink one: --cui-color-danger is now the light
-       cinnabar that stays readable *on* the dark ground, which as a
-       background under a white label would sit near 2.3:1. */
-    background-color: var(--cui-color-danger-fill);
-    color: #fff;
+    border-color: color-mix(in srgb, var(--cui-paper-danger) 70%, transparent);
+    color: var(--cui-paper-danger);
 }
 
 body.chatui-active .cui-root-dialog-confirm.is-danger:hover {
-    background-color: var(--cui-color-danger-hover);
+    border-color: var(--cui-paper-danger-strong);
+    color: var(--cui-paper-danger-strong);
 }
 
-/* Optional third ("escalate") button — e.g. message delete's "Delete Message"
-   upgrade path from the default "Delete Swipe". Same shape as the plain
-   .cui-root-dialog-btn, just visually between cancel and the primary confirm. */
+/* Optional third ("escalate") button — message delete's "删除整楼" upgrade
+   from the default "仅删除此条". It is a link, not a button: a wider-tracked
+   word underscored with the same dashed rule the sheet uses everywhere, so
+   the eye reads it as an aside to the question rather than a third answer of
+   equal weight. */
 body.chatui-active .cui-root-dialog-escalate {
-    border-color: color-mix(in srgb, var(--cui-color-danger) 45%, var(--cui-color-border));
-    color: var(--cui-color-danger);
+    padding: 4px 2px;
+    border-radius: 0;
+    border-bottom: 1px dashed color-mix(in srgb, var(--cui-paper-danger) 40%, transparent);
+    color: color-mix(in srgb, var(--cui-paper-danger-strong) 75%, transparent);
+    letter-spacing: var(--cui-tracking-wide);
 }
 
 body.chatui-active .cui-root-dialog-escalate:hover {
-    background-color: color-mix(in srgb, var(--cui-color-danger) 12%, transparent);
+    border-bottom-color: var(--cui-paper-danger);
+    color: var(--cui-paper-danger-strong);
 }
 
 body.chatui-active .cui-root-convlist-note {
@@ -3236,9 +3323,9 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
    not have been closed in place. Anything animated from here on gets its
    opt-out added here, at the bottom.
 
-   The three entrance animations need nothing but `animation: none`: each
-   element's resting style already *is* the animation's last frame, so
-   cancelling it lands them where they were going without restating anything.
+   The entrance animations need nothing but `animation: none`: each element's
+   resting style already *is* the animation's last frame, so cancelling it
+   lands them where they were going without restating anything.
    --------------------------------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
     /* The seal is the one loop rather than an entrance, and it rests
@@ -3249,9 +3336,15 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
         transform: none;
     }
 
+    /* The dialog card already carries .cui-paper, so it is covered twice over
+       — but its own `animation` is declared on .cui-root-dialog, and naming
+       that rule here keeps the opt-out true even if the card ever stops being
+       paper. The veil is listed for itself. */
     body.chatui-active .cui-paper,
     body.chatui-active .cui-root-plus-menu,
-    body.chatui-active .cui-root-toast {
+    body.chatui-active .cui-root-toast,
+    body.chatui-active .cui-root-dialog-overlay,
+    body.chatui-active .cui-root-dialog {
         animation: none;
     }
 

@@ -59,7 +59,7 @@ export function ConfirmDialog({
             onClick={(event) => { event.stopPropagation(); onCancel(); }}
         >
             <div
-                className="cui-root-dialog"
+                className="cui-paper cui-root-dialog"
                 role="dialog"
                 aria-modal="true"
                 aria-label={title}
@@ -67,15 +67,10 @@ export function ConfirmDialog({
             >
                 <div className="cui-root-dialog-title">{title}</div>
                 {message && <div className="cui-root-dialog-message">{message}</div>}
+                {/* Source order is the reading order the design lays out —
+                    escalate on the left, then cancel, then confirm — so focus
+                    order follows the eye without any tabindex juggling. */}
                 <div className="cui-root-dialog-actions">
-                    <button
-                        ref={cancelRef}
-                        className="cui-root-dialog-btn"
-                        type="button"
-                        onClick={(event) => { event.stopPropagation(); onCancel(); }}
-                    >
-                        {cancelLabel}
-                    </button>
                     {escalateLabel && onEscalate && (
                         <button
                             className="cui-root-dialog-btn cui-root-dialog-escalate"
@@ -85,6 +80,14 @@ export function ConfirmDialog({
                             {escalateLabel}
                         </button>
                     )}
+                    <button
+                        ref={cancelRef}
+                        className="cui-root-dialog-btn cui-root-dialog-cancel"
+                        type="button"
+                        onClick={(event) => { event.stopPropagation(); onCancel(); }}
+                    >
+                        {cancelLabel}
+                    </button>
                     <button
                         className={`cui-root-dialog-btn cui-root-dialog-confirm${danger ? ' is-danger' : ''}`}
                         type="button"
