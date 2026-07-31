@@ -209,6 +209,30 @@
     --cui-tint-active: 13%;
     --cui-tint-strong: 18%;
 
+    /* The two remaining host seams. Both were read bare at eleven call sites,
+       and CSS's failure mode for an undefined var() is not "fall back" but
+       "discard the whole declaration at computed-value time" — the same
+       fail-unsafe shape --cui-font-root was introduced to close, except these
+       two fail invisibly rather than merely badly:
+
+         --interactable-outline-color-faint (8 focus rings) — without it the
+           `outline` declaration is dropped whole and keyboard users get no
+           visible focus at all, which is the one failure that must never be
+           silent.
+         --animation-duration-2x (3 bare + 3 already guarded) — an animation
+           or transition with an invalid duration simply never runs, so the
+           plus sheet and the toast would pop in with no motion and nothing to
+           show for it.
+
+       Reading the host is still the right default — matching ST's focus ring
+       and motion timing is the whole point — so the host value keeps winning
+       where ST publishes it (both on :root, so this resolves the same value
+       ST's own rules see, including its prefers-contrast override). What
+       changes is that its *absence* now lands on a value of ours, written
+       once here instead of eleven times downstream. */
+    --cui-outline-faint: var(--interactable-outline-color-faint, var(--cui-rule-accent));
+    --cui-motion-base: var(--animation-duration-2x, 0.2s);
+
     /* Radius scale. The design corners much tighter than the old scale did:
        paper is nearly square, controls take a small round, and only the dark
        floating surfaces keep a visible radius. Fixed px rather than rem —
@@ -519,7 +543,7 @@ body.chatui-active .cui-root-shell-toggle:focus-visible,
 body.chatui-active .cui-root-shell-close:hover,
 body.chatui-active .cui-root-shell-close:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 body.chatui-active .cui-root-topbar-heading {
@@ -682,7 +706,7 @@ body.chatui-active .cui-root-sidebar {
     flex-direction: column;
     width: min(82vw, 18rem);
     transform: translateX(-100%);
-    transition: transform var(--animation-duration-2x, 0.2s) ease;
+    transition: transform var(--cui-motion-base) ease;
     border-right: 1px solid var(--cui-color-border);
     background-color: var(--cui-color-surface);
     box-shadow: 6px 0 24px var(--cui-color-shadow);
@@ -722,7 +746,7 @@ body.chatui-active .cui-root-sidebar-title {
         transform: none;
         box-shadow: none;
         overflow: hidden;
-        transition: width var(--animation-duration-2x, 0.18s) ease;
+        transition: width var(--cui-motion-base) ease;
     }
 
     /* Fixed sidebar width. */
@@ -1841,7 +1865,7 @@ body.chatui-active .cui-root-edit-textarea {
 }
 
 body.chatui-active .cui-root-edit-textarea:focus {
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 body.chatui-active .cui-root-edit-actions {
@@ -2035,7 +2059,7 @@ body.chatui-active .cui-root-file-item {
 body.chatui-active .cui-root-file-item:hover,
 body.chatui-active .cui-root-file-item:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) 11%, transparent);
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 body.chatui-active .cui-root-file-name {
@@ -2057,7 +2081,7 @@ body.chatui-active .cui-root-message-actions {
     gap: 0.25rem;
     margin-top: 0.2rem;
     opacity: 0;
-    transition: opacity var(--animation-duration-2x);
+    transition: opacity var(--cui-motion-base);
 }
 
 body.chatui-active .cui-root-message:hover .cui-root-message-actions,
@@ -2090,7 +2114,7 @@ body.chatui-active .cui-root-action-btn:focus-visible {
 }
 
 body.chatui-active .cui-root-action-btn:focus-visible {
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 body.chatui-active .cui-root-action-menu {
@@ -2245,7 +2269,7 @@ body.chatui-active .cui-root-scroll-bottom {
 body.chatui-active .cui-root-scroll-bottom:hover,
 body.chatui-active .cui-root-scroll-bottom:focus-visible {
     opacity: 1;
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 body.chatui-active .cui-root-scroll-bottom[hidden] {
@@ -2277,7 +2301,7 @@ body.chatui-active .cui-root-generate-btn {
 
 body.chatui-active .cui-root-generate-btn:hover,
 body.chatui-active .cui-root-generate-btn:focus-visible {
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 body.chatui-active .cui-root-composer {
@@ -2302,7 +2326,7 @@ body.chatui-active .cui-root-composer::before {
     width: 2.75rem;
     height: 1px;
     background-color: var(--cui-rule-accent);
-    transition: width var(--animation-duration-2x, 0.2s) ease, background-color var(--animation-duration-2x, 0.2s) ease;
+    transition: width var(--cui-motion-base) ease, background-color var(--cui-motion-base) ease;
 }
 
 body.chatui-active .cui-root-composer:focus-within::before {
@@ -2380,7 +2404,7 @@ body.chatui-active .cui-root-composer-btn:hover {
 
 body.chatui-active .cui-root-composer-btn:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 body.chatui-active .cui-root-composer-btn:disabled {
@@ -2430,7 +2454,7 @@ body.chatui-active .cui-root-plus-btn:hover {
 
 body.chatui-active .cui-root-plus-btn:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-    outline: 1px solid var(--interactable-outline-color-faint);
+    outline: 1px solid var(--cui-outline-faint);
 }
 
 /* height explicit: same <html>-becomes-containing-block quirk as the
@@ -2462,7 +2486,7 @@ body.chatui-active .cui-root-plus-menu {
        and squares off the bottom corners it presses against the viewport. */
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    animation: cui-plus-sheet-in var(--animation-duration-2x) ease forwards;
+    animation: cui-plus-sheet-in var(--cui-motion-base) ease forwards;
 }
 
 @keyframes cui-plus-sheet-in {
@@ -2781,7 +2805,7 @@ body.chatui-active .cui-root-toast {
     box-shadow: 0 6px 22px var(--cui-color-shadow);
     color: var(--cui-color-text);
     font-size: var(--cui-font-tight);
-    animation: cui-toast-in var(--animation-duration-2x) ease forwards;
+    animation: cui-toast-in var(--cui-motion-base) ease forwards;
 }
 
 @keyframes cui-toast-in {
