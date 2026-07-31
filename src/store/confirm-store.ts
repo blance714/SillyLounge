@@ -15,8 +15,8 @@
  *
  * Two-way vs three-way: `variant` distinguishes a plain confirm/cancel dialog
  * from one with a third ("escalate") button — e.g. message delete's default
- * "Delete Swipe" escalating to "Delete Message" (DOM-DECOUPLING.md decision
- * #3's Tier 2 resolution: a ChatUI-owned dialog, not a direct ST popup call).
+ * 「仅删除此条」escalating to「删除整楼」(DOM-DECOUPLING.md decision #3's Tier 2
+ * resolution: a ChatUI-owned dialog, not a direct ST popup call).
  * This module is generic over that choice; it does not know anything about
  * messages or deletion.
  */

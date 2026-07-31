@@ -73,9 +73,9 @@ export function ConfirmDialog({
     confirmLabel?: string;
     cancelLabel?: string;
     danger?: boolean;
-    /** Optional third ("escalate") button rendered between cancel and confirm —
-     * e.g. message delete's "Delete Message" upgrade from the default "Delete
-     * Swipe" (DOM-DECOUPLING.md decision #3's three-way delete confirm).
+    /** Optional third ("escalate") button, rendered to the *left* of cancel and
+     * confirm — e.g. message delete's「删除整楼」upgrade from the default
+     * 「仅删除此条」(DOM-DECOUPLING.md decision #3's three-way delete confirm).
      * Omitted (with onEscalate) means a plain two-button dialog, unchanged for
      * every other existing caller of this component. */
     escalateLabel?: string;
