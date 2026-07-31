@@ -1,112 +1,96 @@
 import React, { useEffect, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { deleteChatuiChat, renameChatuiChat, getChatuiCurrentChatIdentity } from '../actions.js';
-import { useCurrentChatIdentity, useSidebarBasics } from '../hooks.js';
+import { deleteChatuiChat, openChatuiSettings, triggerChatuiMessageAction } from '../actions.js';
+import { useChatuiSnapshot, useTopbarChatTarget } from '../hooks.js';
+import { resolveBranchFromLastFloor } from '../topbar-menu-logic.js';
+import type { TopbarChatTarget } from '../topbar-menu-logic.js';
 import { ConfirmDialog } from './ConfirmDialog.js';
 import { MenuItem } from './message/MenuItem.js';
 
-type ChatOperationTarget = {
-    fileName: string;
-    avatar: string;
-    displayName: string;
-};
-
-const _isLiveTarget = (t: ChatOperationTarget) => {
-    const live = getChatuiCurrentChatIdentity();
-    return !!live && live.avatar === t.avatar && live.fileName === t.fileName;
-};
-
 /**
- * Topbar-right ⋯ overflow menu for current-chat operations:
- * rename and delete (guarded by ConfirmDialog).
+ * Topbar-right ⋯ overflow menu for current-chat operations (design §7's
+ * order: 重命名对话 / 从末楼开新分支 / — / 角色卡设定…… / — / 删除对话……).
+ * Rename itself now lives on the topbar title (TopbarTitle.tsx) — this row is
+ * a second, hover-independent entry into the exact same edit, via
+ * `onStartRename` from the shared app.tsx state.
  */
-export function TopbarMenu(): ComponentChild {
-    const identity = useCurrentChatIdentity();
-    const sidebar = useSidebarBasics();
-    const [renameTarget, setRenameTarget] = useState<ChatOperationTarget | null>(null);
-    const [draft, setDraft] = useState('');
-    const [deleteTarget, setDeleteTarget] = useState<ChatOperationTarget | null>(null);
+export function TopbarMenu({
+    onStartRename,
+}: {
+    onStartRename: (target: TopbarChatTarget) => void;
+}): ComponentChild {
+    const { hasCurrentChat, isGroup, target: currentTarget } = useTopbarChatTarget();
+    const state = useChatuiSnapshot();
+    const [deleteTarget, setDeleteTarget] = useState<TopbarChatTarget | null>(null);
 
-    const isGroup = sidebar.header.isGroup;
-    const hasCurrentChat = !!identity && !isGroup;
-    const currentTarget = hasCurrentChat
-        ? { fileName: identity.fileName, avatar: identity.avatar, displayName: identity.fileName }
-        : null;
-    const currentTargetKey = currentTarget ? `${currentTarget.avatar}:${currentTarget.fileName}` : '';
     const canRename = hasCurrentChat;
     const canDelete = hasCurrentChat;
+    // Character-card settings edit the roster, not this specific chat file, so
+    // (unlike rename/delete) they stay open with no chat loaded at all — the
+    // spine's own「＋」into this same panel has no such requirement either.
+    // Only a group, which has no single character card to open, disables it.
+    const canOpenCharacterSettings = !isGroup;
+    const branch = resolveBranchFromLastFloor(state.chat.messageIds, state.chat.isGenerating);
+    const currentTargetKey = currentTarget ? `${currentTarget.avatar}:${currentTarget.fileName}` : '';
 
     useEffect(() => {
-        setRenameTarget(null);
         setDeleteTarget(null);
     }, [currentTargetKey]);
-
-    const startRename = () => {
-        if (!currentTarget) return;
-        setDraft(currentTarget.displayName);
-        setRenameTarget(currentTarget);
-    };
-
-    const commitRename = () => {
-        const target = renameTarget;
-        setRenameTarget(null);
-        const next = draft.trim();
-        if (target && next && next !== target.displayName) {
-            if (!_isLiveTarget(target)) return;
-            void renameChatuiChat(target.avatar, target.fileName, next);
-        }
-    };
 
     const confirmDelete = () => {
         const target = deleteTarget;
         setDeleteTarget(null);
-        if (!target || !target.avatar || !_isLiveTarget(target)) return;
+        if (!target) return;
         void deleteChatuiChat(target.avatar, target.fileName);
     };
 
     return (
         <div className="cui-root-topbar-menu">
-            {renameTarget ? (
-                <input
-                    className="cui-root-topbar-rename"
-                    type="text"
-                    value={draft}
-                    autoFocus
-                    onInput={(event) => setDraft(event.currentTarget.value)}
-                    onBlur={() => setRenameTarget(null)}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter') { event.preventDefault(); commitRename(); }
-                        else if (event.key === 'Escape') { event.preventDefault(); setRenameTarget(null); }
-                    }}
-                />
-            ) : (
-                <details className="cui-root-action-menu">
-                    <summary
-                        className="cui-root-shell-toggle cui-root-menu-trigger"
-                        aria-label="对话操作"
-                        title="对话操作"
-                    >
-                        <i className="fa-solid fa-ellipsis-vertical" />
-                    </summary>
-                    <div className="cui-root-menu cui-root-topbar-menu-dropdown cui-paper">
-                        <MenuItem
-                            label="重命名对话"
-                            iconClass="fa-solid fa-pen"
-                            disabled={!canRename}
-                            onClick={startRename}
-                        />
-                        <MenuItem
-                            label="删除对话"
-                            iconClass="fa-solid fa-trash"
-                            danger
-                            disabled={!canDelete}
-                            onClick={() => {
-                                if (currentTarget) setDeleteTarget(currentTarget);
-                            }}
-                        />
-                    </div>
-                </details>
-            )}
+            <details className="cui-root-action-menu">
+                <summary
+                    className="cui-root-shell-toggle cui-root-menu-trigger"
+                    aria-label="对话操作"
+                    title="对话操作"
+                >
+                    <i className="fa-solid fa-ellipsis-vertical" />
+                </summary>
+                <div className="cui-root-menu cui-root-topbar-menu-dropdown cui-paper">
+                    <MenuItem
+                        label="重命名对话"
+                        iconClass="fa-solid fa-pen"
+                        disabled={!canRename}
+                        onClick={() => {
+                            if (currentTarget) onStartRename(currentTarget);
+                        }}
+                    />
+                    <MenuItem
+                        label="从末楼开新分支"
+                        iconClass="fa-solid fa-code-branch"
+                        disabled={!branch.enabled}
+                        onClick={() => {
+                            if (branch.messageId === null) return;
+                            triggerChatuiMessageAction(branch.messageId, 'branch', state.chat.chatKey);
+                        }}
+                    />
+                    <div className="cui-paper-sep" />
+                    <MenuItem
+                        label="角色卡设定……"
+                        iconClass="fa-solid fa-address-card"
+                        disabled={!canOpenCharacterSettings}
+                        onClick={() => openChatuiSettings('st:right-nav-panel')}
+                    />
+                    <div className="cui-paper-sep" />
+                    <MenuItem
+                        label="删除对话……"
+                        iconClass="fa-solid fa-trash"
+                        danger
+                        disabled={!canDelete}
+                        onClick={() => {
+                            if (currentTarget) setDeleteTarget(currentTarget);
+                        }}
+                    />
+                </div>
+            </details>
             {deleteTarget && (
                 <ConfirmDialog
                     title="删除对话"

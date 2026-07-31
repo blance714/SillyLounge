@@ -31,6 +31,7 @@ const RUNTIME_ENTRY_FILES = Object.freeze([
     'ui/format.ts',
     'ui/spine-cast.ts',
     'ui/swipe-segment-math.ts',
+    'ui/topbar-menu-logic.ts',
 ]);
 
 const ST_EXTERNAL_TARGETS = Object.freeze({

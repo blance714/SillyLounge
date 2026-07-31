@@ -171,6 +171,30 @@ export function useSidebarBasics(): {
 }
 
 /**
+ * The chat the topbar's rename/delete affordances point at: the currently
+ * open chat, but never a group (DESIGN §4.1 — a group has no single chat file
+ * to rename or delete; §7's「从末楼开新分支」has no such requirement and does
+ * not use this — see TopbarMenu.tsx). This is the one definition of "which
+ * chat these controls act on", shared by the title's in-place rename
+ * (app.tsx) and the ⋯ menu's rename/delete rows (TopbarMenu.tsx) — previously
+ * this existed only inside TopbarMenu and had no way to seed a rename UI
+ * living outside its own dropdown.
+ */
+export function useTopbarChatTarget(): {
+    hasCurrentChat: boolean;
+    isGroup: boolean;
+    target: { avatar: string; fileName: string; displayName: string } | null;
+} {
+    const identity = useCurrentChatIdentity();
+    const { header } = useSidebarBasics();
+    const hasCurrentChat = !!identity && !header.isGroup;
+    const target = hasCurrentChat && identity
+        ? { avatar: identity.avatar, fileName: identity.fileName, displayName: identity.fileName }
+        : null;
+    return { hasCurrentChat, isGroup: header.isGroup, target };
+}
+
+/**
  * Spine feed. Deliberately built on useSidebarBasics rather than
  * useSidebarData: the spine needs the cast and nothing else, and
  * useSidebarData fans out one per-character chat query per entry — work the
