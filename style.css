@@ -2559,6 +2559,84 @@ body.chatui-active .cui-root-action-btn:focus-visible {
     outline: 1px solid var(--cui-outline-faint);
 }
 
+/* Design §43: a thin seam between "what you do to this turn" (重写/编辑/删除/⋯)
+   and "which candidate reply you're looking at" (the swipe group). Only ever
+   rendered alongside the swipe group, so it needs no hover/rest state of its
+   own. */
+body.chatui-active .cui-root-action-divider {
+    width: 1px;
+    height: 14px;
+    flex-shrink: 0;
+    margin: 0 0.2rem;
+    background: var(--cui-rule-faint);
+}
+
+/* The swipe tick row (design §43). Ticks stay 2px tall — the row reads as a
+   thin stitched line, not another row of icon buttons — so each button's own
+   painted box is exactly that small mark; ::after inflates only the *hit*
+   area (well past the 24px action-bar row) without inflating what's drawn,
+   the same invisible-overlay trick the design reference itself uses. */
+body.chatui-active .cui-root-swipe-segments {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+body.chatui-active .cui-root-swipe-segment {
+    position: relative;
+    display: inline-block;
+    box-sizing: border-box;
+    width: 12px;
+    height: 2px;
+    padding: 0;
+    border: none;
+    border-radius: var(--cui-radius-pill);
+    background: color-mix(in srgb, var(--cui-color-text) 24%, transparent);
+    cursor: pointer;
+    appearance: none;
+    transition: width 0.12s ease, background-color 0.12s ease;
+}
+
+body.chatui-active .cui-root-swipe-segment::after {
+    content: "";
+    position: absolute;
+    inset: -11px -4px;
+}
+
+body.chatui-active .cui-root-swipe-segment.is-current {
+    width: 20px;
+    background: var(--cui-color-accent);
+}
+
+body.chatui-active .cui-root-swipe-segment:hover {
+    background: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
+}
+
+body.chatui-active .cui-root-swipe-segment.is-current:hover {
+    background: var(--cui-color-accent-hover);
+}
+
+body.chatui-active .cui-root-swipe-segment:focus-visible {
+    outline: 1px solid var(--cui-outline-faint);
+    outline-offset: 3px;
+}
+
+/* Only mounted once the tick row can no longer stand for every version
+   (>5 swipes) — same "current/total" string as the header stamp's
+   .cui-root-message-swipe (message.swipe.label), set in the action row's
+   own scale instead of inheriting that badge's rules verbatim. */
+body.chatui-active .cui-root-swipe-count {
+    flex-shrink: 0;
+    margin: 0 2px;
+    color: color-mix(in srgb, var(--cui-color-text) 42%, transparent);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-xs);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--cui-tracking-wide);
+}
+
 body.chatui-active .cui-root-action-menu {
     position: relative;
 }
