@@ -1387,6 +1387,11 @@ body.chatui-active .cui-root-char-group {
     flex-direction: column;
 }
 
+/* Weight and tracking match .cui-root-message-name's own "speaker name" pair
+   (design §4) rather than the 500/0.025em this carried before — neither value
+   named a token, and this button's only text is the character's name, the
+   same job the message header's name span does. --cui-tracking-wide's own
+   doc comment names "speaker names" as exactly this tier's job. */
 body.chatui-active .cui-root-char-group-header {
     display: flex;
     align-items: center;
@@ -1400,8 +1405,8 @@ body.chatui-active .cui-root-char-group-header {
     cursor: pointer;
     font-family: var(--cui-font-family);
     font-size: var(--cui-font-card);
-    font-weight: 500;
-    letter-spacing: 0.025em;
+    font-weight: 600;
+    letter-spacing: var(--cui-tracking-wide);
     padding: 0.3rem var(--cui-sidebar-row-padding-x);
     text-align: left;
 }
@@ -1428,12 +1433,17 @@ body.chatui-active .cui-root-char-group-avatar-fallback {
     flex: 0 0 auto;
 }
 
+/* DESIGN §2.1's color table gives 旧黄铜/--cui-color-accent to "角色名" by
+   name — this name had been left on the default ink text color, the one
+   sidebar identity marker the ink-theatre palette swap (da23813) didn't
+   reach because nothing here consumed the accent token yet. */
 body.chatui-active .cui-root-char-group-name {
     flex: 1 1 auto;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-family: var(--cui-font-display);
+    color: var(--cui-color-accent);
 }
 
 body.chatui-active .cui-root-char-group-chats {
