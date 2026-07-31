@@ -61,6 +61,22 @@
     --cui-rule-accent: color-mix(in srgb, var(--cui-color-user-mark) 72%, var(--cui-color-accent));
     --cui-color-seal: color-mix(in srgb, var(--cui-color-user-mark) 46%, var(--cui-color-accent));
 
+    /* The design wants both accents to brighten exactly one step on hover
+       (#c9a06a → #e0bc85, #96633f → #a8734c). Both hover values shipped with
+       the palette and neither was ever read, so that interaction did not
+       exist: every accent-bearing control hovered through the generic text
+       tint instead and never warmed. The accent rule is where the two
+       accents meet, so its hover twin is derived from the same mix — one
+       brightening decision, not two drifting ones. Consumed by the active
+       chat row, the active new-chat row, the QR chip and the open persona
+       chip; the design's other warm-hover surfaces (spine avatars, paper
+       buttons, playbill cards) land with those components. */
+    --cui-rule-accent-hover: color-mix(
+        in srgb,
+        var(--cui-color-user-mark-hover) 72%,
+        var(--cui-color-accent-hover)
+    );
+
     /* Paper surface: the light popover/dialog ground and the ink that sits on
        it. Written one pass ahead of the surface that would use it, on the
        argument that the palette is one system; the shared paper popover now
@@ -936,6 +952,11 @@ body.chatui-active .cui-root-newchat.is-active {
     background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
 }
 
+body.chatui-active .cui-root-newchat.is-active:hover:not(:disabled),
+body.chatui-active .cui-root-newchat.is-active:focus-visible {
+    border-left-color: var(--cui-rule-accent-hover);
+}
+
 body.chatui-active .cui-root-newchat:disabled {
     opacity: 0.45;
     cursor: default;
@@ -1315,6 +1336,11 @@ body.chatui-active .cui-root-nested-chat-row:focus-visible {
 body.chatui-active .cui-root-nested-chat-row.is-current {
     border-left-color: var(--cui-rule-accent);
     background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
+}
+
+body.chatui-active .cui-root-nested-chat-row.is-current:hover,
+body.chatui-active .cui-root-nested-chat-row.is-current:focus-visible {
+    border-left-color: var(--cui-rule-accent-hover);
 }
 
 body.chatui-active .cui-root-nested-chat-row-icon {
@@ -2662,6 +2688,13 @@ body.chatui-active .cui-root-selchip-btn[aria-expanded="true"] {
     opacity: 1;
 }
 
+/* The open chip is the only state where this control carries the accent, so
+   it is the only state that has a brighter step to move to. */
+body.chatui-active .cui-root-selchip-btn[aria-expanded="true"]:hover,
+body.chatui-active .cui-root-selchip-btn[aria-expanded="true"]:focus-visible {
+    box-shadow: inset 0 -2px 0 0 var(--cui-color-accent-hover);
+}
+
 body.chatui-active .cui-root-selchip-label {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -2963,7 +2996,7 @@ body.chatui-active .cui-root-qrbar-btn {
 body.chatui-active .cui-root-qrbar-btn:hover,
 body.chatui-active .cui-root-qrbar-btn:focus-visible {
     opacity: 1;
-    border-color: var(--cui-color-accent, var(--cui-color-border));
+    border-color: var(--cui-color-accent-hover);
     background-color: color-mix(in srgb, var(--cui-color-text) 16%, transparent);
 }
 
