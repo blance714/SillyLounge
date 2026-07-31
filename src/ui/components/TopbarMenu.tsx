@@ -88,7 +88,7 @@ export function TopbarMenu(): ComponentChild {
                     >
                         <i className="fa-solid fa-ellipsis-vertical" />
                     </summary>
-                    <div className="cui-root-menu cui-root-topbar-menu-dropdown">
+                    <div className="cui-root-menu cui-root-topbar-menu-dropdown cui-paper">
                         <MenuItem
                             label="重命名对话"
                             iconClass="fa-solid fa-pen"
@@ -98,6 +98,7 @@ export function TopbarMenu(): ComponentChild {
                         <MenuItem
                             label="删除对话"
                             iconClass="fa-solid fa-trash"
+                            danger
                             disabled={!canDelete}
                             onClick={() => {
                                 if (currentTarget) setDeleteTarget(currentTarget);

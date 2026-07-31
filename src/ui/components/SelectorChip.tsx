@@ -22,6 +22,14 @@ const KIND_LABEL: Record<SelectorKind, string> = {
     persona: '人设',
 };
 
+// Paper menus are titled (design §8). Tracking does the spacing, so these stay
+// plain strings rather than the spaced-out form the design mock writes inline.
+const KIND_MENU_TITLE: Record<SelectorKind, string> = {
+    preset: '笔法 · PROMPT 预设',
+    model: '笔 · 模型',
+    persona: '以谁的身份落笔',
+};
+
 function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): ComponentChild {
     const [isOpen, setIsOpen] = useState(false);
     const [options, setOptions] = useState<SelectorOption[]>([]);
@@ -88,14 +96,15 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
                         aria-label="Close"
                         onClick={() => setIsOpen(false)}
                     />
-                    <ul className="cui-root-selchip-menu" role="listbox">
+                    <ul className="cui-root-selchip-menu cui-paper" role="listbox">
+                        <li className="cui-paper-title" role="presentation">{KIND_MENU_TITLE[kind]}</li>
                         {options.length === 0 && (
                             <li className="cui-root-selchip-empty">无可用项</li>
                         )}
                         {options.map(option => (
                             <li
                                 key={option.value}
-                                className={`cui-root-selchip-item${option.selected ? ' is-selected' : ''}`}
+                                className={`cui-root-selchip-item cui-paper-item${option.selected ? ' is-selected' : ''}`}
                                 role="option"
                                 aria-selected={option.selected}
                                 onClick={() => void choose(option.value)}

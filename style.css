@@ -9,7 +9,8 @@
    Layers in this file:
      1. :root custom properties (outside the gate)
      2. ST DOM shield      — promote #chatui-root, park native surfaces
-     3. ChatUI root app    — the Preact-rendered UI (.cui-root-*)
+     3. Paper popover      — the shared menu surface (.cui-paper*)
+     4. ChatUI root app    — the Preact-rendered UI (.cui-root-*)
 
    Every rule is scoped under body.chatui-active except :root properties.
    Class prefix: cui-  (no exceptions).
@@ -182,9 +183,9 @@
     /* Plus-menu pinned tile vs. unpinned tool row: same button semantics,
        two hardcoded looks on the same DOM shape — the second of the 3
        "message-bubble-shaped" spots the audit found. */
-    --cui-plus-tile-border: 1px solid var(--cui-color-border);
-    --cui-plus-tile-radius: 0.6rem;
-    --cui-plus-tile-bg: color-mix(in srgb, var(--cui-color-text) 6%, transparent);
+    --cui-plus-tile-border: 1px dashed var(--cui-paper-rule);
+    --cui-plus-tile-radius: var(--cui-radius-paper);
+    --cui-plus-tile-bg: rgba(120, 80, 45, 0.07);
 
     /* Sidebar nested-row indent: derived from the same three tokens that
        actually govern the char-group-header row it needs to line up under
@@ -272,7 +273,141 @@ body.chatui-active #sheld {
 }
 
 /* ---------------------------------------------------------------------------
-   3. ChatUI root app  (Preact, mounted into #chatui-root)
+   3. Paper popover  (shared surface)
+
+   Every menu in the app is the same object: a sheet of paper laid on the dark
+   stage. Only its position and size differ per call site, so this layer owns
+   what a menu is *made of* — ground, grain, binding line, ink, shadow — and
+   each menu class below owns only where it sits and how big it is.
+
+   Opt in by adding `cui-paper` to the popover root and `cui-paper-item` to its
+   rows; `cui-paper-title` and `cui-paper-sep` are available for menus that
+   have a heading or need to group their rows. A new menu gets the surface by
+   using the classes, not by copying declarations.
+
+   Note the items deliberately re-declare color/font rather than inheriting:
+   the message ⋯ menu portals to document.body, outside #chatui-root, so it
+   cannot inherit anything from the app shell.
+   --------------------------------------------------------------------------- */
+body.chatui-active .cui-paper {
+    border: 1px solid color-mix(in srgb, var(--cui-paper-accent-strong) 34%, transparent);
+    border-radius: var(--cui-radius-paper);
+    /* Grain over wash. The noise is a self-contained feTurbulence data-URI —
+       no network fetch, so it survives the extension's offline/CSP context. */
+    background-color: var(--cui-paper-bottom);
+    background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='p'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23p)' opacity='0.38'/%3E%3C/svg%3E"),
+        linear-gradient(175deg, var(--cui-paper-top), var(--cui-paper-bottom));
+    background-size: 140px 140px, auto;
+    background-blend-mode: overlay, normal;
+    color: var(--cui-paper-text);
+    box-shadow:
+        0 18px 50px rgba(0, 0, 0, 0.65),
+        inset 0 0 22px rgba(80, 60, 35, 0.28);
+    animation: cui-paper-in 0.12s ease;
+}
+
+/* The binding line. Sits inside the padding box at a fixed 14px so rows read
+   as written against a margin rule rather than merely indented. */
+body.chatui-active .cui-paper::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 14px;
+    width: 1px;
+    background-color: var(--cui-paper-rule);
+    pointer-events: none;
+}
+
+@keyframes cui-paper-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+body.chatui-active .cui-paper-title {
+    display: block;
+    padding: 9px 16px 7px 26px;
+    border-bottom: 1px dashed var(--cui-paper-rule);
+    color: var(--cui-paper-accent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-xs);
+    font-weight: 400;
+    letter-spacing: var(--cui-tracking-stamp);
+}
+
+body.chatui-active .cui-paper-sep {
+    height: 0;
+    margin: 4px 0;
+    border-top: 1px dashed var(--cui-paper-rule);
+}
+
+body.chatui-active .cui-paper-item {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    width: 100%;
+    box-sizing: border-box;
+    /* Left padding clears the binding line rather than centering on it. */
+    padding: 8px 16px 8px 26px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--cui-paper-text);
+    cursor: pointer;
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-menu);
+    text-align: left;
+}
+
+body.chatui-active .cui-paper-item:hover,
+body.chatui-active .cui-paper-item:focus-visible {
+    background-color: rgba(120, 80, 45, 0.14);
+    color: var(--cui-paper-text);
+    outline: none;
+}
+
+body.chatui-active .cui-paper-item.is-danger {
+    color: var(--cui-paper-danger-strong);
+}
+
+body.chatui-active .cui-paper-item.is-danger:hover,
+body.chatui-active .cui-paper-item.is-danger:focus-visible {
+    background-color: rgba(140, 58, 42, 0.14);
+    color: var(--cui-paper-danger-strong);
+}
+
+body.chatui-active .cui-paper-item:disabled {
+    opacity: 0.38;
+    cursor: default;
+    background: none;
+}
+
+/* Selected rows end in a check in the accent ink (design §8). */
+body.chatui-active .cui-paper-item.is-selected::after,
+body.chatui-active .cui-paper-item .fa-check {
+    color: var(--cui-paper-accent);
+}
+
+/* Icons sit as quiet marks, not as UI chrome. */
+body.chatui-active .cui-paper-item > i {
+    flex: 0 0 auto;
+    width: 1em;
+    color: var(--cui-paper-accent);
+    font-size: 0.92em;
+    text-align: center;
+}
+
+/* The wand icon is markup ST injects, so it only inherits color — left at its
+   own width, since its glyphs are wider than 1em and would otherwise spill
+   past the box and swallow the row gap. */
+body.chatui-active .cui-paper-item > .cui-root-plus-wand-icon {
+    flex: 0 0 auto;
+    color: var(--cui-paper-accent);
+}
+
+/* ---------------------------------------------------------------------------
+   4. ChatUI root app  (Preact, mounted into #chatui-root)
    Topbar, shell drawer, message list, message body/media/reasoning, inline
    editor, action row/menu, and the composer. Authored in ui/*.tsx.
    --------------------------------------------------------------------------- */
@@ -1919,41 +2054,14 @@ body.chatui-active .cui-root-menu {
     display: flex;
     flex-direction: column;
     min-width: 10rem;
+    /* Surface (ground, grain, border, shadow) comes from .cui-paper. */
     padding: 0.25rem 0;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-md);
-    background-color: var(--cui-color-surface);
-    box-shadow: 0 4px 18px var(--cui-color-shadow);
 }
 
-body.chatui-active .cui-root-menu-item {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    width: 100%;
-    border: none;
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-menu);
-    padding: 0.45rem 0.65rem;
-    text-align: left;
-}
-
-body.chatui-active .cui-root-menu-item:hover,
-body.chatui-active .cui-root-menu-item:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-}
-
-body.chatui-active .cui-root-menu-item:disabled {
-    opacity: 0.4;
-    cursor: default;
-}
-
-body.chatui-active .cui-root-menu-item:disabled:hover {
-    background-color: transparent;
-}
+/* .cui-root-menu-item carries no styling of its own — the row look lives in
+   .cui-paper-item, which every menu row shares. The class stays on the element
+   because it is the handle the measurement harness clicks by
+   (scripts/e2e/measure-chat-switch.mjs). */
 
 @media (max-width: 768px) {
     body.chatui-active .cui-root-message-actions {
@@ -2163,7 +2271,7 @@ body.chatui-active .cui-root-composer-input::placeholder {
 body.chatui-active .cui-root-plus-topslot {
     padding: 0.15rem 0.5rem 0.5rem;
     margin-bottom: 0.15rem;
-    border-bottom: 1px dashed var(--cui-color-border);
+    border-bottom: 1px dashed var(--cui-paper-rule);
 }
 
 body.chatui-active .cui-root-plus-topslot .cui-root-selchips {
@@ -2276,11 +2384,11 @@ body.chatui-active .cui-root-plus-menu {
     max-height: 70vh;
     overflow-y: auto;
     box-sizing: border-box;
-    padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-lg) var(--cui-radius-lg) 0 0;
-    background-color: var(--cui-color-surface);
-    box-shadow: 0 -6px 24px var(--cui-color-shadow);
+    padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom, 0px));
+    /* Surface comes from .cui-paper; the sheet keeps only its own slide-in
+       and squares off the bottom corners it presses against the viewport. */
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
     animation: cui-plus-sheet-in var(--animation-duration-2x) ease forwards;
 }
 
@@ -2297,10 +2405,12 @@ body.chatui-active .cui-root-plus-header {
     padding: 0.35rem 0.5rem 0.5rem;
 }
 
+/* Heading look comes from .cui-paper-title; the sheet header keeps this class
+   only so its close button has something to sit beside. */
 body.chatui-active .cui-root-plus-title {
-    font-weight: 700;
-    opacity: 0.75;
-    font-size: var(--cui-font-menu);
+    flex: 1 1 auto;
+    border-bottom: none;
+    padding-left: 12px;
 }
 
 body.chatui-active .cui-root-plus-close {
@@ -2338,16 +2448,20 @@ body.chatui-active .cui-root-plus-tile {
     border: var(--cui-plus-tile-border);
     border-radius: var(--cui-plus-tile-radius);
     background-color: var(--cui-plus-tile-bg);
-    color: var(--cui-color-text);
+    color: var(--cui-paper-text);
     cursor: pointer;
-    font-family: var(--cui-font-family);
+    font-family: var(--cui-font-display);
     font-size: var(--cui-font-card);
+}
+
+body.chatui-active .cui-root-plus-tile > i {
+    color: var(--cui-paper-accent);
 }
 
 body.chatui-active .cui-root-plus-tile:hover,
 body.chatui-active .cui-root-plus-tile:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
-    outline: 1px solid var(--interactable-outline-color-faint);
+    background-color: rgba(120, 80, 45, 0.16);
+    outline: none;
 }
 
 body.chatui-active .cui-root-plus-tools {
@@ -2356,21 +2470,10 @@ body.chatui-active .cui-root-plus-tools {
     gap: 0.1rem;
 }
 
+/* Row look comes from .cui-paper-item; the tool list only keeps the taller
+   touch target it needs on the mobile sheet. */
 body.chatui-active .cui-root-plus-tool {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    width: 100%;
     min-height: 2.6rem;
-    border: none;
-    border-radius: var(--cui-radius-md);
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-card);
-    padding: 0 0.7rem;
-    text-align: left;
 }
 
 body.chatui-active .cui-root-plus-tool i {
@@ -2397,13 +2500,13 @@ body.chatui-active .cui-root-plus-tool:focus-visible {
         left: 0;
         right: auto;
         bottom: calc(100% + 0.4rem);
-        min-width: 13rem;
+        /* 236px is the design's tool-menu width. */
+        min-width: 14.75rem;
         max-height: 60vh;
-        padding: 0.35rem;
-        border: 1px solid var(--cui-color-border);
-        border-radius: var(--cui-radius-md);
-        box-shadow: 0 6px 22px var(--cui-color-shadow);
-        animation: none;
+        padding: 0.35rem 0;
+        border-bottom-left-radius: var(--cui-radius-paper);
+        border-bottom-right-radius: var(--cui-radius-paper);
+        animation: cui-paper-in 0.12s ease;
     }
 
     body.chatui-active .cui-root-plus-header {
@@ -2414,11 +2517,7 @@ body.chatui-active .cui-root-plus-tool:focus-visible {
 /* ---------------------------------------------------------------------------
    5. Wand items · attachment chips · selector chips
    --------------------------------------------------------------------------- */
-body.chatui-active .cui-root-plus-divider {
-    height: 1px;
-    margin: 0.35rem 0.25rem;
-    background-color: var(--cui-color-border);
-}
+/* Divider look comes from .cui-paper-sep. */
 
 body.chatui-active .cui-root-plus-wand-icon {
     width: 1.3rem;
@@ -2552,25 +2651,13 @@ body.chatui-active .cui-root-selchip-menu {
     max-width: 18rem;
     max-height: 50vh;
     overflow-y: auto;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-md);
-    background-color: var(--cui-color-surface);
-    box-shadow: 0 6px 22px var(--cui-color-shadow);
+    /* Surface comes from .cui-paper. */
 }
 
+/* Row look comes from .cui-paper-item; the selector list only needs its label
+   and check mark pushed to opposite ends. */
 body.chatui-active .cui-root-selchip-item {
-    display: flex;
-    align-items: center;
     justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.4rem 0.55rem;
-    border-radius: var(--cui-radius-sm);
-    cursor: pointer;
-    font-size: var(--cui-font-menu);
-}
-
-body.chatui-active .cui-root-selchip-item:hover {
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
 }
 
 body.chatui-active .cui-root-selchip-item.is-selected {
@@ -2578,8 +2665,9 @@ body.chatui-active .cui-root-selchip-item.is-selected {
 }
 
 body.chatui-active .cui-root-selchip-empty {
-    padding: 0.4rem 0.55rem;
+    padding: 8px 16px 8px 26px;
     opacity: 0.6;
+    font-family: var(--cui-font-display);
     font-size: var(--cui-font-menu);
 }
 
