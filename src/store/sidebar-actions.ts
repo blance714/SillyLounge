@@ -695,10 +695,16 @@ export function openChatuiChatForCharacter(avatar: string, fileName: string): Pr
                 // The host is authoritative: a stale quarantined lease whose
                 // file vanished must not become an immortal shelf row.
                 removeTempChat(avatar, fileName);
-                // Nor an immortal *ordinary* row, which is what the cached
-                // listing this row came from would otherwise keep serving —
-                // this branch is the ordinary card's version of the same
-                // discovery (vanished-chat-store.ts).
+                // Nor an immortal row of any other kind the cached listing may
+                // still be serving (vanished-chat-store.ts). Note what the
+                // host actually means by `notfound` here, because it is
+                // narrower than it reads: navigation.ts returns it when the
+                // *character card* is not in the roster, or the file name is
+                // blank — never for a chat file that vanished. Opening a
+                // missing chat on the character already on stage is not an
+                // error to ST at all; it loads an empty conversation. So an
+                // ordinary history row whose file disappeared does **not**
+                // arrive here — see ROADMAP.md G4.
                 publishVanishedChat(avatar, fileName);
                 if (operation.isLatest()) pushToast('error', '角色或对话不存在');
             } else if (result === 'busy') {

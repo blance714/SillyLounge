@@ -79,11 +79,12 @@ main 86995df
      └─ refactor/pr5-actions-ia    7b3ea04  +4          one action bar for every turn
          └─ refactor/pr6-swipe-segments 184f4d1  +5     swipe versions as segment ticks
              └─ refactor/pr9-spine-playbill 207d8a4 +13 sidebar → spine + playbill
-                 └─ refactor/pr7-topbar-trio        +6  topbar rename + the ⋯ trio (last code
-                                                        commit 271f795), then this doc pass  ← HEAD
+                 └─ refactor/pr7-topbar-trio        +8  topbar rename + the ⋯ trio, then the
+                                                        final-gate focus fix (last code commit
+                                                        2054c94) and the doc passes  ← HEAD
 ```
 
-47 commits since `main`. The numbers are the order the chapters were *planned*,
+49 commits since `main`. The numbers are the order the chapters were *planned*,
 not the order they are stacked (pr7 was written last and sits on pr9; there is no
 `pr8` branch), so the diagram is the authority on what rebases onto what.
 
@@ -578,10 +579,26 @@ fixed on the branch rather than filed: deleting the conversation you are
 standing in was being settled as `absent` (which downgraded a live draft into
 permanent history the moment ST saved it again), and an expiring credential
 could seat a ghost character at the head of the spine for a whole session. That
-matrix ran on `207d8a4`; the four commits `refactor/pr7-topbar-trio` stacks on
-top of it were verified by unit tests and the three real-host gates only, and
-what that leaves uncovered is listed in `INVARIANTS.md` §16 and in `ROADMAP.md`'s
-corridor-theater backlog.
+matrix ran on `207d8a4`; what all of it still leaves uncovered is listed in
+`INVARIANTS.md` §16 and in `ROADMAP.md`'s corridor-theater backlog.
+
+**2026-08-01 final-gate live pass** (six more cells on the same pinned host,
+driven by hand rather than by a committed script — the §16 gap is still a gap):
+the topbar's in-place rename end to end (pencil reveal, focus, an Enter that
+really renames the chat on ST, an Esc that really does not, the ⋯ row opening
+the same edit), the ⋯ menu's six rows in design §7 order with 删除对话…… alone
+in cinnabar, 从末楼开新分支 producing a real branch chat, 角色卡设定…… opening
+ST's own right-nav panel, a group on stage disabling exactly rename / delete /
+card-settings while 从末楼开新分支 stays live, a quarantined draft whose file
+vanished leaving the playbill on 丢弃, and bootstrap mode selecting nobody
+(with the ChatUI-on control confirming the same boot *does* select). Two
+findings: the in-place rename inputs never took focus (fixed in `2054c94` —
+both surfaces, root cause was `autoFocus` on a post-load mount), and an
+ordinary history row whose file vanished still opens as an empty conversation
+rather than announcing itself (`ROADMAP.md` G4, not fixed). The vanished-chat
+invalidation was mutation-audited: neutering the bridge subscriber in the built
+runtime reproduced the exact reported symptom — the draft card degrading into
+an ordinary row pointing at nothing — and the fix removes it.
 
 **2026-07-31 400-floor gate re-run** on `271f795`: `measure-long-chat.mjs`'s
 floor-rail contract passed unchanged after the reskin — the wheel moved the tick
