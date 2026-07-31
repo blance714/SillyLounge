@@ -3773,6 +3773,26 @@ body.chatui-active .cui-root-selchip-backdrop {
     cursor: default;
 }
 
+/* `width: max-content` is not a preference here, it is the fix for a wrong
+   containing block. This menu is absolutely positioned inside .cui-root-selchip,
+   which is nothing but the chip button — ~90px. An absolutely positioned box
+   with no second inset resolves its width shrink-to-fit against *that* 90px,
+   not against its own content, so the menu came out at exactly `min-width` and
+   nothing wider than 176px could ever fit on one line: the title row wrapped
+   (it carries --cui-tracking-stamp's 0.3em and a 26px gutter indent, so it hits
+   the wall first) and so did ordinary rows like `Universal-Super-Creative`.
+   `max-width: 18rem` was unreachable. Sizing to max-content asks the content
+   instead, and the cap goes back to being the cap.
+
+   The narrow-screen case this has to survive: the topbar persona menu is
+   right-anchored (see .cui-root-topbar .cui-root-selchip-menu) against a chip
+   that collapses to a 32px icon at <=480px, so the menu grows leftwards from
+   the right edge of the frame. Measured in the pinned host with the width
+   pinned at the 288px cap — the worst case the cap allows — the menu's left
+   edge lands at 147px (480 wide) and 57px (390 wide), and
+   documentElement.scrollWidth still equals clientWidth at both. The cap has
+   room to spare because the frame's own side padding and the ⋯ trigger are
+   already inside those numbers. */
 body.chatui-active .cui-root-selchip-menu {
     position: absolute;
     z-index: var(--cui-popup-z);
@@ -3781,6 +3801,7 @@ body.chatui-active .cui-root-selchip-menu {
     margin: 0;
     padding: 0.25rem;
     list-style: none;
+    width: max-content;
     min-width: 11rem;
     max-width: 18rem;
     max-height: 50vh;
