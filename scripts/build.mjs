@@ -20,7 +20,15 @@ const RUNTIME_VENDOR_ENTRY = path.join(SCRIPT_DIR, 'vendor', 'zod-mini.mjs');
 const BUILD_TARGET = 'es2020';
 const VITE_LOG_LEVEL = 'info';
 const RUNTIME_ENTRY_DIRS = Object.freeze(['adapter', 'store', 'shield']);
-const RUNTIME_ENTRY_FILES = Object.freeze(['index.ts', 'ui/root.ts', 'ui/floor-rail-math.ts']);
+const RUNTIME_ENTRY_FILES = Object.freeze([
+    'index.ts',
+    'ui/root.ts',
+    // Pure ui/ modules are bundled into root-app.mjs like everything else; they
+    // are named here as well so `dist/runtime/ui/*.js` carries a standalone,
+    // importable copy for the Node unit tests.
+    'ui/floor-rail-math.ts',
+    'ui/follow-scroll-math.ts',
+]);
 
 const ST_EXTERNAL_TARGETS = Object.freeze({
     '@st/extensions': { up: 3, file: 'extensions.js' },

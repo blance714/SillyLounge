@@ -26,6 +26,7 @@ import {
     subscribeTempChatStore,
 } from './actions.js';
 import { renderCardEmbeds } from './card-embed.js';
+import { readFollowGates } from './follow-scroll-math.js';
 import {
     SIDEBAR_BACKFILL_CONCURRENCY,
     SIDEBAR_INITIAL_VISIBLE,
@@ -516,22 +517,26 @@ export function useCardEmbedRendering(
     }, [root, messages, isGenerating]);
 }
 
-/** Distance (px) from the bottom within which we treat the view as "pinned". */
-const AT_BOTTOM_THRESHOLD = 80;
-
 /**
  * Auto-scroll that respects the reader. New messages/tokens only pull the view
  * to the bottom when the user is already near the bottom; if they have scrolled
- * up to read history, their position is left alone and `atBottom` flips false so
- * the caller can show a "back to bottom" affordance.
+ * up to read history, their position is left alone and `awayFromLatest` flips
+ * true once the end is genuinely off screen, so the caller can float the
+ * 「回到最新」 capsule.
+ *
+ * The two gates are read from follow-scroll-math.ts, which documents why they
+ * are separate numbers; everything here is wiring. Only `awayFromLatest` is
+ * state, because it is the only one anything renders — whether the view is
+ * pinned is a scroll-behaviour fact, and lives in a ref so reading it never
+ * costs a render.
  */
 export function useAutoScroll(
     root: HTMLElement | null,
     messageIds: readonly number[],
     isGenerating: boolean,
     chatKey: string,
-): { atBottom: boolean; scrollToBottom: () => void } {
-    const [atBottom, setAtBottom] = useState(true);
+): { awayFromLatest: boolean; scrollToBottom: () => void } {
+    const [awayFromLatest, setAwayFromLatest] = useState(false);
     // Authoritative "was the user pinned to the bottom" flag, updated on scroll.
     // A ref (not state) so the content effect below reads the value from BEFORE
     // the new content grew scrollHeight.
@@ -540,23 +545,41 @@ export function useAutoScroll(
     const chatKeyRef = useRef<string | null>(null);
     const contentFrameRef = useRef(0);
 
+    /** Re-read both gates off the live container. Costs one layout read. */
+    const syncFollowGates = useCallback(() => {
+        if (!root) return;
+        const { pinned, awayFromLatest: away } = readFollowGates(root);
+        wasAtBottomRef.current = pinned;
+        setAwayFromLatest(prev => (prev === away ? prev : away));
+    }, [root]);
+
     const followContent = useCallback(() => {
         if (!root || !wasAtBottomRef.current) return;
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
-        setAtBottom(true);
+        setAwayFromLatest(false);
     }, [root]);
 
     useEffect(() => {
         if (!root) return;
         return subscribeChatuiMessageChanges(() => {
-            if (!wasAtBottomRef.current || contentFrameRef.current) return;
+            if (contentFrameRef.current) return;
             contentFrameRef.current = requestAnimationFrame(() => {
                 contentFrameRef.current = 0;
-                followContent();
+                // Pinned: pull the view down with the new content. Not pinned:
+                // nothing moves, but the growing content just pushed the end
+                // further away without emitting a scroll event — appending below
+                // the viewport never does. The capsule's gate sits above the
+                // follow gate, so it can now be crossed by content alone, and a
+                // reader who paused 100px up during a long generation would
+                // otherwise never be offered the way back. Re-reading here is
+                // what keeps the gate honest; it is one layout read per frame,
+                // the same one the pinned branch already pays.
+                if (wasAtBottomRef.current) followContent();
+                else syncFollowGates();
             });
         });
-    }, [followContent, root]);
+    }, [followContent, root, syncFollowGates]);
 
     useEffect(() => () => {
         if (contentFrameRef.current) cancelAnimationFrame(contentFrameRef.current);
@@ -566,17 +589,10 @@ export function useAutoScroll(
     useEffect(() => {
         if (!root) return;
 
-        const onScroll = () => {
-            const distance = root.scrollHeight - root.scrollTop - root.clientHeight;
-            const pinned = distance < AT_BOTTOM_THRESHOLD;
-            wasAtBottomRef.current = pinned;
-            setAtBottom(prev => (prev === pinned ? prev : pinned));
-        };
-
-        root.addEventListener('scroll', onScroll, { passive: true });
-        onScroll();
-        return () => root.removeEventListener('scroll', onScroll);
-    }, [root]);
+        root.addEventListener('scroll', syncFollowGates, { passive: true });
+        syncFollowGates();
+        return () => root.removeEventListener('scroll', syncFollowGates);
+    }, [root, syncFollowGates]);
 
     useEffect(() => {
         if (!root) return;
@@ -591,17 +607,19 @@ export function useAutoScroll(
         if (!switched && !wasAtBottomRef.current) return;
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
-        setAtBottom(true);
+        // Design §47: the capsule never survives a chat switch. It cannot — the
+        // new chat lands at its own latest message, and this is that landing.
+        setAwayFromLatest(false);
     }, [root, messageIds, isGenerating, chatKey]);
 
     const scrollToBottom = useCallback(() => {
         if (!root) return;
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
-        setAtBottom(true);
+        setAwayFromLatest(false);
     }, [root]);
 
-    return { atBottom, scrollToBottom };
+    return { awayFromLatest, scrollToBottom };
 }
 
 /**

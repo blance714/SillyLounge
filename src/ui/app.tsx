@@ -183,7 +183,7 @@ function ChatuiApp(): ComponentChild {
         setIsSidebarMobileOpen(false);
     }, [settingsOpen, state.chat.chatKey]);
 
-    const { atBottom, scrollToBottom } = useAutoScroll(listNode, messageIds, state.chat.isGenerating, state.chat.chatKey);
+    const { awayFromLatest, scrollToBottom } = useAutoScroll(listNode, messageIds, state.chat.isGenerating, state.chat.chatKey);
     useEscapeToStopGeneration(state.chat.isGenerating);
 
     const summonSidebar = () => setIsSidebarMobileOpen(true);
@@ -283,7 +283,7 @@ function ChatuiApp(): ComponentChild {
                           <button
                               className="cui-root-scroll-bottom"
                               type="button"
-                              hidden={atBottom}
+                              hidden={!awayFromLatest}
                               aria-label="回到底部"
                               title="回到底部"
                               onClick={scrollToBottom}
