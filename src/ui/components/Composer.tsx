@@ -53,9 +53,7 @@ export function Composer({
     const chatKeyRef = useRef(chatKey);
     chatKeyRef.current = chatKey;
     const singleLine = useConfig().composerLines === 'single';
-    // Slot B = preset + model. Multi-line shows it on its own row below the input;
-    // single-line relocates it into the ＋ menu top (DESIGN §4.2).
-    const selectorSlotB = <SelectorChips kinds={['preset', 'model']} />;
+    const hasDraft = draft.trim() !== '';
 
     const submit = async () => {
         if (isSending || isGenerating) return;
@@ -93,9 +91,21 @@ export function Composer({
                 void submit();
             }}
         >
+            {/* The ledger's own rule line (design §6 / DESIGN §4.4's "始终有结构
+                横线"): a fixed-width left segment, the preset/model chips, and a
+                hairline that fills out to the trailing edge. Single- and
+                multi-line composers share this row unconditionally now — it
+                replaced the old below-input selector strip that single-line mode
+                used to hide/relocate into the ＋ menu, and at this row's height
+                (~one chip tall) there is no longer a compact-mode reason to. */}
+            <div className="cui-root-composer-deco">
+                <span className="cui-root-composer-rule cui-root-composer-rule-left" aria-hidden="true" />
+                <SelectorChips kinds={['preset', 'model']} />
+                <span className="cui-root-composer-rule cui-root-composer-rule-right" aria-hidden="true" />
+            </div>
             <AttachmentChips />
             <div className="cui-root-composer-row">
-                <PlusMenu chatKey={chatKey} topSlot={singleLine ? selectorSlotB : undefined} />
+                <PlusMenu chatKey={chatKey} />
                 <textarea
                     ref={textareaRef}
                     className="cui-root-composer-input"
@@ -148,11 +158,22 @@ export function Composer({
                     >
                         {isSending
                             ? <i className="fa-solid fa-spinner fa-spin" />
-                            : <span className="cui-root-send-glyph" aria-hidden="true">→</span>}
+                            : (
+                                <span
+                                    className={`cui-root-send-glyph${hasDraft ? ' is-armed' : ''}`}
+                                    aria-hidden="true"
+                                >
+                                    →
+                                </span>
+                            )}
                     </button>
                 )}
             </div>
-            {!singleLine && selectorSlotB}
+            {/* Design §6's bottom hint row. Its rgba(.25) contrast is below AA on
+                purpose (evaluation report §6 D2) — a decorative caption, not the
+                sole conveyor of the Enter/Shift+Enter behavior, so it stays as
+                specified rather than getting brightened into a functional label. */}
+            <div className="cui-root-composer-hint">⏎ 发送 · ⇧⏎ 换行</div>
         </form>
     );
 }
