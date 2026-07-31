@@ -7,6 +7,7 @@ import {
 import type { ChatuiAction, ChatuiMessage } from '../../types.js';
 import { ActionButton } from './ActionButton.js';
 import { MenuItem } from './MenuItem.js';
+import { SwipeSegments } from './SwipeSegments.js';
 
 type MenuAction = {
     label: string;
@@ -137,25 +138,6 @@ export function MessageActions({
 
     return (
         <div className="cui-root-message-actions">
-            {message.ui.canShowSwipe && (
-                <>
-                    {message.swipe.id > 0 && (
-                        <ActionButton
-                            label="上一版本"
-                            iconClass="fa-solid fa-chevron-left"
-                            onClick={() => swipeChatuiMessage(message.id, 'left', message.chatKey)}
-                        />
-                    )}
-                    {message.swipe.hasMultiple && (
-                        <span className="cui-root-message-swipe">{message.swipe.label}</span>
-                    )}
-                    <ActionButton
-                        label="下一版本"
-                        iconClass="fa-solid fa-chevron-right"
-                        onClick={() => swipeChatuiMessage(message.id, 'right', message.chatKey)}
-                    />
-                </>
-            )}
             {tiled.map(item => (
                 <ActionButton
                     key={item.label}
@@ -166,6 +148,27 @@ export function MessageActions({
                 />
             ))}
             <MoreMenu items={overflow} />
+            {message.ui.canShowSwipe && (
+                <>
+                    {/* Design §43 draws the swipe group after 重写/编辑/删除/⋯,
+                        ruled off from them — what you do to this turn, then a
+                        seam, then which candidate reply you're looking at. */}
+                    <span className="cui-root-action-divider" aria-hidden="true" />
+                    {message.swipe.id > 0 && (
+                        <ActionButton
+                            label="上一版本"
+                            iconClass="fa-solid fa-chevron-left"
+                            onClick={() => swipeChatuiMessage(message.id, 'left', message.chatKey)}
+                        />
+                    )}
+                    <SwipeSegments message={message} />
+                    <ActionButton
+                        label="下一版本"
+                        iconClass="fa-solid fa-chevron-right"
+                        onClick={() => swipeChatuiMessage(message.id, 'right', message.chatKey)}
+                    />
+                </>
+            )}
         </div>
     );
 }
