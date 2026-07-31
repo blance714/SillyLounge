@@ -140,7 +140,7 @@ async function waitForMeasuredPage(page, mode, expected) {
             && list?.getAttribute('data-cui-virtual-count') === String(expected.messageCount)
             && mountedMessages > 0
             && mountedMessages < expected.messageCount
-            && root.querySelector('[aria-label="ChatUI composer"]')
+            && root.querySelector('[aria-label="ChatUI 输入区"]')
             && rail?.getAttribute('aria-valuemax') === String(expected.userTurns)
         );
     }, { selectedMode: mode, expected }, { timeout: 120_000 });

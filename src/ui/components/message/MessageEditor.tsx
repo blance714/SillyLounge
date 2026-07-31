@@ -98,23 +98,23 @@ export function MessageEditor({
                     className="cui-root-edit-btn"
                     type="button"
                     disabled={isSaving}
-                    aria-label="Cancel edit"
-                    title="Cancel edit"
+                    aria-label="取消"
+                    title="取消"
                     onClick={cancel}
                 >
                     <i className="fa-solid fa-xmark" />
-                    <span>Cancel</span>
+                    <span>取消</span>
                 </button>
                 <button
                     className="cui-root-edit-btn cui-root-edit-save"
                     type="button"
                     disabled={isSaving}
-                    aria-label="Save edit"
-                    title="Save edit"
+                    aria-label="落笔"
+                    title="落笔"
                     onClick={() => void save()}
                 >
                     <i className={isSaving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'} />
-                    <span>{isSaving ? 'Saving' : 'Save'}</span>
+                    <span>{isSaving ? '保存中' : '落笔'}</span>
                 </button>
             </div>
         </div>

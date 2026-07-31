@@ -51,8 +51,8 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={anchor != null}
-                aria-label="More actions"
-                title="More actions"
+                aria-label="更多操作"
+                title="更多操作"
                 onClick={(event) => { event.stopPropagation(); toggle(); }}
             >
                 <i className="fa-solid fa-ellipsis" />
@@ -62,7 +62,7 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                     <button
                         className="cui-root-menu-backdrop"
                         type="button"
-                        aria-label="Close"
+                        aria-label="关闭"
                         onClick={() => setAnchor(null)}
                     />
                     <div
@@ -97,11 +97,11 @@ export function MessageActions({
 
     // Each action is defined once and routed to either the tiled row or the
     // overflow menu, so the two presentations never drift apart.
-    const edit: MenuAction = { label: 'Edit', iconClass: 'fa-solid fa-pencil', onClick: onEdit };
-    const branch: MenuAction = { label: 'Branch', iconClass: 'fa-solid fa-code-branch', onClick: () => dispatch('branch') };
-    const checkpoint: MenuAction = { label: 'Checkpoint', iconClass: 'fa-solid fa-flag-checkered', onClick: () => dispatch('checkpoint') };
-    const hide: MenuAction = { label: 'Hide', iconClass: 'fa-solid fa-eye-slash', onClick: () => dispatch('hide') };
-    const del: MenuAction = { label: 'Delete', iconClass: 'fa-solid fa-trash', onClick: () => dispatch('delete'), danger: true };
+    const edit: MenuAction = { label: '编辑', iconClass: 'fa-solid fa-pencil', onClick: onEdit };
+    const branch: MenuAction = { label: '分支', iconClass: 'fa-solid fa-code-branch', onClick: () => dispatch('branch') };
+    const checkpoint: MenuAction = { label: '检查点', iconClass: 'fa-solid fa-flag-checkered', onClick: () => dispatch('checkpoint') };
+    const hide: MenuAction = { label: '隐藏', iconClass: 'fa-solid fa-eye-slash', onClick: () => dispatch('hide') };
+    const del: MenuAction = { label: '删除', iconClass: 'fa-solid fa-trash', onClick: () => dispatch('delete'), danger: true };
 
     // User messages tile every action inline — 平铺全显，无 overflow (DESIGN §5.C):
     // Copy is always rendered below, so the rest join it as flat buttons. Character
@@ -114,13 +114,13 @@ export function MessageActions({
     return (
         <div className="cui-root-message-actions">
             <ActionButton
-                label="Copy"
+                label="复制"
                 iconClass="fa-regular fa-copy"
                 onClick={() => dispatch('copy')}
             />
             {message.ui.isLast && message.isChar && (
                 <ActionButton
-                    label="Regenerate"
+                    label="重写"
                     iconClass="fa-solid fa-rotate-right"
                     onClick={() => dispatch('regen')}
                 />
@@ -129,7 +129,7 @@ export function MessageActions({
                 <>
                     {message.swipe.id > 0 && (
                         <ActionButton
-                            label="Previous swipe"
+                            label="上一版本"
                             iconClass="fa-solid fa-chevron-left"
                             onClick={() => swipeChatuiMessage(message.id, 'left', message.chatKey)}
                         />
@@ -138,7 +138,7 @@ export function MessageActions({
                         <span className="cui-root-message-swipe">{message.swipe.label}</span>
                     )}
                     <ActionButton
-                        label="Next swipe"
+                        label="下一版本"
                         iconClass="fa-solid fa-chevron-right"
                         onClick={() => swipeChatuiMessage(message.id, 'right', message.chatKey)}
                     />
