@@ -172,6 +172,22 @@
 侧栏由两栏组成：spine 是角色的候场区，playbill 是当前角色的场刊。二者共同取代
 旧的单栏「手记索引」（2026-07-31 拍板）。
 
+**过渡期（pr4 第 4 棒）**：三栏拆分本身留给 pr9；在此之前，现存的单栏手风琴
+（`Sidebar.tsx`/`CharacterConversationList.tsx`/`QuarantinedDrafts.tsx`/
+`NewChatButton.tsx`）先原样保守换肤——不动行结构、不动类名、不动交互，只把下面
+两条已经写在别处的规则接上它们尚未接到的消费者：本节表格给「角色名」的旧黄铜色
+（`.cui-root-char-group-name`，此前是默认墨色文字，是唯一没接到 da23813 那次调色板
+切换的身份标记）、以及 §4.3 消息头行同款的「speaker name」字重/字距对
+（600/`--cui-tracking-wide`，此前是未命名的 500/0.025em 字面量）。选中态的锈铜发丝线
+（`.cui-root-nested-chat-row.is-current`/`.cui-root-newchat.is-active` 的
+`border-left`）与 1px dashed 装订线母题（`.cui-root-shell-header`/`-sidebar-footer`/
+`-convlist`/`-draft-shelf` 的 `border-*: dashed`）在这次改动之前就已经对，不是
+本棒新增——`da23813` 那次调色板切换本来就让所有引用 token 的消费者一起换了色，
+这两条恰好一直都在引用 token。**不做**的：playbill 的卡片语法（圆角容器、竖排
+装订区、hover 操作坞）——那是本节给索引面许可的语法，提前搬到还没拆栏的手风琴上，
+就是把三栏信息架构这个更大的改动和这一棒的纯换肤混在一起，两件事的验收标准不该
+互相牵连。
+
 **书脊 spine（`58px`）**
 
 - 只放三样东西：角色头像方块（`32×32`、圆角 `8px`）、导入/新角色的虚线「＋」、
@@ -278,6 +294,14 @@
 - 非生成态不渲染印玺；停止或结束生成后立即消失。
 - 动画仅改变不参与布局的视觉属性，不能令消息或 composer 跳动。
 - 不得把 `pendingSend`、首个 token 或任意 timer 当作生成状态替代品。
+
+**补生成条**（`.cui-root-generate-bar`，`state.chat.lastMessageNeedsGenerate` 为真
+且未在生成时出现，恢复一段最后一条是用户消息的对话时用得到）不是原型给出的画面
+之一——它是 ChatUI 自己的功能，不读设计稿，但要读整套调色板：`.cui-root-generate-btn`
+换成了与 toast 相同的深色浮层配方（`--cui-color-surface` 底、`--cui-color-shadow`
+阴影），边框与图标改用旧黄铜（`--cui-color-accent`），呼应本节印玺与 §2.1 表格里
+「金棕＝强调/焦点」的分工——它和印玺问的是同一件事「下一句要来了吗」，只是印玺
+回答「正在」，这颗按钮回答「要不要现在问」，理应用同一支笔（pr4 第 4 棒）。
 
 ## 6. 交互契约
 
@@ -415,3 +439,12 @@
   为已有图标集。
 - **全局 `::-webkit-scrollbar`**：滚动条样式只允许 scope 到 `.cui-*` 容器。全局
   规则会改掉 SillyTavern 自己所有滚动条——那不是我们的表面。
+  **实现现状（pr4 第 4 棒）**：8px 自定义滚动条（README「其他」条目、原型 L18）
+  已按此约束逐容器接上——消息流、场刊列表与草稿架（侧栏的两处独立滚动区）、编辑
+  textarea、设置导航，共 5 处深色地面容器读 `--cui-scrollbar-thumb`（文字色 14%，
+  数值取自原型字面量 `rgba(232,223,206,.14)`）；＋菜单与选择器菜单（预设/模型/
+  persona）共 2 处宣纸浮层改读 `--cui-scrollbar-thumb-paper`（即 `--cui-paper-rule`）
+  ——那枚浅色文字调只在深色地面上可辨，直接用在宣纸底上会淡到消失。两个 token 与
+  共享的 `--cui-scrollbar-size`/`-radius` 定义在 `:root`；每个消费者仍各自写出
+  自己的 `.cui-*` 选择器（style.css 里就近可查），没有出现过任何未加限定的
+  `::-webkit-scrollbar`。
