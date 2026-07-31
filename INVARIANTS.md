@@ -554,6 +554,21 @@ promise 用 'cancel' 结算，绝不留空悬 promise），这是钉死的设计
 | 订阅在请求发起时收到该请求、回答后收到 null；取消订阅后不再收到通知 | `test/confirm-store.test.mjs :: subscribeChatuiConfirm notifies with the request on request and with null once answered; unsubscribing stops further notifications` |
 | 连续多轮请求各自拿到独一无二的 id | `test/confirm-store.test.mjs :: sequential requests each get a distinct id, even across many round trips` |
 
+### 15.1 Enter 吞键守卫（设计稿 §9）
+
+对话框把焦点交给**确认钮**（不再是取消钮），Enter 因此直接回答问题；换来的安全性
+不靠焦点位置，而靠一段时间守卫：弹出后 300ms 内的 Enter 一律吞掉。危险的从来不是
+「用户有意按了回车」，而是「弹窗在用户连打回车的手底下冒出来」。判定被抽成
+`shouldAcceptConfirmEnter(openedAtMs, nowMs)` 这个纯函数，因此可以脱离 DOM 钉死；
+组件层只负责记下自己何时挂载、以及把「吞」落实成 preventDefault（否则已获焦的确认
+钮会自己原生点击一次）。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 守卫窗口是「左闭右开」的 300ms：同一瞬间、1ms、299ms 都拒绝，正好 300ms 及以后接受 | `test/confirm-store.test.mjs :: shouldAcceptConfirmEnter refuses Enter for the whole guard window and accepts it from the boundary onward` |
+| 时间戳异常一律按拒绝处理（时钟倒流、Infinity、NaN、undefined）——坏时间戳绝不能反过来授权一次删除 | `test/confirm-store.test.mjs :: shouldAcceptConfirmEnter fails closed on a clock that ran backwards or on a timestamp that is not a finite number` |
+| 判定是纯函数：不读存储状态，有无在场请求都给同一答案 | `test/confirm-store.test.mjs :: shouldAcceptConfirmEnter is pure: it reads nothing from the store, so an open dialog, a settled one and no dialog at all give the same answer` |
+
 ## 16. 未覆盖缺口（❌ 补测待办）
 
 2026-07-19 第一批六个单元层缺口已全部补齐（§3、§4 新增行），滚动中编辑的浏览器

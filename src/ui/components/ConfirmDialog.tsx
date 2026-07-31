@@ -1,5 +1,6 @@
 import React, { createPortal, useEffect, useRef } from 'preact/compat';
 import type { ComponentChild } from 'preact';
+import { shouldAcceptConfirmEnter } from '../actions.js';
 
 /**
  * ChatUI-owned confirm dialog (no native ST popup). Portals to document.body:
@@ -10,8 +11,38 @@ import type { ComponentChild } from 'preact';
  * viewport, so the "modal" ends up sized/positioned against a small,
  * possibly off-screen box. Portaling sidesteps that regardless of where a
  * caller mounts it. stopPropagation everywhere so it can still be rendered
- * inside a clickable row without triggering it; Escape cancels and the
- * cancel button auto-focuses (safe default for destructive use).
+ * inside a clickable row without triggering it.
+ *
+ * Safety model (design §9). The old one was "focus cancel": Enter did
+ * whatever the focused button did, so the default answer to a destructive
+ * question was "no". That bought its safety by making the *common* answer
+ * cost a reach for the mouse or a Tab, and it leaned on the confirm button
+ * being loud enough (a solid red fill) to make the asymmetry read. Both ends
+ * of that trade are now inverted: the confirm button is a quiet outline, and
+ * focus lands on it, so Enter answers the question.
+ *
+ * What replaces the safety is a time guard rather than a focus trick. The
+ * dangerous case was never "the user pressed Enter deliberately"; it was "the
+ * user was mid-keystroke in the composer when a dialog appeared under their
+ * hands". So Enter is refused for the first 300ms and accepted after — see
+ * shouldAcceptConfirmEnter() in store/confirm-store.ts, which owns that rule
+ * as a pure function so it can be tested without a DOM. This component only
+ * records when it mounted and asks.
+ *
+ * Note the guard has to *swallow* Enter, not merely decline to act on it: the
+ * focused confirm button would otherwise fire its own native click. That is
+ * also why the accept path deliberately does nothing when the keystroke is
+ * already aimed at a button inside the dialog — the native activation is the
+ * one that runs, and calling onConfirm() here as well would fire it twice.
+ * The window handler is therefore only a fallback, for when focus has left
+ * the buttons entirely and nothing native would answer.
+ *
+ * One consequence, taken on purpose: if the user has tabbed to cancel, Enter
+ * cancels rather than confirms. The design says "Enter confirms" of a dialog
+ * whose buttons are non-focusable spans; ours are real buttons, and a focused
+ * control that does not do what it says when activated is a worse bargain
+ * than the literal reading — especially since this deviation only ever errs
+ * toward *not* deleting. Escape still cancels, unchanged.
  */
 export function ConfirmDialog({
     title,
@@ -39,19 +70,48 @@ export function ConfirmDialog({
     onCancel: () => void;
     onEscalate?: () => void;
 }): ComponentChild {
-    const cancelRef = useRef<HTMLButtonElement>(null);
+    const confirmRef = useRef<HTMLButtonElement>(null);
+    const cardRef = useRef<HTMLDivElement>(null);
+    // Set once per mounted dialog. ConfirmDialogHost keys its <ConfirmDialog>
+    // by request id precisely so a request that pre-empts another gets a new
+    // instance — and therefore a fresh guard window — instead of inheriting an
+    // already-expired one.
+    const openedAtRef = useRef(Date.now());
 
-    useEffect(() => { cancelRef.current?.focus(); }, []);
+    useEffect(() => { confirmRef.current?.focus(); }, []);
 
     useEffect(() => {
         const onKey = (event: KeyboardEvent) => {
-            if (event.key !== 'Escape') return;
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                onCancel();
+                return;
+            }
+            if (event.key !== 'Enter') return;
+
+            if (!shouldAcceptConfirmEnter(openedAtRef.current, Date.now())) {
+                // Swallow it whole: preventDefault kills the native activation
+                // of the focused confirm button, stopPropagation keeps the
+                // keystroke from reaching whatever the user was typing into.
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }
+
+            // Past the guard, a button inside the dialog activates itself.
+            const target = event.target;
+            if (target instanceof HTMLButtonElement && cardRef.current?.contains(target)) return;
+
+            // Focus left the buttons (the user clicked the card's text, say),
+            // so nothing native will answer — do it here.
             event.preventDefault();
-            onCancel();
+            onConfirm();
         };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [onCancel]);
+        // Capture, so the swallow above happens before any other listener sees
+        // the key rather than after.
+        window.addEventListener('keydown', onKey, true);
+        return () => window.removeEventListener('keydown', onKey, true);
+    }, [onCancel, onConfirm]);
 
     return createPortal(
         <div
@@ -59,6 +119,7 @@ export function ConfirmDialog({
             onClick={(event) => { event.stopPropagation(); onCancel(); }}
         >
             <div
+                ref={cardRef}
                 className="cui-paper cui-root-dialog"
                 role="dialog"
                 aria-modal="true"
@@ -81,7 +142,6 @@ export function ConfirmDialog({
                         </button>
                     )}
                     <button
-                        ref={cancelRef}
                         className="cui-root-dialog-btn cui-root-dialog-cancel"
                         type="button"
                         onClick={(event) => { event.stopPropagation(); onCancel(); }}
@@ -89,6 +149,7 @@ export function ConfirmDialog({
                         {cancelLabel}
                     </button>
                     <button
+                        ref={confirmRef}
                         className={`cui-root-dialog-btn cui-root-dialog-confirm${danger ? ' is-danger' : ''}`}
                         type="button"
                         onClick={(event) => { event.stopPropagation(); onConfirm(); }}

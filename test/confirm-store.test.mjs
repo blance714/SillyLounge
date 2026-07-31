@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+    CHATUI_CONFIRM_ENTER_GUARD_MS,
     cancelChatuiConfirm,
     getChatuiConfirmRequest,
     requestChatuiConfirm,
     resetChatuiConfirmStore,
     resolveChatuiConfirm,
+    shouldAcceptConfirmEnter,
     subscribeChatuiConfirm,
 } from '../dist/runtime/store/confirm-store.js';
 
@@ -169,4 +171,63 @@ test('sequential requests each get a distinct id, even across many round trips',
         await pending;
     }
     assert.equal(ids.size, 5, 'every request must get its own unique id');
+});
+
+// --- Enter guard -------------------------------------------------------------
+// shouldAcceptConfirmEnter() is the whole safety argument for focusing the
+// *confirm* button instead of cancel, so it is pinned here rather than left to
+// a component test: given when the dialog opened and when the key was pressed,
+// is this Enter an answer or leftover typing?
+
+const OPENED_AT = 1_700_000_000_000;
+
+test('shouldAcceptConfirmEnter refuses Enter for the whole guard window and accepts it from the boundary onward', () => {
+    assert.equal(CHATUI_CONFIRM_ENTER_GUARD_MS, 300, 'the design fixes the guard at 300ms');
+
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT), false, 'same instant');
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + 1), false, '1ms in');
+    assert.equal(
+        shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + CHATUI_CONFIRM_ENTER_GUARD_MS - 1),
+        false,
+        'the last millisecond inside the window is still refused',
+    );
+    assert.equal(
+        shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + CHATUI_CONFIRM_ENTER_GUARD_MS),
+        true,
+        'the boundary itself accepts — the window is closed-open, not open-open',
+    );
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + 5_000), true, 'long after');
+});
+
+test('shouldAcceptConfirmEnter fails closed on a clock that ran backwards or on a timestamp that is not a finite number', () => {
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT - 1), false, 'now before opened');
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT - 60_000), false, 'now far before opened');
+
+    // Infinity is the one that matters: it would otherwise satisfy any
+    // elapsed-time comparison and authorize a deletion outright.
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, Number.POSITIVE_INFINITY), false);
+    assert.equal(shouldAcceptConfirmEnter(Number.NEGATIVE_INFINITY, OPENED_AT), false);
+    assert.equal(shouldAcceptConfirmEnter(Number.NaN, OPENED_AT), false);
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, Number.NaN), false);
+    assert.equal(shouldAcceptConfirmEnter(undefined, OPENED_AT), false);
+    assert.equal(shouldAcceptConfirmEnter(OPENED_AT, undefined), false);
+});
+
+test('shouldAcceptConfirmEnter is pure: it reads nothing from the store, so an open dialog, a settled one and no dialog at all give the same answer', async () => {
+    const before = shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + 400);
+    assert.equal(getChatuiConfirmRequest(), null);
+
+    const pending = requestChatuiConfirm({ title: 'x', variant: 'two-way', confirmLabel: 'OK' });
+    const during = shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + 400);
+
+    resolveChatuiConfirm(getChatuiConfirmRequest().id, 'confirm');
+    await pending;
+    const after = shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + 400);
+
+    assert.deepEqual([before, during, after], [true, true, true]);
+    assert.equal(
+        shouldAcceptConfirmEnter(OPENED_AT, OPENED_AT + 100),
+        false,
+        'and the refusing answer is equally independent of store state',
+    );
 });
