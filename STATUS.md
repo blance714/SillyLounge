@@ -243,6 +243,18 @@ identity) and the store owns the actual quarantine write, keeping the
 adapter/store boundary intact. Deleting down to a *remaining* real chat is
 unaffected — that path already worked and queues nothing new.
 
+That handoff also depends on the reload coming back on the same character,
+which it did not: `selectCharacterById()` moves only the live selection, and ST
+writes the persisted `active_character` exclusively from its own
+`.character_select` click handler (RossAscends-mods.js:849-854) — a row no
+ChatUI path touches. With the spine as the only way to change character, every
+reload used to land on whoever the reader last picked from ST's native list.
+`adapter/chats/navigation.ts` now mirrors that handler's three calls on any
+character selection that actually lands, and `sidebar-actions.ts` awaits a real
+`saveSettings()` before its own forced reloads, because `saveSettingsDebounced()`
+is one shared cancel-and-re-arm timer whose window a reload silently loses (the
+same reasoning `index.ts`'s disable path already documents).
+
 The committed 2026-07-10/11 hardening closes the main correctness gaps found in
 the architecture review:
 

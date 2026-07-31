@@ -287,6 +287,13 @@ import { eventSource, event_types, makeStub } from '${BRIDGE_FROM_PUBLIC_ROOT}';
 export { eventSource, event_types };
 
 export const saveSettingsDebounced = makeStub('saveSettingsDebounced');
+export const saveSettings = makeStub('saveSettings');
+// The persisted "who is selected" pair ST itself only writes from its
+// .character_select click handler (RossAscends-mods.js:849-854) — see
+// adapter/chats/navigation.ts's persistStActiveCharacter. Registry stubs so a
+// test can assert exactly what ChatUI passed and in what order.
+export const setActiveCharacter = makeStub('setActiveCharacter');
+export const setActiveGroup = makeStub('setActiveGroup');
 export const stopGeneration = makeStub('stopGeneration');
 export const extractMessageBias = makeStub('extractMessageBias');
 export const removeMacros = makeStub('removeMacros');

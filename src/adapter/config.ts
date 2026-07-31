@@ -6,7 +6,7 @@
  * is allowed to touch the ST persistence layer for user-facing config values.
  */
 
-import { saveSettingsDebounced } from '@st/script';
+import { saveSettings, saveSettingsDebounced } from '@st/script';
 import { getContext } from './internals.js';
 
 /** Settings namespace key — must match index.js MODULE constant. */
@@ -44,4 +44,27 @@ export function write(config: any) {
     }
     settings[MODULE].config = config;
     saveSettingsDebounced();
+}
+
+/**
+ * Force every pending ST settings write to disk, now.
+ *
+ * `saveSettingsDebounced()` — the call this module, ST's own
+ * `.character_select` handler and dozens of other ST call sites all share —
+ * is one cancel-and-re-arm timer (utils.js's `debounce()`), so a
+ * `window.location.reload()` that beats its 1000ms relaxed window tears the
+ * page down with the write still queued and loses it silently. Every ChatUI
+ * path that reloads on purpose must therefore land its settings first; see
+ * index.ts's disableChatuiLayers doc comment for the instrumented case where
+ * skipping this reliably (not occasionally) lost both the enable flag and the
+ * truncation backup.
+ *
+ * This is ST's whole settings file, not just this extension's slice: that is
+ * the granularity `saveSettings()` offers and the granularity the shared
+ * debounce loses.
+ *
+ * @returns {Promise<void>}
+ */
+export async function flushSettings(): Promise<void> {
+    await saveSettings();
 }

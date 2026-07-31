@@ -59,6 +59,10 @@ function configureHost(host, { avatar, cardChatName, characterName = 'Bob' }) {
     host.registry.cancelDebouncedMetadataSave = () => {};
     host.registry.saveChatConditional = async () => {};
     host.registry.humanizedDateTime = () => '2026-01-01 @00h00';
+    // Every reloadRequired path now flushes ST's debounced settings write
+    // before tearing the page down (sidebar-actions.ts's
+    // _reloadForChatTransaction); unstubbed, that call would throw.
+    host.registry.saveSettings = async () => {};
     host.registry.getCurrentChatDetails = () => ({ sessionName: `${cardChatName}.jsonl` });
     host.context.characterId = 0;
     host.context.characters = [{
@@ -182,6 +186,40 @@ test('finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombston
         assert.equal(host.fetch.calls.length, 0);
         const tempChatStore = await host.importModule('store/temp-chat-store.js');
         assert.deepEqual(tempChatStore.getTempChats(), []);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test("a chat transaction's mandatory reload lands ST's pending settings write first, so the character ChatUI selected survives it", async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+
+        const order = [];
+        host.registry.saveSettings = async () => {
+            order.push('saveSettings');
+        };
+        host.window.location.reload = () => {
+            order.push('reload');
+        };
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a', 'chat-b'), rawListing('chat-b'));
+        router.queue('/api/chats/search', okJson([]));
+        router.queue('/api/characters/merge-attributes', okJson({}));
+        router.queue('/api/characters/get', pointerResponse('chat-b'));
+        router.queue('/api/chats/delete', { ok: true });
+
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        await sidebarActions.deleteChatuiChat('bob.png', 'chat-a');
+
+        assert.deepEqual(
+            order,
+            ['saveSettings', 'reload'],
+            'saveSettingsDebounced is one shared cancel-and-re-arm timer: a reload inside its window drops '
+            + "the persisted active_character the character switch wrote, and the page comes back on someone else",
+        );
     } finally {
         await host.dispose();
     }

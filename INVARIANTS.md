@@ -127,6 +127,25 @@ pr9 第 3 棒新增的兜底规则（DESIGN §3、评估 §5 3.6）：删除当�
 | 删除后仍有真实剩余对话时绝不排队草稿隔离凭证，也绝不污染隔离集 | `test/sidebar-actions.test.mjs :: deleting a chat that leaves a real remaining conversation never queues a draft-quarantine tombstone` |
 | 没有待处理凭证时 `finalizeChatuiDraftQuarantine` 是纯空操作，零网络请求、隔离集不变 | `test/sidebar-actions.test.mjs :: finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombstone is pending` |
 
+pr9 第 4 棒补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时选择
+（`this_chid`）；ST 把持久化的 `active_character` 写在自己 `.character_select`
+点击处理器里（RossAscends-mods.js:849-854），任何不经过那行原生列表的路径都不会更新
+它。spine 成为唯一换角色入口后，这意味着**任何**刷新（删除当前对话强制的那次、手动
+刷新、停用扩展）都会回到读者上一次从 ST 原生列表里点过的角色。
+`adapter/chats/navigation.ts` 的 `persistStActiveCharacter` 原样复刻那个处理器的三次
+调用；`sidebar-actions.ts` 的 `_reloadForChatTransaction` 则在自己发起的强制刷新前
+先 await 一次真正的 `saveSettings()`，因为 `saveSettingsDebounced()` 是全局共享的
+cancel-and-re-arm 计时器，刷新落在它 1000ms 窗口内就会静默丢掉这次写入（同一条理由
+见 `index.ts` 的 `disableChatuiLayers`）。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 换角色成功落地后，按 ST 原生处理器的同一顺序持久化 active_character（传实时下标而非 avatar）并清空 active_group | `test/adapter-chats.test.mjs :: switchCharacter persists the character it just selected as ST's active character, mirroring the native list click` |
+| 角色未找到或切换未落地（busy）时绝不持久化，刷新后不会落到一个从未切成功的角色上 | `test/adapter-chats.test.mjs :: a character switch that does not land persists nothing, so a reload never comes back on a character ChatUI failed to select` |
+| 打开别的角色的对话同样持久化该角色；该路径被拒绝（busy 回滚）时同样不持久化 | `test/adapter-chats.test.mjs :: opening another character's conversation persists that character too, and rolls back without persisting when the switch is refused` |
+| 持久化失败绝不连累读者真正要的那次切换 | `test/adapter-chats.test.mjs :: a failure to persist the active character never fails the switch the reader asked for` |
+| 对话事务的强制刷新必须先 await 落盘 ST 设置，再 reload | `test/sidebar-actions.test.mjs :: a chat transaction's mandatory reload lands ST's pending settings write first, so the character ChatUI selected survives it` |
+
 ## 4. 消息视图模型与流式（chat-store）
 
 | 不变量 | 验证 |

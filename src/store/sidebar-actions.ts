@@ -233,6 +233,36 @@ export function openChatuiChat(fileName: string): Promise<void> {
 }
 
 /**
+ * The terminal reload a chat transaction requires, with ST's own settings
+ * landed first.
+ *
+ * Sealing the host queue stops new ChatUI work; it does nothing about the
+ * writes ST has *already* queued behind its shared `saveSettingsDebounced()`
+ * timer, and reloading inside that 1000ms window drops them. One of those
+ * writes is now load-bearing for exactly this reload: the persisted
+ * `active_character` the character switch wrote (adapter/chats/navigation.ts's
+ * persistStActiveCharacter) is what decides which character ST's boot comes
+ * back on. Losing it lands the reader on some earlier character, holding a
+ * conversation list that is not the one they just acted in.
+ *
+ * A failed flush must not cancel the reload: the reload is what makes the
+ * runtime consistent with the durable pointer this transaction already moved,
+ * and staying on a stale in-memory chat is strictly worse than reloading onto
+ * the wrong character.
+ *
+ * @returns {Promise<void>}
+ */
+async function _reloadForChatTransaction(): Promise<void> {
+    sealHostOperationQueueForReload();
+    try {
+        await chatuiAdapter.configActions.flushSettings();
+    } catch (error) {
+        console.error('[ChatUI] failed to flush ST settings before the mandatory reload', error);
+    }
+    window.location.reload();
+}
+
+/**
  * Rename one of a character's chats, named by stable avatar + file name.
  *
  * The target is explicit rather than "whatever is open", because the playbill
@@ -297,8 +327,7 @@ export function renameChatuiChat(avatar: string, oldFileName: string, newName: s
             if (result.reloadRequired) {
                 // Persist quarantine migration before the reload: the durable
                 // pointer names a real winner while the live buffer does not.
-                sealHostOperationQueueForReload();
-                window.location.reload();
+                await _reloadForChatTransaction();
                 return;
             }
             if (result.uncertain) {
@@ -334,7 +363,6 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
                 // untouched after deletion. Reload immediately from its checked
                 // durable replacement pointer; do not let another queued host
                 // mutation run against the deleted in-memory conversation.
-                sealHostOperationQueueForReload();
                 if (result.deleted) {
                     chatuiAdapter.sidebarActions.queueCurrentCharacterChatDeletionFinalization(avatar, fileName);
                 }
@@ -351,7 +379,10 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
                         result.fallbackChatFileName,
                     );
                 }
-                window.location.reload();
+                // Both tombstone writes above are synchronous sessionStorage
+                // writes, so they are already durable by the time the queue is
+                // sealed inside this call.
+                await _reloadForChatTransaction();
             } else if (result.uncertain) {
                 pushToast('error', '无法确认删除结果，请刷新对话列表');
             } else if (!result.reconciled) {

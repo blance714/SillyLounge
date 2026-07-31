@@ -1620,3 +1620,145 @@ test('the draft-quarantine tombstone survives a transient read failure and resol
         await host.dispose();
     }
 });
+
+// =======================================================================
+// navigation.js — persisting ST's own "who is selected" state
+//
+// selectCharacterById() moves only the live selection; the `active_character`
+// ST reads back on the next boot is written exclusively by its delegated
+// .character_select click handler (RossAscends-mods.js:849-854), which no
+// ChatUI path goes through. With the spine as the only way to change
+// character, that left every reload — including the mandatory one a
+// current-chat delete forces — coming back on whoever the reader last picked
+// from ST's native list. See adapter/chats/navigation.ts's
+// persistStActiveCharacter for why the live index (not the avatar) is what
+// gets handed to setActiveCharacter.
+// =======================================================================
+
+/** Record the exact setActiveCharacter/setActiveGroup/save call sequence. */
+function recordActiveSelection(host) {
+    const calls = [];
+    host.registry.setActiveCharacter = (value) => calls.push(['setActiveCharacter', value]);
+    host.registry.setActiveGroup = (value) => calls.push(['setActiveGroup', value]);
+    host.registry.saveSettingsDebounced = () => calls.push(['saveSettingsDebounced']);
+    return calls;
+}
+
+test('switchCharacter persists the character it just selected as ST\'s active character, mirroring the native list click', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+            { avatar: 'bob.png', name: 'Bob', chat: 'bob-chat.jsonl' },
+        ];
+        host.context.characterId = 0;
+        const calls = recordActiveSelection(host);
+        host.registry.selectCharacterById = (index) => {
+            host.context.characterId = index;
+        };
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+        const result = await navigation.switchCharacter('bob.png');
+
+        assert.equal(result, 'ok');
+        assert.deepEqual(calls, [
+            // The live index, never the avatar string: getTagKeyForEntity()
+            // runs a string through parseInt() first, so an avatar like
+            // "3.png" would resolve to a different card.
+            ['setActiveCharacter', 1],
+            // A character selection must also retire any persisted group, or
+            // ST's boot finds both set and drops the character.
+            ['setActiveGroup', null],
+            ['saveSettingsDebounced'],
+        ]);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a character switch that does not land persists nothing, so a reload never comes back on a character ChatUI failed to select', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+            { avatar: 'bob.png', name: 'Bob', chat: 'bob-chat.jsonl' },
+        ];
+        host.context.characterId = 0;
+        const calls = recordActiveSelection(host);
+        // ST refused the switch (busy saving, a concurrent navigation won):
+        // the live selection never moved.
+        host.registry.selectCharacterById = () => {};
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+
+        assert.equal(await navigation.switchCharacter('bob.png'), 'busy');
+        assert.deepEqual(calls, []);
+        assert.equal(await navigation.switchCharacter('nobody.png'), 'notfound');
+        assert.deepEqual(calls, []);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('opening another character\'s conversation persists that character too, and rolls back without persisting when the switch is refused', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+            { avatar: 'bob.png', name: 'Bob', chat: 'bob-chat.jsonl' },
+        ];
+        host.context.characterId = 0;
+        const calls = recordActiveSelection(host);
+        host.registry.createOrEditCharacter = async () => {};
+        host.registry.getCurrentChatDetails = () => ({
+            sessionName: host.context.characters[Number(host.context.characterId)]?.chat ?? '',
+        });
+        // First attempt: ST does not move the selection at all.
+        host.registry.selectCharacterById = () => {};
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+
+        assert.equal(await navigation.openChatForCharacter('bob.png', 'bob-night-two'), 'busy');
+        assert.deepEqual(calls, [], 'a refused switch must leave the persisted character alone');
+
+        host.registry.selectCharacterById = (index) => {
+            host.context.characterId = index;
+        };
+        assert.equal(await navigation.openChatForCharacter('bob.png', 'bob-night-two'), 'ok');
+        assert.deepEqual(calls, [
+            ['setActiveCharacter', 1],
+            ['setActiveGroup', null],
+            ['saveSettingsDebounced'],
+        ]);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a failure to persist the active character never fails the switch the reader asked for', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+            { avatar: 'bob.png', name: 'Bob', chat: 'bob-chat.jsonl' },
+        ];
+        host.context.characterId = 0;
+        host.registry.setActiveCharacter = () => {
+            throw new Error('settings module exploded');
+        };
+        host.registry.selectCharacterById = (index) => {
+            host.context.characterId = index;
+        };
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+
+        assert.equal(await navigation.switchCharacter('bob.png'), 'ok');
+        assert.equal(String(host.context.characterId), '1', 'the switch itself still happened');
+    } finally {
+        await host.dispose();
+    }
+});
