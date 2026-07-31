@@ -101,6 +101,31 @@
 | 删除非当前会话时竞态失利，跟随胜者对齐本地指针后仍安全继续删除 | `test/adapter-chats.test.mjs :: deleting a non-current chat that loses the character-card pointer race still safely proceeds with the destructive request and follows the winner locally` |
 | 指针已持久化到发出 DELETE 的间隙内生成开始，必须回滚指针并放弃删除 | `test/adapter-chats.test.mjs :: deleting the current chat rolls the pointer back and abandons the delete when generation starts in the gap between persisting the replacement and issuing DELETE` |
 | 同一间隙内聊天保存开始，同样回滚指针并放弃删除（覆盖两个析取分支） | `test/adapter-chats.test.mjs :: deleting the current chat rolls the pointer back and abandons the delete when chat saving begins in the gap between persisting the replacement and issuing DELETE` |
+| 删除角色仅剩的一条对话时，指针被移到一个尚不存在的兜底文件名，并把该文件名如实上报（供调用方在下次启动时纳入草稿隔离） | `test/adapter-chats.test.mjs :: deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back for draft quarantine` |
+
+pr9 第 3 棒新增的兜底规则（DESIGN §3、评估 §5 3.6）：删除当前对话后绝不能停在
+「角色已选中、没有任何对话」的中间态。同角色还有其它对话时沿用上面已有的替换指针
+逻辑；角色的对话被删空时，`delete-transaction.ts` 把指针指向一个尚未写入磁盘的
+兜底文件名并通过 `fallbackChatFileName` 上报——ST 自己的重载启动会在那个指针上物化
+出某个文件（问候语或空白，`getChatResult()` 无条件的 `saveChatConditional()`），
+`deletion-finalization.ts` 新增的 `queueCharacterChatDraftQuarantine` /
+`takePendingCharacterChatDraftQuarantine` 让下次启动确认那个文件确实存在、确实仍是
+该角色的当前对话后，把指针原样交还给 store 层（`sidebar-actions.ts` 的
+`finalizeChatuiDraftQuarantine`）折进 `temp-chat-store.ts` 的隔离集——和 ＋新对话
+走同一条路径，而不是悄悄变成一条没人要求保留的永久历史记录。adapter 层只读校验，
+真正写隔离集的动作留给 store 层，符合分层边界（`check-boundaries.mjs`）。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 没有排队的兜底草稿隔离凭证时，确认函数直接返回 null，不发任何请求 | `test/adapter-chats.test.mjs :: takePendingCharacterChatDraftQuarantine resolves null and touches nothing when no tombstone was queued` |
+| 缺角色 avatar 或文件名时排队函数是纯空操作，不写入任何凭证 | `test/adapter-chats.test.mjs :: queueCharacterChatDraftQuarantine with a missing avatar or filename is a no-op` |
+| 兜底文件被确认已物化且仍是该角色当前对话时，返回该指针并清空凭证，不遗留给下次误判 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone resolves the fallback pointer once the file is confirmed live and still the current chat, and clears itself` |
+| 兜底文件尚未被物化（不在目录列表）时返回 null 并清空凭证 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone resolves null and clears itself when the fallback file was never materialized` |
+| 文件已物化但当前对话已换成别的文件时返回 null 并清空凭证，绝不误隔离别的对话 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone resolves null and clears itself when a different chat is now current, without quarantining the wrong file` |
+| 目录读取瞬时失败时保留凭证以待下次启动重试，绝不因一次失败就丢弃仍需处理的目标 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone survives a transient read failure and resolves once a later boot can verify it` |
+| 删除角色仅剩对话时，`deleteChatuiChat` 在刷新前把兜底文件名连同既有的 CHAT_DELETED 回放凭证一起排队；下次启动 `finalizeChatuiDraftQuarantine` 把它折进临时会话隔离集、标记为活跃 | `test/sidebar-actions.test.mjs :: deleting a character's only chat queues the draft-quarantine tombstone before reload, and finalizeChatuiDraftQuarantine folds the fallback file ST's next boot materializes into the same temp-chat quarantine ＋新对话 uses` |
+| 删除后仍有真实剩余对话时绝不排队草稿隔离凭证，也绝不污染隔离集 | `test/sidebar-actions.test.mjs :: deleting a chat that leaves a real remaining conversation never queues a draft-quarantine tombstone` |
+| 没有待处理凭证时 `finalizeChatuiDraftQuarantine` 是纯空操作，零网络请求、隔离集不变 | `test/sidebar-actions.test.mjs :: finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombstone is pending` |
 
 ## 4. 消息视图模型与流式（chat-store）
 

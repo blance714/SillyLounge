@@ -61,6 +61,20 @@ export type DeleteCharacterChatResultDto = Readonly<{
     reconciled: boolean;
     uncertain: boolean;
     reloadRequired: boolean;
+    /**
+     * Set only when deleting the *current* chat left its character with no
+     * other real chat file to fall back to: the durable pointer was moved to
+     * a fabricated name (delete-transaction.ts's `fallbackName`) that does
+     * not exist yet. ST's own post-reload boot always materializes some file
+     * there (greeting or empty, via getChatResult()'s unconditional
+     * saveChatConditional()) — this is the name of that file, so the caller
+     * can fold it into the same draft quarantine every other new chat goes
+     * through instead of leaving it as an unlabelled permanent history entry
+     * (DESIGN §3 / evaluation §5 3.6: never stop at "character selected, no
+     * conversation"). Null whenever a real remaining/preferred chat was used
+     * instead, or the deletion did not target the live current chat.
+     */
+    fallbackChatFileName: string | null;
 }>;
 
 export type RenameCharacterChatResultDto = Readonly<{

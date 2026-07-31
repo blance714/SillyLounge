@@ -15,6 +15,8 @@ export type {
     RenameCharacterChatResultDto,
 } from './chats/state.js';
 
+export type { PendingCharacterChatDraftQuarantine } from './chats/deletion-finalization.js';
+
 export {
     getCurrentChatHeader,
     getCurrentChatIdentity,
@@ -42,4 +44,6 @@ export { deleteCharacterChat } from './chats/delete-transaction.js';
 export {
     queueCurrentCharacterChatDeletionFinalization,
     finalizePendingCharacterChatDeletion,
+    queueCharacterChatDraftQuarantine,
+    takePendingCharacterChatDraftQuarantine,
 } from './chats/deletion-finalization.js';

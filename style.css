@@ -4233,7 +4233,16 @@ body.chatui-active .cui-root-selchip-menu::-webkit-scrollbar-thumb {
 
     body.chatui-active .cui-root-floor-tick,
     body.chatui-active .cui-root-floor-range-label,
-    body.chatui-active .cui-root-reasoning-summary::after {
+    body.chatui-active .cui-root-reasoning-summary::after,
+    /* The mobile drawer's translateX slide (§3/§6, pr9): the pair still opens
+       and closes, it just stops sliding to get there. Every other rails/spine/
+       playbill transition (hover opacity, border-color, background-color on
+       .cui-root-spine-slot/.cui-root-playbill-card/-card-dock/.cui-root-newchat)
+       is a colour/opacity fade rather than motion — the same category as the
+       paper-menu hover washes nobody opts out above — so this is the one rule
+       this region owes the query, not a blanket cui-root-rails/-spine/-sidebar
+       selector. */
+    body.chatui-active .cui-root-rails {
         transition: none;
     }
 }

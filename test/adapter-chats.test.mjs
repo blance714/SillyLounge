@@ -1,9 +1,9 @@
 // test/adapter-chats.test.mjs
 //
 // Covers the chat rename/delete transaction subsystem:
-//   dist/runtime/adapter/chats/{rename-transaction,delete-transaction,selection-protocol}.js
+//   dist/runtime/adapter/chats/{rename-transaction,delete-transaction,selection-protocol,deletion-finalization}.js
 //
-// These three modules coordinate a stable-avatar file rename/delete against a
+// These modules coordinate a stable-avatar file rename/delete against a
 // server that can be slow, lie transiently, or race a concurrent host
 // navigation — see the doc comments in src/adapter/chats/*.ts for the intent.
 // Every test below drives the *compiled* modules through the fake ST host,
@@ -1077,7 +1077,13 @@ test('deleting with a missing avatar or filename resolves unchanged without cont
         configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'other-chat' });
 
         const del = await host.importModule('adapter/chats/delete-transaction.js');
-        const unchanged = { deleted: false, reconciled: true, uncertain: false, reloadRequired: false };
+        const unchanged = {
+            deleted: false,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: false,
+            fallbackChatFileName: null,
+        };
 
         assert.deepEqual(await del.deleteCharacterChat('', 'chat-a'), unchanged);
         assert.deepEqual(await del.deleteCharacterChat('bob.png', ''), unchanged);
@@ -1097,7 +1103,13 @@ test('deleting a chat absent from the raw directory listing resolves unchanged a
         const del = await host.importModule('adapter/chats/delete-transaction.js');
         const result = await del.deleteCharacterChat('bob.png', 'ghost-chat');
 
-        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.deepEqual(result, {
+            deleted: false,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: false,
+            fallbackChatFileName: null,
+        });
         assert.equal(host.fetch.calls.length, 1, 'must not call /api/chats/delete for a file that was never listed');
     } finally {
         await host.dispose();
@@ -1120,7 +1132,7 @@ test('deleting a non-current chat that is not the character-card pointer resolve
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
         assert.equal(deletedPayload, 'chat-a');
     } finally {
         await host.dispose();
@@ -1148,7 +1160,7 @@ test('the post-delete existence check retries through transient read failures an
         const del = await host.importModule('adapter/chats/delete-transaction.js');
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/characters/chats'), 4,
             'the two transient failures should each have been retried before the third, successful read');
     } finally {
@@ -1179,7 +1191,7 @@ test('a listing that successfully reads back but still shows the file resolves d
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/characters/chats'), 2,
             'a single successful read that still lists the file must not be retried as if it were ambiguous');
         assert.equal(deletedEmitted, false);
@@ -1208,9 +1220,45 @@ test('deleting the current chat persists the replacement pointer before deleting
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: true });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: true, fallbackChatFileName: null });
         assert.equal(deletedEmitted, false,
             'a current-chat delete must never emit into the stale current-chat runtime; the caller reloads instead');
+    } finally {
+        await host.dispose();
+    }
+});
+
+// DESIGN §3 / evaluation §5 3.6: deleting a character's *only* chat must
+// never leave it selected with nothing to fall back to. There is no real
+// file left to rank as a replacement, so the durable pointer is moved to the
+// fabricated `fallbackName` (character name + humanizedDateTime()) instead —
+// `fallbackChatFileName` on the result is how the caller (sidebar-actions.ts)
+// finds out this happened, so it can quarantine whatever ST's reload boot
+// materializes there as a draft instead of a permanent history entry.
+test("deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back for draft quarantine", async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a', characterName: 'Bob' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a'), rawListing());
+        router.queue('/api/chats/search', okJson([]));
+        router.queue('/api/characters/merge-attributes', okJson({}));
+        router.queue('/api/characters/get', pointerResponse('Bob - 2026-01-01 @00h00'));
+        router.queue('/api/chats/delete', { ok: true });
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        const result = await del.deleteCharacterChat('bob.png', 'chat-a');
+
+        assert.deepEqual(result, {
+            deleted: true,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: true,
+            fallbackChatFileName: 'Bob - 2026-01-01 @00h00',
+        });
     } finally {
         await host.dispose();
     }
@@ -1249,7 +1297,7 @@ test('the post-delete existence poll gives up and reports uncertain, without rol
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true });
+        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/characters/chats'), 1 + 3,
             'the pre-delete check plus exactly maxAttempts existence-poll attempts');
         assert.equal(router.callCount('/api/characters/merge-attributes'), 1,
@@ -1292,7 +1340,7 @@ test('deleting the current chat abandons the operation and requires a reload whe
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true });
+        assert.deepEqual(result, { deleted: false, reconciled: false, uncertain: true, reloadRequired: true, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/chats/delete'), 0,
             'losing the pointer race must abandon the deletion before the destructive request is ever sent');
         assert.equal(host.context.characters[0].chat, 'chat-a.jsonl',
@@ -1325,7 +1373,7 @@ test('deleting a non-current chat that loses the character-card pointer race sti
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.deepEqual(result, { deleted: true, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
         assert.equal(deletedPayload, 'chat-a',
             'the file is still safely removed by its real name, independent of who won the pointer');
         assert.equal(host.context.characters[0].chat, 'someone-elses-chat',
@@ -1376,7 +1424,7 @@ test('deleting the current chat rolls the pointer back and abandons the delete w
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/chats/delete'), 0,
             'generation starting in the await gap must abandon the delete before the destructive request is sent');
         assert.equal(router.callCount('/api/characters/merge-attributes'), 2,
@@ -1416,7 +1464,7 @@ test('deleting the current chat rolls the pointer back and abandons the delete w
 
         const result = await del.deleteCharacterChat('bob.png', 'chat-a');
 
-        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false });
+        assert.deepEqual(result, { deleted: false, reconciled: true, uncertain: false, reloadRequired: false, fallbackChatFileName: null });
         assert.equal(router.callCount('/api/chats/delete'), 0,
             'chat saving beginning in the await gap must abandon the delete before the destructive request is sent');
         assert.equal(router.callCount('/api/characters/merge-attributes'), 2,
@@ -1425,5 +1473,150 @@ test('deleting the current chat rolls the pointer back and abandons the delete w
     } finally {
         await host.dispose();
         host.state.setChatSaving(false);
+    }
+});
+
+// =======================================================================
+// deletion-finalization.js — the draft-quarantine handoff
+// (queueCharacterChatDraftQuarantine / takePendingCharacterChatDraftQuarantine).
+//
+// sidebar-actions.ts queues this tombstone right before the mandatory reload
+// that follows deleting a character's last chat (delete-transaction.js's
+// `fallbackChatFileName`). Nothing in this pair touches the temp-chat
+// quarantine store directly (that would violate the adapter/store layering
+// boundary) — it only confirms, on the next boot, that the fallback file is
+// both real (ST's boot materialized it) and still this character's actual
+// current chat, then hands the bare pointer back for sidebar-actions.ts to
+// commit. Each assertion below also checks host.sessionStorage.length as a
+// black-box proxy for "is the tombstone still queued" — this module owns
+// exactly one sessionStorage key, so nothing else in these tests touches it.
+// =======================================================================
+
+test('takePendingCharacterChatDraftQuarantine resolves null and touches nothing when no tombstone was queued', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+
+        const result = await finalization.takePendingCharacterChatDraftQuarantine();
+
+        assert.equal(result, null);
+        assert.equal(host.fetch.calls.length, 0);
+        assert.equal(host.sessionStorage.length, 0);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('queueCharacterChatDraftQuarantine with a missing avatar or filename is a no-op', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+
+        finalization.queueCharacterChatDraftQuarantine('', 'fallback-chat');
+        finalization.queueCharacterChatDraftQuarantine('bob.png', '');
+
+        assert.equal(host.sessionStorage.length, 0);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('the draft-quarantine tombstone resolves the fallback pointer once the file is confirmed live and still the current chat, and clears itself', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('Bob - 2026-01-01 @00h00'));
+
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+        assert.equal(host.sessionStorage.length, 1, 'queueing must persist the tombstone immediately');
+
+        const result = await finalization.takePendingCharacterChatDraftQuarantine();
+
+        assert.deepEqual(result, { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' });
+        assert.equal(host.sessionStorage.length, 0, 'a resolved tombstone must not linger for a later boot to misfire on');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('the draft-quarantine tombstone resolves null and clears itself when the fallback file was never materialized', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characterId = 0;
+        // No live chat at all yet — ST's boot has not materialized the
+        // fallback file, so the raw listing must not show it either.
+        host.registry.getCurrentChatDetails = () => ({ sessionName: '' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing());
+
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+
+        const result = await finalization.takePendingCharacterChatDraftQuarantine();
+
+        assert.equal(result, null);
+        assert.equal(host.sessionStorage.length, 0);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('the draft-quarantine tombstone resolves null and clears itself when a different chat is now current, without quarantining the wrong file', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characterId = 0;
+        // The file exists (ST's boot did materialize it), but something else
+        // — another navigation, another tab — moved the live chat on before
+        // this boot's finalization ran.
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-elsewhere.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('Bob - 2026-01-01 @00h00', 'chat-elsewhere'));
+
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+
+        const result = await finalization.takePendingCharacterChatDraftQuarantine();
+
+        assert.equal(result, null);
+        assert.equal(host.sessionStorage.length, 0);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('the draft-quarantine tombstone survives a transient read failure and resolves once a later boot can verify it', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', networkThrow(), rawListing('Bob - 2026-01-01 @00h00'));
+
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+
+        const failed = await finalization.takePendingCharacterChatDraftQuarantine();
+        assert.equal(failed, null);
+        assert.equal(host.sessionStorage.length, 1,
+            'a transient read failure must keep the tombstone queued for a later boot, not drop a target that may still need quarantining');
+
+        const retried = await finalization.takePendingCharacterChatDraftQuarantine();
+        assert.deepEqual(retried, { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' });
+        assert.equal(host.sessionStorage.length, 0);
+    } finally {
+        await host.dispose();
     }
 });

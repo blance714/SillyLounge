@@ -36,7 +36,13 @@ export async function deleteCharacterChat(
     fileName: string,
 ): Promise<DeleteCharacterChatResultDto> {
     const bareName = stripChatExt(fileName);
-    const unchanged = { deleted: false, reconciled: true, uncertain: false, reloadRequired: false } as const;
+    const unchanged = {
+        deleted: false,
+        reconciled: true,
+        uncertain: false,
+        reloadRequired: false,
+        fallbackChatFileName: null,
+    } as const;
     if (!avatar || !bareName) return unchanged;
 
     let chatNames: string[];
@@ -200,6 +206,7 @@ export async function deleteCharacterChat(
             reconciled: false,
             uncertain: true,
             reloadRequired: deletingCurrent,
+            fallbackChatFileName: null,
         };
     }
 
@@ -217,13 +224,26 @@ export async function deleteCharacterChat(
             reconciled,
             uncertain,
             reloadRequired: deletingCurrent && !reconciled,
+            fallbackChatFileName: null,
         };
     }
 
     if (deletingCurrent) {
         // Do not emit into the stale current-chat runtime: arbitrary listeners
         // may save it again. The caller reloads synchronously on this result.
-        return { deleted: true, reconciled: true, uncertain: false, reloadRequired: true };
+        return {
+            deleted: true,
+            reconciled: true,
+            uncertain: false,
+            reloadRequired: true,
+            // nextName is the fabricated fallback exactly when no real chat
+            // (preferred or otherwise) survived to replace the one just
+            // deleted — i.e. this character's history is now empty. Report
+            // it so the caller can quarantine whatever ST's reload boot
+            // materializes there, instead of it becoming the character's
+            // one permanent chat by accident.
+            fallbackChatFileName: nextName === fallbackName ? nextName : null,
+        };
     }
 
     try {
@@ -231,5 +251,11 @@ export async function deleteCharacterChat(
     } catch (error) {
         console.error('[ChatUI] failed to emit CHAT_DELETED', error);
     }
-    return { deleted: true, reconciled: true, uncertain: false, reloadRequired: false };
+    return {
+        deleted: true,
+        reconciled: true,
+        uncertain: false,
+        reloadRequired: false,
+        fallbackChatFileName: null,
+    };
 }
