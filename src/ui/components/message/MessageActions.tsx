@@ -111,8 +111,8 @@ export function MessageActions({
     // only exists for the message ST would actually regenerate: the trailing
     // character reply. Every other row therefore tiles three, not four.
     const regen: MenuAction = { label: '重写', iconClass: 'fa-solid fa-rotate-right', onClick: () => dispatch('regen') };
-    const edit: MenuAction = { label: '编辑', iconClass: 'fa-solid fa-pencil', onClick: onEdit };
-    const del: MenuAction = { label: '删除', iconClass: 'fa-solid fa-trash', onClick: () => dispatch('delete'), danger: true };
+    const edit: MenuAction = { label: '编辑', iconClass: 'fa-solid fa-pen', onClick: onEdit };
+    const del: MenuAction = { label: '删除', iconClass: 'fa-solid fa-trash-can', onClick: () => dispatch('delete'), danger: true };
 
     // Menu — what you do *with* it: take it somewhere else, or take it out of
     // the conversation. 隐藏此楼 is ruled off below the rest because it is the
