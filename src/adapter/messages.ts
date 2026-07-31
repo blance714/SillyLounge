@@ -150,6 +150,25 @@ const PLAIN_TEXT_BREAK_TAGS = new Set([
 /** Cells separate along the row, rows separate down the table. */
 const PLAIN_TEXT_CELL_TAGS = new Set(['TD', 'TH']);
 
+/**
+ * Elements whose text is never *read* — `innerText` skips them and so must
+ * this walk, or 「复制」 hands over source code as if it were prose.
+ *
+ * `STYLE` is the one that is genuinely reachable today, and it is reachable
+ * through a first-class SillyTavern feature, not an exotic case: a character
+ * card (or a message) may carry a `<style>` block, and ST's own formatter
+ * puts it back into the message HTML verbatim after sanitizing it
+ * (public/scripts/chats.js, `encodeStyleTags` -> DOMPurify -> `decodeStyleTags`,
+ * which re-emits `<style>${css.stringify(ast)}</style>`). `DOMParser` leaves
+ * such a block inside `<body>` whenever any content precedes it, so without
+ * this gate a whole stylesheet lands in the clipboard between two paragraphs.
+ * The rest cannot survive ST's sanitizer today and are listed so the rule is
+ * "what a reader never sees", not "the one tag that bit us".
+ */
+const PLAIN_TEXT_SKIP_TAGS = new Set([
+    'HEAD', 'NOSCRIPT', 'SCRIPT', 'STYLE', 'TEMPLATE', 'TITLE',
+]);
+
 function _collectPlainText(node: PlainTextNode, out: string[]): void {
     if (node.nodeType === NODE_TYPE_TEXT) {
         out.push(node.nodeValue ?? '');
@@ -158,6 +177,7 @@ function _collectPlainText(node: PlainTextNode, out: string[]): void {
     if (node.nodeType !== NODE_TYPE_ELEMENT) return;
 
     const tag = String(node.nodeName ?? '').toUpperCase();
+    if (PLAIN_TEXT_SKIP_TAGS.has(tag)) return;
     if (tag === 'BR') {
         out.push('\n');
         return;

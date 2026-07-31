@@ -707,6 +707,27 @@ test('_plainTextFromNode: list items break per row, table cells separate along t
     }
 });
 
+test('_plainTextFromNode: a <style> block a character card carries is never read as prose, and the paragraphs around it still join normally', async () => {
+    const host = await createFakeStHost();
+    try {
+        const messages = await host.importModule('adapter/messages.js');
+
+        // Exactly the shape ST's own formatter produces for a card that ships
+        // CSS: chats.js encodeStyleTags -> DOMPurify -> decodeStyleTags puts a
+        // real <style> element back into the message HTML, and DOMParser keeps
+        // it inside <body> whenever any content precedes it.
+        const body = elementNode('BODY', [
+            elementNode('P', [textNode('她抬起头。')]),
+            elementNode('STYLE', [textNode('.mes_text .x{color:red;background:blue}')]),
+            elementNode('P', [textNode('第二段。')]),
+        ]);
+
+        assert.equal(messages._plainTextFromNode(body), '她抬起头。\n\n第二段。');
+    } finally {
+        await host.dispose();
+    }
+});
+
 test('plainTextFromMessageHtml: empty formatted HTML reduces to an empty string without reaching for a parser', async () => {
     const host = await createFakeStHost();
     try {
