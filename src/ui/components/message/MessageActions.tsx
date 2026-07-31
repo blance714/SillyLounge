@@ -4,6 +4,8 @@ import {
     swipeChatuiMessage,
     triggerChatuiMessageAction,
 } from '../../actions.js';
+import type { MenuPlacement } from '../../menu-placement.js';
+import { estimateMenuHeight, placeMenuAgainstTrigger } from '../../menu-placement.js';
 import type { ChatuiAction, ChatuiMessage } from '../../types.js';
 import { ActionButton } from './ActionButton.js';
 import { MenuItem } from './MenuItem.js';
@@ -26,9 +28,12 @@ type MenuAction = {
  * Position is a one-shot snapshot of the trigger's rect taken on open; the
  * menu closes on scroll/resize instead of tracking the trigger live, same
  * trade-off ConfirmDialog/SelectorChip make for their own portaled/fixed UI.
+ * Which way it opens comes from menu-placement.ts — the snapshot is taken
+ * before the menu exists, so the direction is decided from the row count and
+ * the free space, never from a measurement that has not happened yet.
  */
 function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
-    const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+    const [anchor, setAnchor] = useState<MenuPlacement | null>(null);
     const triggerRef = useRef<HTMLButtonElement>(null);
 
     useEffect(() => {
@@ -48,7 +53,14 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
         if (anchor) { setAnchor(null); return; }
         const rect = triggerRef.current?.getBoundingClientRect();
         if (!rect) return;
-        setAnchor({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+        setAnchor(placeMenuAgainstTrigger({
+            trigger: { top: rect.top, bottom: rect.bottom, right: rect.right },
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            estimatedHeight: estimateMenuHeight(
+                items.length,
+                items.filter(item => item.separatorBefore).length,
+            ),
+        }));
     };
 
     return (
@@ -75,7 +87,18 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                     />
                     <div
                         className="cui-root-menu cui-paper"
-                        style={{ position: 'fixed', top: `${anchor.top}px`, right: `${anchor.right}px` }}
+                        /* Both offsets are always written, one of them as `auto`:
+                           .cui-root-menu carries a `top` of its own for the
+                           in-flow menus that share the class, and a fixed box
+                           with both top and bottom set is over-constrained —
+                           it would stretch to span them instead of sizing to
+                           its rows. */
+                        style={{
+                            position: 'fixed',
+                            top: anchor.top == null ? 'auto' : `${anchor.top}px`,
+                            bottom: anchor.bottom == null ? 'auto' : `${anchor.bottom}px`,
+                            right: `${anchor.right}px`,
+                        }}
                     >
                         {items.map(item => (
                             <React.Fragment key={item.label}>

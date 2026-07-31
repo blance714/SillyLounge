@@ -540,6 +540,15 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 80–240px 死区既不自动贴底也不显示胶囊（防两门被并回一个常量） | `test/follow-scroll-math.test.mjs :: readFollowGates: the 80–240px dead zone follows nothing and offers nothing` |
 | 两道门永不同时开（胶囊绝不浮在仍在自动贴底的视图上） | `test/follow-scroll-math.test.mjs :: readFollowGates: the two gates are never open at the same time` |
 | 过卷（负距离）与不可滚动容器一律判为贴底且不出胶囊 | `test/follow-scroll-math.test.mjs :: readFollowGates: over-scroll and unscrollable containers both count as pinned` |
+| 菜单盒模型常量取自 Chromium 实测（行 33px、分隔线 9px、外壳 10px、留白 4px），不是估算的整数 | `test/menu-placement.test.mjs :: the menu box constants are the ones measured against style.css, not round numbers` |
+| 按行数与分隔线数估高，逐一复现浏览器实测的每一种菜单尺寸 | `test/menu-placement.test.mjs :: estimateMenuHeight reproduces every menu size measured in the browser` |
+| 下方放得下时向下打开，顶边挂在触发钮下沿（设计 §6 默认方向） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: room below opens downward, hung off the trigger bottom` |
+| 触发钮贴近视口底边时向上翻转，底边挂在触发钮上沿（危险行不再被切掉） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: the desktop bug — a trigger near the viewport floor flips up` |
+| 翻转门是「比空间高」而非「与空间等高」：恰好装满仍向下，多 1px 才翻 | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: the flip boundary is "taller than the space", not "as tall as"` |
+| 上方比下方更挤时绝不翻转（含两侧相等的平局判向下） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: never flips into a space that is tighter than the one it left` |
+| 翻转与否取决于该菜单自身的高度，同一位置的两行菜单照旧向下 | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: a two-row system menu keeps opening down where a five-row one flips` |
+| 两个方向的偏移都只由实测到的触发钮边沿与留白决定，估高绝不进入几何（估错只会换个方向，不会让菜单脱离按钮） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: both directions stay welded to an edge of the trigger` |
+| 显式 gap 为 0 时对应方向的留白确实消失 | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: an explicit gap of 0 removes the air on whichever side is used` |
 | 标头时间戳把 ST 写过的每种 `send_date`（ISO 8601 / `humanizedDateTime` / epoch 毫秒数与数字串）都渲染成时钟时间，无法辨认的原样透出而不臆造 | `test/format.test.mjs :: formatTimestamp renders every send_date shape SillyTavern writes as a clock time, and never invents one it cannot read` |
 | 时长与体积格式化保持中文口径，且「没有数值」不被四舍五入成「零」 | `test/format.test.mjs :: formatDuration and formatBytes stay in the language the rest of the UI speaks and refuse to round a non-quantity into one` |
 | 场刊卡片元信息按「N 条」计消息数、绝不写成「N 楼」（楼＝用户回合，会话列表只有 `chat_items` 总条数，写成楼就与楼层轨自相矛盾），缺失的一半连同分隔点一起消失 | `test/format.test.mjs :: the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator` |
