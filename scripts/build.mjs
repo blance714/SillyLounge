@@ -28,6 +28,7 @@ const RUNTIME_ENTRY_FILES = Object.freeze([
     // importable copy for the Node unit tests.
     'ui/floor-rail-math.ts',
     'ui/follow-scroll-math.ts',
+    'ui/format.ts',
 ]);
 
 const ST_EXTERNAL_TARGETS = Object.freeze({
