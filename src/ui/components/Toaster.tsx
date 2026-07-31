@@ -22,8 +22,8 @@ export function Toaster(): ComponentChild {
                     <button
                         className="cui-root-toast-close"
                         type="button"
-                        aria-label="Dismiss"
-                        title="Dismiss"
+                        aria-label="关闭"
+                        title="关闭"
                         onClick={() => dismissChatuiToast(toast.id)}
                     >
                         <i className="fa-solid fa-xmark" />
