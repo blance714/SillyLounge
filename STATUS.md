@@ -257,6 +257,21 @@ owns the actual quarantine write, keeping the adapter/store boundary intact.
 Deleting down to a *remaining* real chat is unaffected — that path already
 worked and queues nothing new.
 
+ST's `power_user.auto_load_chat` is **false** by default (power-user.js:335),
+and this repo's e2e fixture forces it true — which is why every earlier
+real-machine result for this rule came from a non-default setting. On a stock
+install the mandatory reload comes back with *no character selected at all*:
+ST never loads the deleted character, never writes the fallback file, and the
+credential waits for a signal that will never be sent. So when a credential is
+still pending and nothing at all holds the stage,
+`finalizeChatuiDraftQuarantine` selects the character that credential names.
+That is the closing move of a transaction the reader committed to (they
+confirmed the delete; the reload is ChatUI's own doing), not a vote on their
+autoload preference — the adapter refuses the moment ST landed anywhere, group
+or character (`selectCharacterIfNobodyIsOnStage`), and the credential then
+keeps its ordinary meaning. It runs at most once per page load, is never
+retried, and never toasts.
+
 The character a delete like that empties is also on the spine now, which is
 what makes any of it reachable by hand at all. The spine's membership rule
 (`ui/spine-cast.ts`) used to be

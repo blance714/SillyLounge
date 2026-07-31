@@ -291,3 +291,129 @@ test("a chat transaction's mandatory reload lands ST's pending settings write fi
         await host.dispose();
     }
 });
+
+// ---------------------------------------------------------------------
+// Finishing the transaction on a stock host (auto_load_chat: false)
+//
+// ST's default is *not* to reload onto the last character (power-user.js:335;
+// this repo's e2e fixture forces it on, which is why every earlier real-machine
+// run of this handoff ran under a non-default setting). On a stock install the
+// mandatory reload therefore comes back with no character selected at all: ST
+// never loads the deleted character, never writes the fallback file, and the
+// credential below waits for a CHAT_CHANGED that will never be emitted. These
+// two tests pin both halves of the completion — that ChatUI finishes the
+// transaction when the stage is empty, and that it keeps its hands off when
+// the reader's own setting already put somebody there.
+// ---------------------------------------------------------------------
+
+test("a boot that lands on nobody finishes the delete transaction itself: ChatUI selects the credential's character and the fallback file lands in quarantine", async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl', chat_size: 1, date_last_chat: 0, fav: false },
+            { avatar: 'bob.png', name: 'Bob', chat: 'Bob - 2026-01-01 @00h00.jsonl', chat_size: 0, date_last_chat: 0, fav: false },
+        ];
+        host.fetch.setHandler(() => {
+            throw new Error('the boot half of the draft-quarantine handoff must issue no request');
+        });
+
+        const adapter = await host.importModule('adapter/chats/deletion-finalization.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+
+        adapter.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+
+        // The stock boot: ST chose nobody, so nothing is live and the fallback
+        // file has not been written.
+        liveChat(host, null);
+        host.context.groupId = undefined;
+        const selections = [];
+        host.registry.setActiveCharacter = () => {};
+        host.registry.setActiveGroup = () => {};
+        host.registry.saveSettingsDebounced = () => {};
+        // ST's own selectCharacterById: it loads the character's durable chat
+        // pointer — the fabricated fallback name — and getChatResult() emits
+        // CHAT_CHANGED at the end of doing so.
+        host.registry.selectCharacterById = async (index) => {
+            selections.push(index);
+            host.context.characterId = index;
+            host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+            await host.eventSource.emit('CHAT_CHANGED', 'Bob - 2026-01-01 @00h00');
+        };
+
+        sidebarActions.finalizeChatuiDraftQuarantine();
+        await sidebarActions.waitForChatuiSidebarActionsIdle();
+        // The landing runs outside the host queue (it is boot work, not a user
+        // mutation), so drain the microtask chain it lives on.
+        await new Promise(resolve => setImmediate(resolve));
+
+        assert.deepEqual(selections, [1],
+            'the credential names Bob, so Bob is who the transaction is finished on');
+        assert.deepEqual(
+            tempChatStore.getTempChat(),
+            { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' },
+            'and the fallback file ST wrote on the way in is quarantined exactly as an autoload boot would have it',
+        );
+        assert.equal(host.sessionStorage.length, 0, 'the credential is consumed, not left waiting');
+        assert.equal(
+            host.eventSource.listenerCount('CHAT_CHANGED'),
+            0,
+            'a consumed intent stops listening',
+        );
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a boot that landed on somebody else is never overridden: the credential simply keeps waiting', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl', chat_size: 1, date_last_chat: 0, fav: false },
+            { avatar: 'bob.png', name: 'Bob', chat: 'Bob - 2026-01-01 @00h00.jsonl', chat_size: 0, date_last_chat: 0, fav: false },
+        ];
+        host.fetch.setHandler(() => {
+            throw new Error('the boot half of the draft-quarantine handoff must issue no request');
+        });
+        host.registry.selectCharacterById = () => {
+            throw new Error('ChatUI must not move a stage the reader\'s own autoload setting already filled');
+        };
+
+        const adapter = await host.importModule('adapter/chats/deletion-finalization.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+
+        adapter.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+
+        // The reader has auto_load_chat on and ST came back on Ann.
+        host.context.characterId = 0;
+        host.context.groupId = undefined;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'ann-chat.jsonl' });
+
+        sidebarActions.finalizeChatuiDraftQuarantine();
+        await new Promise(resolve => setImmediate(resolve));
+
+        assert.equal(String(host.context.characterId), '0', 'Ann keeps the stage');
+        assert.deepEqual(tempChatStore.getTempChats(), []);
+        assert.equal(host.sessionStorage.length, 1,
+            'the credential keeps its ordinary meaning: if that file goes live later, it is a draft');
+        assert.equal(
+            host.eventSource.listenerCount('CHAT_CHANGED'),
+            1,
+            'and it is still watching for the moment the reader walks over to Bob',
+        );
+
+        // …which the spine now makes reachable, so walking over resolves it.
+        host.context.characterId = 1;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+        await host.eventSource.emit('CHAT_CHANGED', 'Bob - 2026-01-01 @00h00');
+        assert.deepEqual(
+            tempChatStore.getTempChat(),
+            { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' },
+        );
+    } finally {
+        await host.dispose();
+    }
+});

@@ -1861,6 +1861,111 @@ test('a failure to persist the active character never fails the switch the reade
     }
 });
 
+// =======================================================================
+// navigation.js — finishing a delete transaction on a host that came back
+// on nobody
+//
+// `power_user.auto_load_chat` is false by default (power-user.js:335) and this
+// repo's e2e fixture forces it true (scripts/e2e/generate-data-root.mjs), so
+// the reload a current-chat delete forces answers with an *empty stage* on a
+// stock install: ST selects no character, never writes the fallback file, and
+// the draft-quarantine credential waits for a signal that will never come.
+// selectCharacterIfNobodyIsOnStage is the closing move of that transaction —
+// and its refusal is the part that keeps it from being a preference override,
+// so both halves are pinned here.
+// =======================================================================
+
+test('a pending chat transaction lands on its character when ST\'s boot chose nobody, persisting the selection like any other landing', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+            { avatar: 'bob.png', name: 'Bob', chat: 'bob-chat.jsonl' },
+        ];
+        // The stock no-autoload boot: nothing selected at all.
+        host.context.characterId = undefined;
+        host.context.groupId = undefined;
+        const calls = recordActiveSelection(host);
+        host.registry.selectCharacterById = (index) => {
+            host.context.characterId = index;
+        };
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+
+        assert.equal(await navigation.selectCharacterIfNobodyIsOnStage('bob.png'), 'selected');
+        assert.equal(String(host.context.characterId), '1');
+        assert.deepEqual(calls, [
+            ['setActiveCharacter', '1'],
+            ['setActiveGroup', null],
+            ['saveSettingsDebounced'],
+        ], 'a landing that happened is persisted exactly like a reader-driven switch');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a pending chat transaction never steals a stage somebody already holds — not a character ST autoloaded, not a group', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+            { avatar: 'bob.png', name: 'Bob', chat: 'bob-chat.jsonl' },
+        ];
+        const calls = recordActiveSelection(host);
+        host.registry.selectCharacterById = () => {
+            throw new Error('a stage that is already held must never be taken');
+        };
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+
+        // The reader's own auto_load_chat setting brought a character back.
+        host.context.characterId = 0;
+        host.context.groupId = undefined;
+        assert.equal(await navigation.selectCharacterIfNobodyIsOnStage('bob.png'), 'occupied');
+        assert.equal(String(host.context.characterId), '0', 'the autoloaded character keeps the stage');
+
+        // Even index 0's falsy-looking id counts as "somebody is here"; and a
+        // group holds the stage just as much as a character does.
+        host.context.characterId = undefined;
+        host.context.groupId = 'group-1';
+        assert.equal(await navigation.selectCharacterIfNobodyIsOnStage('bob.png'), 'occupied');
+
+        assert.deepEqual(calls, [], 'and nothing was persisted on either refusal');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a pending chat transaction whose character is gone, or whose selection ST refuses, reports it and persists nothing', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+        ];
+        host.context.characterId = undefined;
+        host.context.groupId = undefined;
+        const calls = recordActiveSelection(host);
+        host.registry.selectCharacterById = () => {
+            // ST returns silently while a chat is saving — the live selection
+            // simply does not move.
+        };
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+
+        assert.equal(await navigation.selectCharacterIfNobodyIsOnStage('bob.png'), 'notfound',
+            'the card was deleted between the two page loads: an honest absence, not a retryable failure');
+        assert.equal(await navigation.selectCharacterIfNobodyIsOnStage(''), 'notfound');
+
+        assert.equal(await navigation.selectCharacterIfNobodyIsOnStage('ann.png'), 'refused',
+            'a selection that did not land must be reported as such, never assumed');
+        assert.deepEqual(calls, [], 'never persist a character ChatUI failed to select');
+    } finally {
+        await host.dispose();
+    }
+});
 
 test('peekPendingCharacterChatDraftQuarantine reports who a waiting credential is about without arming or consuming it', async () => {
     const host = await createFakeStHost();

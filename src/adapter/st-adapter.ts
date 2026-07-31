@@ -77,6 +77,7 @@ import {
     openCharacterChatByName,
     openChatForCharacter,
     renameCharacterChat,
+    selectCharacterIfNobodyIsOnStage,
     switchCharacter,
 } from './chats.js';
 import {
@@ -154,6 +155,7 @@ export const chatuiAdapter = Object.freeze({
     sidebarActions: Object.freeze({
         listCharacters,
         switchCharacter,
+        selectCharacterIfNobodyIsOnStage,
         listCharacterChats,
         getCurrentChatHeader,
         getCurrentChatIdentity,

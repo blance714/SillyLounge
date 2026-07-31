@@ -13,6 +13,7 @@ import {
     type CharacterSwitchStatus,
     type ChatSwitchStatus,
     getCharacters,
+    getCurrentCharacterId,
     getLiveCharacter,
     getStContext,
     stripChatExt,
@@ -127,6 +128,56 @@ export async function switchCharacter(avatar: string): Promise<CharacterSwitchSt
     if (String(getStContext().characterId) !== String(index)) return 'busy';
     persistStActiveCharacter(index);
     return 'ok';
+}
+
+/**
+ * Land on a character *only* if ST's boot stopped short of choosing anybody.
+ *
+ * `power_user.auto_load_chat` is **false** by default (power-user.js:335), and
+ * this repo's e2e fixture is the reason that was easy to miss — it forces the
+ * flag on (scripts/e2e/generate-data-root.mjs). On a stock install, the reload
+ * a current-chat delete forces comes back with no character selected at all,
+ * so the fallback file ST was supposed to materialize is never written, the
+ * draft-quarantine credential waits forever, and the reader is left standing
+ * in front of nothing with the transaction they started half-applied.
+ *
+ * Finishing it is this function's whole purpose, and the guard is what keeps it
+ * from being something else. It refuses the moment anybody already holds the
+ * stage — a group, or the character the reader's own `auto_load_chat` setting
+ * brought back — because in that case ST *did* express a preference and the
+ * pending credential's ordinary semantics ("if this file goes live, it is a
+ * draft") still apply, unchanged, whenever the reader walks over. Completing a
+ * transaction the reader committed to is not the same as overriding the
+ * autoload preference they chose, and this refusal is the difference.
+ *
+ * `characters` is fully loaded well before the only caller runs: ST awaits
+ * `getCharacters()` in `firstLoadInit` (script.js:757) many steps before it
+ * emits APP_READY (script.js:788). `notfound` is therefore a real absence
+ * (the card was deleted between the two page loads), not an early read.
+ *
+ * Persisting the landing mirrors every other selection that lands
+ * (persistStActiveCharacter): `active_character` is "who was last selected",
+ * not a preference, and we did just select them. A host that ignores
+ * `auto_load_chat` never reads it back, so this cannot smuggle autoload in.
+ */
+export async function selectCharacterIfNobodyIsOnStage(
+    avatar: string,
+): Promise<'selected' | 'occupied' | 'notfound' | 'refused'> {
+    if (typeof avatar !== 'string' || !avatar) return 'notfound';
+    const ctx = getStContext();
+    if (ctx.groupId) return 'occupied';
+    if (getCurrentCharacterId(ctx) !== null) return 'occupied';
+
+    const index = getCharacters(ctx).findIndex(character => character.avatar === avatar);
+    if (index < 0) return 'notfound';
+
+    await selectCharacterById(index);
+    // ST silently returns from selectCharacterById while a chat is saving, so
+    // the landing is confirmed rather than assumed — exactly as switchCharacter
+    // does, and for the same reason: never persist a selection that failed.
+    if (String(getStContext().characterId) !== String(index)) return 'refused';
+    persistStActiveCharacter(index);
+    return 'selected';
 }
 
 export async function openCharacterChatByName(fileName: string): Promise<void> {
