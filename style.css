@@ -2005,15 +2005,17 @@ body.chatui-active .cui-root-message-stage {
     );
 }
 
-/* Design §6 pt.4: a 30px fade mask over the seam where the message stream
-   meets the composer. It is a pseudo-element of the stage rather than of the
-   composer (where the 原型 anchors it, `top:-30px` on the composer's own
-   wrapper): our composer sits a real 0.75rem below the stage's bottom edge
-   (.cui-root-app's gap plus the composer's own margin-top — see the
-   .cui-root-scroll-bottom offset comment) rather than flush against it, so
-   only a mask anchored to the stage's own bottom edge actually overlaps the
-   scrolling content it is meant to fade. z-index sits below the floor rail
-   (6) and the scroll-bottom capsule (7) so it never dims either of those. */
+/* Design §6 pt.4: a 30px fade mask over the seam where the message stream stops
+   and the fixed bottom dock begins. It is a pseudo-element of the stage rather
+   than of the composer (where the 原型 anchors it, `top:-30px` on the composer's
+   own wrapper): our composer is never flush against the stage — at minimum
+   .cui-root-app's gap plus the composer's own margin-top separate them, and the
+   generate bar / QR strip / new-chat picker widen that distance whenever they
+   are on — so only a mask anchored to the stage's own bottom edge actually
+   overlaps the scrolling content it is meant to fade. The 回到最新 capsule is
+   anchored to that same edge for the same reason (see its offset comment).
+   z-index sits below the floor rail (6) and the scroll-bottom capsule (7) so it
+   never dims either of those. */
 body.chatui-active .cui-root-message-stage::after {
     content: "";
     position: absolute;
@@ -3132,17 +3134,35 @@ body.chatui-active .cui-root-scroll-bottom {
     position: absolute;
     left: 0;
     right: 0;
-    /* Design: ~23px of air between the capsule and the composer's own top
-       edge (原型's capsule sits at `top:-52px` inside a composer wrapper
-       whose own height puts that ~24px below the capsule's bottom). 12px of
-       that is already paid by the frame — .cui-root-app's 0.5rem column gap
-       plus the composer's own 0.25rem top margin — so this offset is the
-       remainder, not the whole distance. Verified unaffected by the
-       decoration row landing inside the composer (pr4 baton 3): that row's
-       own rule line sits well inside the composer's padding, but this
-       capsule was always measured to the composer's outer box, not to
-       whatever draws at its top edge — real Chromium measurement after
-       the row landed still reads ~23px, unchanged. */
+    /* Welded to the seam — the edge where the scrolling stream stops and the
+       fixed bottom dock (generate bar / QR strip / new-chat picker / composer,
+       whichever of them exist) begins. That edge is this element's containing
+       block's own bottom edge, and it is the same edge ::after hangs its fade
+       mask on, so the capsule and the fade it sits in can never drift apart.
+
+       The number: the design wants ~23px of air over the composer's top edge
+       (原型's capsule is `top:-52px` inside a composer wrapper whose own height
+       puts that ~24px below the capsule's bottom). 12px of that is already paid
+       by the frame — .cui-root-app's 0.5rem column gap plus the composer's
+       0.25rem top margin — so this offset is the remainder. Measured 23.18px in
+       Chromium when the composer is the *only* thing in the dock.
+
+       That last clause is load-bearing and used to be missing. This comment
+       read 「this capsule was always measured to the composer's outer box」 as
+       an unconditional claim, and a visual-QA pass duly read it as the contract
+       and filed the QR-strip screenshots as a positioning bug. It is not the
+       contract, and it is not what the code does. Measured at 390px with a
+       three-button QR strip in the dock: the capsule keeps exactly its 11.18px
+       to the seam (unchanged from the no-QR case, at every scroll offset and
+       every viewport) while the composer's top edge is 67.18px away, because
+       the strip and its gap sit in between. Nothing moved; the composer did.
+
+       The seam is the referent, not the composer, and it has to be: welding the
+       capsule 23px above the composer's outer box instead would place it at
+       656.0–683.9 against a QR strip occupying 659.0–695.0 — 25 of the
+       capsule's 27.9px would be lying on top of the quick-reply buttons. A
+       control that offers a scroll position belongs to the thing that scrolls,
+       not to the furniture underneath it. */
     bottom: 0.7rem;
     z-index: 7;
     width: fit-content;
