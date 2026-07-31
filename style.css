@@ -138,9 +138,29 @@
     --cui-font-title: calc(var(--cui-font-root) * 1.333);  /* 20px — conversation title */
 
     /* Tracking is a load-bearing part of this design, not a garnish: the
-       wide tiers are what make a bare label read as a caption or a stamp. */
+       wide tiers are what make a bare label read as a caption or a stamp.
+
+       --cui-tracking-title carried two unrelated jobs under one name. No
+       conversation title ever consumed it — the topbar title kept a bare
+       0.025em — while every real consumer was a small uppercase label or a
+       mono figure. The name promised one thing and served another, which is
+       how the title came to be the one element with no tracking token at all.
+       Split, so each is a decision of its own: -title is the conversation
+       title's (design §7 — 20px/700/.04em), -caption is the small-label tier
+       its old consumers actually wanted. Equal today, free to diverge. */
     --cui-tracking-title: 0.04em;
+    --cui-tracking-caption: 0.04em;
+    /* The mid tier the design reaches for whenever small type has to read as
+       an inscription rather than a word: speaker names (§4), the composer's
+       preset chip (§6), the confirm dialog's escalate link (§9). */
+    --cui-tracking-wide: 0.08em;
     --cui-tracking-btn: 0.12em;
+    /* -label has no consumer yet, and that is a statement rather than an
+       oversight: both places the design spends .16em on — the draft card's
+       「未完成草稿」 tag (§1) and the greeting picker's 「选 一 个 开 场」
+       heading (§5) — are components that do not exist here yet. Same standing
+       as --cui-color-spine: declared with its family so the tier is not
+       reinvented as a literal when the component lands. */
     --cui-tracking-label: 0.16em;
     --cui-tracking-stamp: 0.3em;
 
@@ -492,8 +512,10 @@ body.chatui-active .cui-root-topbar-title {
     margin: 0;
     font-family: var(--cui-font-display);
     font-size: var(--cui-font-title);
-    font-weight: 600;
-    letter-spacing: 0.025em;
+    /* Design §7: 20px / 700 / .04em. The size tier landed with the type scale;
+       the weight and tracking were still the pre-redesign literals. */
+    font-weight: 700;
+    letter-spacing: var(--cui-tracking-title);
     line-height: 1.28;
 }
 
@@ -766,7 +788,7 @@ body.chatui-active .cui-root-section-label {
     font-size: var(--cui-font-2xs);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: var(--cui-tracking-title);
+    letter-spacing: var(--cui-tracking-caption);
     opacity: 0.5;
 }
 
@@ -920,7 +942,7 @@ body.chatui-active .cui-root-draft-shelf-toggle {
     padding: 0.15rem 0.65rem;
     opacity: 0.62;
     font-size: var(--cui-font-xs);
-    letter-spacing: var(--cui-tracking-title);
+    letter-spacing: var(--cui-tracking-caption);
 }
 
 body.chatui-active .cui-root-draft-shelf-toggle:hover,
@@ -1487,7 +1509,7 @@ body.chatui-active .cui-root-floor-range-label {
     font-size: var(--cui-font-xs);
     font-variant-numeric: tabular-nums;
     font-weight: 500;
-    letter-spacing: var(--cui-tracking-title);
+    letter-spacing: var(--cui-tracking-caption);
     line-height: 1;
     opacity: 0;
     transition:
@@ -1565,7 +1587,7 @@ body.chatui-active .cui-root-floor-popover-number {
     font-size: var(--cui-font-xs);
     font-variant-numeric: tabular-nums;
     font-weight: 400;
-    letter-spacing: 0.08em;
+    letter-spacing: var(--cui-tracking-wide);
     line-height: 1;
     opacity: 0.58;
 }
@@ -1680,7 +1702,8 @@ body.chatui-active .cui-root-message-name {
     font-weight: 600;
     font-family: var(--cui-font-display);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
+    /* Design §4 puts the speaker name on the mid tracking tier. */
+    letter-spacing: var(--cui-tracking-wide);
 }
 
 body.chatui-active .cui-root-message-connector {
@@ -2781,7 +2804,7 @@ body.chatui-active .cui-picker-label {
     font-size: var(--cui-font-2xs);
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: var(--cui-tracking-title);
+    letter-spacing: var(--cui-tracking-caption);
     opacity: 0.5;
 }
 
