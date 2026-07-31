@@ -354,11 +354,14 @@ function init() {
     // APP_READY guarantees the replacement chat is now reconstructed.
     void finalizePendingCharacterChatDeletion();
     // Same reload, second handoff: if that delete emptied the character's
-    // whole history, ST's boot just materialized a fallback file this
-    // session (not settings.enabled) needs to fold into the draft quarantine
-    // regardless of whether the ChatUI UI is currently on — see
-    // sidebar-actions.ts's finalizeChatuiDraftQuarantine doc comment.
-    void finalizeChatuiDraftQuarantine();
+    // whole history, ST's boot is materializing a fallback file this session
+    // (not settings.enabled) needs to fold into the draft quarantine
+    // regardless of whether the ChatUI UI is currently on. Deliberately not
+    // "has materialized": that file lands *after* APP_READY on a chain this
+    // event does not wait for, so the call below arms and watches rather than
+    // checks — see sidebar-actions.ts's finalizeChatuiDraftQuarantine doc
+    // comment.
+    finalizeChatuiDraftQuarantine();
 }
 
 // autoFireAfterEmit — APP_READY re-emits to late subscribers, so this is safe.

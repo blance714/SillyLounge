@@ -45,5 +45,6 @@ export {
     queueCurrentCharacterChatDeletionFinalization,
     finalizePendingCharacterChatDeletion,
     queueCharacterChatDraftQuarantine,
-    takePendingCharacterChatDraftQuarantine,
+    armPendingCharacterChatDraftQuarantine,
+    resolvePendingCharacterChatDraftQuarantine,
 } from './chats/deletion-finalization.js';

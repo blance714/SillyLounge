@@ -1475,30 +1475,48 @@ test('deleting the current chat rolls the pointer back and abandons the delete w
         host.state.setChatSaving(false);
     }
 });
-
 // =======================================================================
 // deletion-finalization.js — the draft-quarantine handoff
-// (queueCharacterChatDraftQuarantine / takePendingCharacterChatDraftQuarantine).
+// (queueCharacterChatDraftQuarantine / armPendingCharacterChatDraftQuarantine
+// / resolvePendingCharacterChatDraftQuarantine).
 //
 // sidebar-actions.ts queues this tombstone right before the mandatory reload
 // that follows deleting a character's last chat (delete-transaction.js's
-// `fallbackChatFileName`). Nothing in this pair touches the temp-chat
+// `fallbackChatFileName`). Nothing in this trio touches the temp-chat
 // quarantine store directly (that would violate the adapter/store layering
-// boundary) — it only confirms, on the next boot, that the fallback file is
-// both real (ST's boot materialized it) and still this character's actual
-// current chat, then hands the bare pointer back for sidebar-actions.ts to
-// commit. Each assertion below also checks host.sessionStorage.length as a
-// black-box proxy for "is the tombstone still queued" — this module owns
-// exactly one sessionStorage key, so nothing else in these tests touches it.
+// boundary) — it arms the intent for one page load and then, whenever asked,
+// reports whether the fabricated fallback name is the live current chat *now*,
+// handing the bare pointer back for sidebar-actions.ts to commit.
+//
+// The timing these tests reproduce is the real one, and it is the reason this
+// handoff was rewritten: ST materializes the fallback file on a chain APP_READY
+// does not wait for, so at the moment ChatUI boots, that file is neither on
+// disk nor the live chat yet. Every test below therefore starts from "the
+// character's current chat is not ours" and only then lets ST's boot land —
+// the shape the previous implementation could not survive, because it read the
+// chat directory once at APP_READY and destroyed the tombstone when (always)
+// the file was not there yet. `host.fetch.calls.length` is asserted throughout:
+// this handoff must now make no request at all, since ST's own await ordering
+// (getChatResult() awaits saveChatConditional() before emitting CHAT_CHANGED)
+// already proves the file exists by the time it can be current. Each assertion
+// also checks host.sessionStorage.length as a black-box proxy for "is the
+// tombstone still queued" — this module owns exactly one sessionStorage key,
+// so nothing else in these tests touches it.
 // =======================================================================
 
-test('takePendingCharacterChatDraftQuarantine resolves null and touches nothing when no tombstone was queued', async () => {
+/** ST's boot landing on a character's chat: what getCurrentChatIdentity() reads. */
+function liveChat(host, { characterId = 0, sessionName }) {
+    host.context.characterId = characterId;
+    host.registry.getCurrentChatDetails = () => ({ sessionName });
+}
+
+test('armPendingCharacterChatDraftQuarantine resolves null and touches nothing when no tombstone was queued', async () => {
     const host = await createFakeStHost();
     try {
         configureBaseHost(host, { avatar: 'bob.png' });
         const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
 
-        const result = await finalization.takePendingCharacterChatDraftQuarantine();
+        const result = finalization.armPendingCharacterChatDraftQuarantine();
 
         assert.equal(result, null);
         assert.equal(host.fetch.calls.length, 0);
@@ -1523,98 +1541,132 @@ test('queueCharacterChatDraftQuarantine with a missing avatar or filename is a n
     }
 });
 
-test('the draft-quarantine tombstone resolves the fallback pointer once the file is confirmed live and still the current chat, and clears itself', async () => {
+test('the draft-quarantine tombstone waits through the boot in which ST has not yet loaded the fallback file, then resolves the moment it becomes the live chat — without ever reading the chat directory', async () => {
     const host = await createFakeStHost();
     try {
         configureBaseHost(host, { avatar: 'bob.png' });
-        host.context.characterId = 0;
-        host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
-
-        const router = createRouter(host);
-        router.queue('/api/characters/chats', rawListing('Bob - 2026-01-01 @00h00'));
-
         const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+
         finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
         assert.equal(host.sessionStorage.length, 1, 'queueing must persist the tombstone immediately');
 
-        const result = await finalization.takePendingCharacterChatDraftQuarantine();
+        // The real boot: ChatUI's APP_READY handler runs while ST's
+        // fire-and-forget autoload chain is still in flight, so no character
+        // chat is live yet and the fallback file is not on the server either.
+        liveChat(host, { characterId: undefined, sessionName: '' });
 
-        assert.deepEqual(result, { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' });
-        assert.equal(host.sessionStorage.length, 0, 'a resolved tombstone must not linger for a later boot to misfire on');
+        assert.deepEqual(
+            finalization.armPendingCharacterChatDraftQuarantine(),
+            { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' },
+            'the first boot after the delete owns this intent',
+        );
+        assert.deepEqual(
+            finalization.resolvePendingCharacterChatDraftQuarantine(),
+            { status: 'waiting' },
+            'the fallback file is not live yet — this is not the moment, and the intent must survive it',
+        );
+        assert.equal(host.sessionStorage.length, 1);
+
+        // ST's autoload finishes: getChatResult() saved the file and only then
+        // emitted CHAT_CHANGED, which is when this gets asked again.
+        liveChat(host, { characterId: 0, sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+
+        assert.deepEqual(
+            finalization.resolvePendingCharacterChatDraftQuarantine(),
+            { status: 'quarantine', pointer: { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' } },
+        );
+        assert.equal(host.sessionStorage.length, 0,
+            'a consumed tombstone must not linger for a later boot to misfire on');
+        assert.deepEqual(
+            finalization.resolvePendingCharacterChatDraftQuarantine(),
+            { status: 'settled' },
+            're-entry after the commit must report there is nothing left to watch for',
+        );
+        assert.equal(host.fetch.calls.length, 0,
+            'the whole handoff must be request-free: the file being live already implies it is saved');
     } finally {
         await host.dispose();
     }
 });
 
-test('the draft-quarantine tombstone resolves null and clears itself when the fallback file was never materialized', async () => {
+test('the draft-quarantine tombstone keeps waiting while an unrelated chat holds the live slot, and never quarantines it', async () => {
     const host = await createFakeStHost();
     try {
         configureBaseHost(host, { avatar: 'bob.png' });
-        host.context.characterId = 0;
-        // No live chat at all yet — ST's boot has not materialized the
-        // fallback file, so the raw listing must not show it either.
-        host.registry.getCurrentChatDetails = () => ({ sessionName: '' });
-
-        const router = createRouter(host);
-        router.queue('/api/characters/chats', rawListing());
-
         const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+
         finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+        finalization.armPendingCharacterChatDraftQuarantine();
 
-        const result = await finalization.takePendingCharacterChatDraftQuarantine();
+        // Whoever ST's boot came back on this time, it is not our fallback
+        // file: a different chat of the same character…
+        liveChat(host, { characterId: 0, sessionName: 'chat-elsewhere.jsonl' });
+        assert.deepEqual(finalization.resolvePendingCharacterChatDraftQuarantine(), { status: 'waiting' });
+        assert.equal(host.sessionStorage.length, 1);
 
-        assert.equal(result, null);
-        assert.equal(host.sessionStorage.length, 0);
-    } finally {
-        await host.dispose();
-    }
-});
-
-test('the draft-quarantine tombstone resolves null and clears itself when a different chat is now current, without quarantining the wrong file', async () => {
-    const host = await createFakeStHost();
-    try {
-        configureBaseHost(host, { avatar: 'bob.png' });
-        host.context.characterId = 0;
-        // The file exists (ST's boot did materialize it), but something else
-        // — another navigation, another tab — moved the live chat on before
-        // this boot's finalization ran.
-        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-elsewhere.jsonl' });
-
-        const router = createRouter(host);
-        router.queue('/api/characters/chats', rawListing('Bob - 2026-01-01 @00h00', 'chat-elsewhere'));
-
-        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
-        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
-
-        const result = await finalization.takePendingCharacterChatDraftQuarantine();
-
-        assert.equal(result, null);
-        assert.equal(host.sessionStorage.length, 0);
-    } finally {
-        await host.dispose();
-    }
-});
-
-test('the draft-quarantine tombstone survives a transient read failure and resolves once a later boot can verify it', async () => {
-    const host = await createFakeStHost();
-    try {
-        configureBaseHost(host, { avatar: 'bob.png' });
-        host.context.characterId = 0;
-        host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
-
-        const router = createRouter(host);
-        router.queue('/api/characters/chats', networkThrow(), rawListing('Bob - 2026-01-01 @00h00'));
-
-        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
-        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
-
-        const failed = await finalization.takePendingCharacterChatDraftQuarantine();
-        assert.equal(failed, null);
+        // …and then another character entirely.
+        host.context.characters = [
+            { avatar: 'bob.png', name: 'Bob', chat: 'chat-elsewhere.jsonl' },
+            { avatar: 'ann.png', name: 'Ann', chat: 'Bob - 2026-01-01 @00h00.jsonl' },
+        ];
+        liveChat(host, { characterId: 1, sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+        assert.deepEqual(
+            finalization.resolvePendingCharacterChatDraftQuarantine(),
+            { status: 'waiting' },
+            'a same-named file under a different character is a different file and must never be adopted',
+        );
         assert.equal(host.sessionStorage.length, 1,
-            'a transient read failure must keep the tombstone queued for a later boot, not drop a target that may still need quarantining');
+            'the intent outlives a boot that landed elsewhere: the fallback file may still go live later');
 
-        const retried = await finalization.takePendingCharacterChatDraftQuarantine();
-        assert.deepEqual(retried, { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' });
+        // The reader finally opens the character the delete emptied.
+        liveChat(host, { characterId: 0, sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+        assert.deepEqual(
+            finalization.resolvePendingCharacterChatDraftQuarantine(),
+            { status: 'quarantine', pointer: { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' } },
+        );
+        assert.equal(host.fetch.calls.length, 0);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a draft-quarantine tombstone the previous page load already armed is expired by the next boot instead of dangling', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+        assert.ok(finalization.armPendingCharacterChatDraftQuarantine(), 'boot 1 claims the intent');
+        liveChat(host, { characterId: 0, sessionName: 'chat-elsewhere.jsonl' });
+        assert.deepEqual(finalization.resolvePendingCharacterChatDraftQuarantine(), { status: 'waiting' });
+        assert.equal(host.sessionStorage.length, 1, 'boot 1 ends with the intent still queued');
+
+        // Boot 2 — the reader reloaded again without ever landing on the
+        // fallback file. By now that file has been listed as ordinary history
+        // for a whole page load; adopting it retroactively would be a surprise.
+        assert.equal(finalization.armPendingCharacterChatDraftQuarantine(), null);
+        assert.equal(host.sessionStorage.length, 0, 'the expired intent must not survive into a third boot');
+        assert.deepEqual(finalization.resolvePendingCharacterChatDraftQuarantine(), { status: 'settled' });
+        assert.equal(host.fetch.calls.length, 0);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('resolvePendingCharacterChatDraftQuarantine reports settled without reading the live chat when no tombstone is queued', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png' });
+        // Left unconfigured on purpose: a settled tombstone must short-circuit
+        // before it can call this at all (the stub throws if it does).
+        host.registry.getCurrentChatDetails = () => {
+            throw new Error('getCurrentChatDetails must not be consulted with nothing queued');
+        };
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+
+        assert.deepEqual(finalization.resolvePendingCharacterChatDraftQuarantine(), { status: 'settled' });
+        assert.equal(host.fetch.calls.length, 0);
         assert.equal(host.sessionStorage.length, 0);
     } finally {
         await host.dispose();
