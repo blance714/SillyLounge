@@ -313,13 +313,21 @@ pr5 把一个动作拆成两个:「复制」= 这一行真正渲染出来的文�
 
 ### D · 交互状态机与可访问性
 
-**D1 菜单互斥与翻转都没有实现。**
+**D1 菜单互斥还没有实现(翻转已落地)。**
 `DESIGN.md` §6 要「打开任一菜单关闭其余;浮层向下打开为默认,空间不足时才翻转,
-且不得被根容器裁切」。现状是三套各自为政的开合:topbar ⋯ 用 `<details>`,消息 ⋯
-用 `useState` + 一次性 rect 快照 portal,＋菜单/选择器各自 `useState`;没有共享的
-`activeMenuId`,也没有任何 flip-up 逻辑。落点:一个极小的 `activeMenuId` store
-(照 `ui-store.ts` 的既有先例)+ 一个「测得下就向下、测不下才翻」的纯函数(和
-`floor-rail-math.ts` 同一档,可单测)。
+且不得被根容器裁切」。这两半已经分开处理:
+
+- **翻转:已完成。**`src/ui/menu-placement.ts` 是那个「测得下就向下、测不下才翻」
+  的纯函数(和 `floor-rail-math.ts` 同一档),消息 ⋯ 菜单已接入,九条单测见
+  `INVARIANTS.md` §9。它先按行数估高只用于*判方向*,两个方向的偏移都锚在实测到
+  的触发钮边沿上——估高绝不进入几何,所以估错只会换个方向,不会让菜单脱离按钮。
+  其余三处浮层(topbar ⋯、＋菜单、选择器)还没接同一个函数。
+- **互斥:未做。**现状是三套各自为政的开合:topbar ⋯ 用 `<details>`,消息 ⋯ 用
+  `useState` + 一次性 rect 快照 portal,＋菜单/选择器各自 `useState`;没有共享的
+  `activeMenuId`。落点:一个极小的 `activeMenuId` store(照 `ui-store.ts` 的既有
+  先例)。**落点描述要把 `<details>` 一起收进去**:`TopbarMenu.tsx:49` 用的是原生
+  `<details>`,没有 keydown 也没有外部点击关闭,Escape 完全无效,只能再点一次
+  summary——只覆盖那几个 `useState` 菜单会把它漏在外面。
 
 **D2 ConfirmDialog 缺焦点陷阱。**
 键盘模型已按 §6 落地(焦点在确认钮、300ms 内吞 Enter/Space、Esc 取消、同一次按键
