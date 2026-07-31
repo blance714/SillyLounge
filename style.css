@@ -1883,11 +1883,28 @@ body.chatui-active .cui-root-message-connector {
     background: linear-gradient(to right, var(--cui-rule-structure), var(--cui-rule-faint));
 }
 
+/* The header's third part: one stamp, set tight, so 「第 N 楼 · 时间」 reads as
+   a single phrase instead of inheriting the header row's wide gap between its
+   own pieces. The separator belongs between the two spans rather than inside
+   either, so it is drawn rather than typed. */
+body.chatui-active .cui-root-message-stamp {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3em;
+    flex-shrink: 0;
+}
+
+body.chatui-active .cui-root-message-floor,
 body.chatui-active .cui-root-message-time,
 body.chatui-active .cui-root-message-swipe {
     flex-shrink: 0;
     font-size: var(--cui-font-2xs);
     opacity: 0.75;
+}
+
+body.chatui-active .cui-root-message-floor + .cui-root-message-time::before {
+    content: "·";
+    margin-right: 0.3em;
 }
 
 body.chatui-active .cui-root-message-body {
