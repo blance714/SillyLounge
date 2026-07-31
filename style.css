@@ -161,6 +161,21 @@
        aesthetic identity. */
     --cui-color-danger: #d47a6a;
     --cui-color-danger-hover: #a04a38;
+    /* The saturated cinnabar this palette dropped when the solid confirm
+       button went away. It comes back for the one job it has no contrast
+       problem doing: a wash *under* an icon, never a label color on top of
+       one. Kept separate from --cui-color-danger so nobody can reach for it
+       as ink by mistake. */
+    --cui-color-danger-wash: #d43a2f;
+
+    /* The two washes the design paints under a hovered icon button: warm for
+       the ordinary ones, cinnabar for the destructive one (§42, and again
+       under the playbill card's action dock §1). Whole colors rather than
+       members of the --cui-tint-* percentage scale below, because that scale
+       mixes toward the *text* color while these mix toward a specific ink —
+       the same reason the paper surface names its tints as colors. */
+    --cui-wash-accent: color-mix(in srgb, var(--cui-color-accent) 11%, transparent);
+    --cui-wash-danger: color-mix(in srgb, var(--cui-color-danger-wash) 16%, transparent);
     --cui-color-success: #3fa45b;
     --cui-color-info: var(--cui-color-accent, var(--cui-color-border));
 
@@ -272,6 +287,13 @@
        once here instead of eleven times downstream. */
     --cui-outline-faint: var(--interactable-outline-color-faint, var(--cui-rule-accent));
     --cui-motion-base: var(--animation-duration-2x, 0.2s);
+
+    /* The design reveals three things on hover — the message action bar (§42),
+       the card action dock (§1) and the title's rename pencil (§7) — and gives
+       all three the same .15s (§92). Deliberately not --cui-motion-base and
+       deliberately not the host's: this is something surfacing under the
+       cursor, which has to feel like it was already there. */
+    --cui-motion-reveal: 0.15s;
 
     /* Radius scale. The design corners much tighter than the old scale did:
        paper is nearly square, controls take a small round, and only the dark
@@ -2475,13 +2497,17 @@ body.chatui-active .cui-root-file-open {
     font-size: var(--cui-font-tight);
 }
 
+/* Design §42. The bar is a fixed 24px band of 24x24 icon buttons that only
+   exists while you are reading this message — it fades in rather than shifting
+   anything, so the column never reflows under the cursor. */
 body.chatui-active .cui-root-message-actions {
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    height: 24px;
     margin-top: 0.2rem;
     opacity: 0;
-    transition: opacity var(--cui-motion-base);
+    transition: opacity var(--cui-motion-reveal);
 }
 
 body.chatui-active .cui-root-message:hover .cui-root-message-actions,
@@ -2489,28 +2515,44 @@ body.chatui-active .cui-root-message:focus-within .cui-root-message-actions {
     opacity: 1;
 }
 
+/* A button at rest is drawn in thinned ink rather than dimmed as a whole: the
+   design's own `rgba(232,223,206,.6)`, which is the text color at 60%. Opacity
+   would take the hover wash down with it once one is painted underneath. */
 body.chatui-active .cui-root-action-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.8rem;
-    height: 1.65rem;
-    border: 1px solid transparent;
+    box-sizing: border-box;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
     border-radius: var(--cui-radius-sm);
     background: none;
-    color: var(--cui-color-text);
+    color: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
     cursor: pointer;
-    opacity: 0.68;
-    padding: 0 0.45rem;
-    font-size: var(--cui-font-menu);
+    font-size: var(--cui-font-sm);
     line-height: 1;
+}
+
+/* The ⋯ glyph is drawn one step larger than the rest so three dots read as
+   heavy as a single icon. */
+body.chatui-active .cui-root-menu-trigger {
+    font-size: var(--cui-font-tight);
 }
 
 body.chatui-active .cui-root-action-btn:hover,
 body.chatui-active .cui-root-action-btn:focus-visible {
-    opacity: 1;
-    border-color: var(--cui-color-border);
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    background-color: var(--cui-wash-accent);
+    color: var(--cui-color-text);
+}
+
+/* Delete is the one tile that answers in red — same wash/ink pair the design
+   gives every destructive icon button. */
+body.chatui-active .cui-root-action-btn.is-danger:hover,
+body.chatui-active .cui-root-action-btn.is-danger:focus-visible {
+    background-color: var(--cui-wash-danger);
+    color: var(--cui-color-danger);
 }
 
 body.chatui-active .cui-root-action-btn:focus-visible {
