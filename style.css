@@ -2180,23 +2180,32 @@ body.chatui-active .cui-embed-frame {
 body.chatui-active .cui-root-edit {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    /* Design §4.4's own rhythm for this block: header-to-textarea is the
+       message's usual 10px (inherited for free from .cui-root-message's own
+       gap, since .cui-root-edit sits where the reasoning/body/actions stack
+       normally would); textarea-to-actions is a tighter 8px local to the
+       editor itself. */
+    gap: 0.5rem;
     width: 100%;
 }
 
+/* README §44: a soft ink-wash box, no border — the textarea reads as paper
+   set into the page rather than a form control bolted onto it. The
+   background is a one-off literal because it names its own value (README's
+   `rgba(35,32,26,.65)`) rather than a fraction of an existing surface token. */
 body.chatui-active .cui-root-edit-textarea {
     width: 100%;
-    min-height: 8rem;
+    min-height: 5.625rem;
     box-sizing: border-box;
     resize: vertical;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-md);
-    background-color: color-mix(in srgb, var(--cui-color-surface) 80%, transparent);
+    border: none;
+    border-radius: 4px;
+    background-color: rgba(35, 32, 26, 0.65);
     color: var(--cui-color-text);
     font-family: var(--cui-font-body);
     font-size: var(--cui-font-base);
-    line-height: 1.45;
-    padding: 0.65rem 0.75rem;
+    line-height: 1.9;
+    padding: 0.625rem 0.75rem;
 }
 
 body.chatui-active .cui-root-edit-textarea:focus {
@@ -2206,28 +2215,42 @@ body.chatui-active .cui-root-edit-textarea:focus {
 body.chatui-active .cui-root-edit-actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem;
+    gap: 0.5rem;
 }
 
+/* The ⌘Enter/Esc reminder sits at the row's leading edge; the two buttons
+   ride the trailing edge via the first button's auto margin (README §44
+   shows hint-left, buttons-right, not a three-way space-between). */
+body.chatui-active .cui-root-edit-hint {
+    font-size: var(--cui-font-xs);
+    color: color-mix(in srgb, var(--cui-color-text) 35%, transparent);
+}
+
+/* Both buttons are ink on paper, not chrome: no fill, no border box — a
+   dashed underline is the only affordance, same family as the topbar's
+   rename-confirm and the generate bar's brass. */
 body.chatui-active .cui-root-edit-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 1.85rem;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-sm);
+    margin-left: auto;
+    border: none;
+    border-bottom: 1px dashed transparent;
     background: none;
-    color: var(--cui-color-text);
+    padding: 0.25rem 0.5rem;
     cursor: pointer;
-    font-family: var(--cui-font-family);
+    font-family: var(--cui-font-body);
     font-size: var(--cui-font-tight);
-    padding: 0 0.6rem;
+    letter-spacing: var(--cui-tracking-btn);
+    color: color-mix(in srgb, var(--cui-color-text) 55%, transparent);
+}
+
+/* Only the row's first button (Cancel) needs to reach across the free space;
+   its neighbor (Save) just rides the row's own 8px gap after it. */
+body.chatui-active .cui-root-edit-btn + .cui-root-edit-btn {
+    margin-left: 0;
 }
 
 body.chatui-active .cui-root-edit-btn:hover,
 body.chatui-active .cui-root-edit-btn:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 10%, transparent);
+    color: color-mix(in srgb, var(--cui-color-text) 85%, transparent);
 }
 
 body.chatui-active .cui-root-edit-btn:disabled {
@@ -2235,8 +2258,19 @@ body.chatui-active .cui-root-edit-btn:disabled {
     opacity: 0.55;
 }
 
+/* Save is the only committing action in this row, so it is the only one
+   written in the accent hand — same gold ink as the composer's own "next
+   line" cues, dashed underline at rest, solid gold underline on hover. */
 body.chatui-active .cui-root-edit-save {
-    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
+    color: var(--cui-color-accent);
+    font-weight: 600;
+    border-bottom-color: color-mix(in srgb, var(--cui-color-user-mark) 55%, transparent);
+}
+
+body.chatui-active .cui-root-edit-save:hover,
+body.chatui-active .cui-root-edit-save:focus-visible {
+    color: var(--cui-color-accent-hover);
+    border-bottom-color: var(--cui-color-accent);
 }
 
 body.chatui-active .cui-root-code-copy {
