@@ -343,10 +343,9 @@ test("a boot that lands on nobody finishes the delete transaction itself: ChatUI
         };
 
         sidebarActions.finalizeChatuiDraftQuarantine();
+        // The landing is a host mutation on the shared serialized lane, so the
+        // lane's own idle boundary is all this needs (see the lane test below).
         await sidebarActions.waitForChatuiSidebarActionsIdle();
-        // The landing runs outside the host queue (it is boot work, not a user
-        // mutation), so drain the microtask chain it lives on.
-        await new Promise(resolve => setImmediate(resolve));
 
         assert.deepEqual(selections, [1],
             'the credential names Bob, so Bob is who the transaction is finished on');
@@ -413,6 +412,80 @@ test('a boot that landed on somebody else is never overridden: the credential si
             tempChatStore.getTempChat(),
             { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' },
         );
+    } finally {
+        await host.dispose();
+    }
+});
+
+test("the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it", async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl', chat_size: 1, date_last_chat: 0, fav: false },
+            { avatar: 'bob.png', name: 'Bob', chat: 'Bob - 2026-01-01 @00h00.jsonl', chat_size: 0, date_last_chat: 0, fav: false },
+        ];
+        host.fetch.setHandler(() => {
+            throw new Error('the boot half of the draft-quarantine handoff must issue no request');
+        });
+
+        const finalization = await host.importModule('adapter/chats/deletion-finalization.js');
+        const hostQueue = await host.importModule('store/host-operation-queue.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+
+        finalization.queueCharacterChatDraftQuarantine('bob.png', 'Bob - 2026-01-01 @00h00');
+        liveChat(host, null);
+        host.context.groupId = undefined;
+
+        const order = [];
+        host.registry.setActiveCharacter = () => {};
+        host.registry.setActiveGroup = () => {};
+        host.registry.saveSettingsDebounced = () => {};
+        host.registry.selectCharacterById = async (index) => {
+            order.push('landing');
+            host.context.characterId = index;
+            host.registry.getCurrentChatDetails = () => ({ sessionName: 'Bob - 2026-01-01 @00h00.jsonl' });
+            await host.eventSource.emit('CHAT_CHANGED', 'Bob - 2026-01-01 @00h00');
+        };
+
+        // Something is already inside ST when the boot handoff runs — the same
+        // shape as the reader's first click landing in the few hundred ms this
+        // handoff lives in.
+        let releaseEarlierWork = () => {};
+        const earlierWork = new Promise(resolve => { releaseEarlierWork = resolve; });
+        void hostQueue.enqueueHostTask(async () => {
+            order.push('earlier-host-work');
+            await earlierWork;
+            order.push('earlier-host-work-done');
+        });
+
+        sidebarActions.finalizeChatuiDraftQuarantine();
+        await new Promise(resolve => setImmediate(resolve));
+
+        assert.deepEqual(
+            order,
+            ['earlier-host-work'],
+            'selectCharacterById mutates the one live chat context: it must wait its turn like every other '
+            + 'host mutation, not run beside whatever is already in there',
+        );
+        assert.equal(
+            host.eventSource.listenerCount('CHAT_CHANGED'),
+            1,
+            'and the watch that resolves the credential is already registered while the landing queues, '
+            + 'because the CHAT_CHANGED it needs is emitted from inside the landing itself',
+        );
+
+        releaseEarlierWork();
+        await sidebarActions.waitForChatuiSidebarActionsIdle();
+
+        assert.deepEqual(order, ['earlier-host-work', 'earlier-host-work-done', 'landing']);
+        assert.deepEqual(
+            tempChatStore.getTempChat(),
+            { avatar: 'bob.png', fileName: 'Bob - 2026-01-01 @00h00' },
+            'and queueing costs the handoff nothing: the fallback file still lands in quarantine',
+        );
+        assert.equal(host.sessionStorage.length, 0, 'the credential is consumed');
     } finally {
         await host.dispose();
     }

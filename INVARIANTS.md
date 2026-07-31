@@ -163,6 +163,15 @@ ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本
 （`adapter/chats/navigation.ts` 的 `selectCharacterIfNobodyIsOnStage`），凭证按既有
 语义继续等待。每次页面加载至多一次（认领盖章天然保证），落不下去不重试、不弹 toast。
 
+这一次落地和本模块其它宿主变更一样走**共享串行通道**（`enqueueHostTask`）：
+`selectCharacterById` 动的就是那个唯一的实时会话上下文，「它是启动工作」不构成豁免。
+启动时通道本就可用（模块级状态在求值时已是「空闲尾 + epoch 0 + 未封印」），而唯一会
+让入队时捕获的 epoch 作废的 `resetHostOperationQueueLifecycle` 只有 UI 拆卸与终局刷新
+封印两个调用方——`index.ts` 紧接着做的挂载不是其中之一，所以挂载不会取消这次落地；
+读者在这几百毫秒里关掉 ChatUI 则**会**取消它，而那正是应有的结果（不入队的旧写法会
+在扩展已经关掉之后仍替他选中一个角色）。入队只可能推迟、不可能提前这次调用，所以
+「CHAT_CHANGED 监听必须先于落地注册」这条时序约束只会更牢。
+
 凭证因此在不匹配时**保留**而不是销毁——它的语义是「这个文件名若成为当前对话即隔离」，
 一次落在别的角色/别的对话上并不是反证。有界性不靠任何时间常数：`sessionStorage` 本身
 已把它限定在本标签页内，`armPendingCharacterChatDraftQuarantine` 再给「拥有它的那一次
@@ -187,6 +196,7 @@ ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本
 | 角色卡已不存在、或 ST 拒绝这次选择时如实上报且不持久化，绝不假定落地 | `test/adapter-chats.test.mjs :: a pending chat transaction whose character is gone, or whose selection ST refuses, reports it and persists nothing` |
 | 空台启动时事务收尾走完全程：选上角色 → ST 写出兜底文件并发 CHAT_CHANGED → 折进隔离集、凭证消费、监听注销 | `test/sidebar-actions.test.mjs :: a boot that lands on nobody finishes the delete transaction itself: ChatUI selects the credential's character and the fallback file lands in quarantine` |
 | 启动落在别的角色上时绝不改动，凭证继续等待；读者之后走到该角色仍照常兑现 | `test/sidebar-actions.test.mjs :: a boot that landed on somebody else is never overridden: the credential simply keeps waiting` |
+| 这次落地走共享串行通道：通道里已有宿主工作时必须排队等它做完才进 ST，且排队期间 CHAT_CHANGED 监听已经注册（解析凭证的那个事件正是从落地内部发出的），入队不影响兑现 | `test/sidebar-actions.test.mjs :: the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it` |
 
 pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时
 选择（`this_chid`）；ST 把持久化的 `active_character` 写在自己

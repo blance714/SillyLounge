@@ -498,6 +498,29 @@ export function getChatuiPendingDraftQuarantineCharacter(): string | null {
  * is not retried and never toasts — the credential simply keeps its ordinary
  * meaning and the reader can now walk to the character by hand, because the
  * spine shows it (ui/spine-cast.ts).
+ *
+ * Runs on the shared serialized lane like every other host mutation in this
+ * module — `selectCharacterById` mutates the one live chat context, so being
+ * boot work earns it no exemption. Three things make the lane usable this
+ * early, and all three are worth stating because the alternative was a
+ * fire-and-forget call that could interleave with the reader's first click:
+ *
+ * 1. The lane needs no initialization. Its state is module-level and already
+ *    correct at evaluation time (an idle tail, epoch 0, unsealed), so a boot
+ *    enqueue is served on the very next microtask.
+ * 2. The epoch it captures is still current when it runs. Only
+ *    `resetHostOperationQueueLifecycle` moves it, and the only callers are the
+ *    UI teardown (store/composer-draft-store.ts's reset, from app.tsx) and the
+ *    terminal reload seal. Mounting the root does neither, so the mount that
+ *    `index.ts` performs right after this cannot cancel the landing. A
+ *    teardown *would* cancel it — correctly: a reader who switched ChatUI off
+ *    in that window must not have a character selected for them afterwards,
+ *    which is exactly what the un-queued version did.
+ * 3. Queueing can only delay this call, never advance it, so the one ordering
+ *    constraint the handoff has — the CHAT_CHANGED watch is registered before
+ *    the landing, because the event that resolves the credential is emitted
+ *    from inside `selectCharacterById` — is strengthened rather than lost. The
+ *    watch is registered synchronously below, before this is enqueued.
  */
 async function _completePendingChatTransactionLanding(avatar: string): Promise<void> {
     try {
@@ -533,9 +556,10 @@ async function _completePendingChatTransactionLanding(avatar: string): Promise<v
  * finishes the transaction itself rather than waiting for a signal a stock
  * (auto_load_chat: false) host will never send — see
  * `_completePendingChatTransactionLanding` above for why that is a completion
- * and not a preference override. The watch is registered *before* the landing
- * is attempted, because the CHAT_CHANGED that resolves the credential is
- * emitted from inside that very call.
+ * and not a preference override, and why it goes through the shared host lane.
+ * The watch is registered *before* the landing is enqueued, because the
+ * CHAT_CHANGED that resolves the credential is emitted from inside that very
+ * call.
  *
  * @returns {void}
  */
@@ -559,7 +583,7 @@ export function finalizeChatuiDraftQuarantine(): void {
         stopWatching = null;
     });
 
-    void _completePendingChatTransactionLanding(pending.avatar);
+    void enqueueHostTask(() => _completePendingChatTransactionLanding(pending.avatar));
 }
 
 /**
