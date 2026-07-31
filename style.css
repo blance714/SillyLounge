@@ -1342,11 +1342,23 @@ body.chatui-active .cui-root-playbill-card-binding {
     pointer-events: none;
 }
 
+/* The 52px on the right is the action dock's reserved footprint, held on every
+   viewport rather than only on touch. The prototype floats the dock over the
+   card because its titles are short names like 「初雪之夜」, which it can never
+   reach; ST's real filenames are 「角色名 - 时间戳」, and the tail the dock
+   covers is exactly the part that tells two nights apart. Reserving the space
+   costs one line-break position and keeps the title readable while the dock is
+   up; dimming the dock instead would have kept the collision and made the
+   actions harder to read on the way. Reserved on the whole body, not just the
+   title, because the dock's width depends on how many actions a card has (two
+   on a conversation, one on a draft) and a per-variant reserve would be two
+   numbers to keep in sync with the same dock. */
 body.chatui-active .cui-root-playbill-card-body {
     display: flex;
     flex-direction: column;
     min-width: 0;
     margin-left: 16px;
+    padding-right: 52px;
 }
 
 body.chatui-active .cui-root-playbill-card-meta {
@@ -1534,22 +1546,13 @@ body.chatui-active .cui-root-playbill-card-act-danger:focus-visible {
 }
 
 /* Touch has no hover, and a dock nobody can reveal is a dock nobody has — so
-   on a phone it is simply always there. That makes it part of the layout
-   rather than something that floats over it for a moment, which is why the
-   card body reserves its footprint here: an always-on dock sitting on top of
-   the title's first line would otherwise cover exactly the words that tell
-   two nights apart. Reserved on the whole body, not just the title, because
-   the dock's width depends on how many actions a card has (two on a
-   conversation, one on a draft) and a per-variant reserve would be two
-   numbers to keep in sync with the same dock. */
+   on a phone it is simply always there. Its footprint is already reserved on
+   every viewport (see .cui-root-playbill-card-body above), so nothing else
+   changes here. */
 @media (max-width: 768px) {
     body.chatui-active .cui-root-playbill-card-dock {
         opacity: 1;
         pointer-events: auto;
-    }
-
-    body.chatui-active .cui-root-playbill-card-body {
-        padding-right: 52px;
     }
 }
 
