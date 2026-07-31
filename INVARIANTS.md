@@ -85,6 +85,8 @@
 | 目录读取失败绝不冒充「文件不存在」：读不到不等于不在，否则会丢掉仍持有真实文件的隔离租约 | `test/adapter-chats.test.mjs :: a directory listing that could not be read is never reported as absence` |
 | 「没有文件」不等于「没有这场对话」：待删名字正是运行时当前所在的会话时绝不上报 `absent`（它只是还没落盘，下一次保存就会写回来；报 absent 会让调用方丢掉活草稿的租约，落盘后变成无人认领的永久历史） | `test/adapter-chats.test.mjs :: a missing file that is still the live chat is not absence: the conversation is alive and unsaved, so the lease must survive` |
 | 丢弃一条文件已消失的隔离草稿必须清掉租约并如实告知，绝不报「删除失败」（丢弃就是这一次调用，报失败等于租约永远清不掉） | `test/sidebar-actions.test.mjs :: discarding a quarantined draft whose file has already vanished drops the lease instead of reporting a failure that can never be retried` |
+| 结算这条「文件已不存在」的删除同时必须广播该对话已消失：宿主什么都没删，就不会有 CHAT_DELETED，而侧栏缓存的角色列表仍握着这个文件名——不广播的话草稿卡不是消失，而是**转成**一条指向不存在文件的普通历史行（真机 danglinglease 格实测） | `test/sidebar-actions.test.mjs :: settling a delete against a file that is not there announces the vanished conversation, so the cached listing cannot go on serving it as ordinary history` |
+| 恢复一条文件已消失的草稿、以及宿主直接判 notfound 的普通行点击，走同一条广播：同一个消失的文件，「恢复」与「丢弃」不得给出不同的列表结局 | `test/sidebar-actions.test.mjs :: both of openChatuiChatForCharacter's "it is not there" exits announce the vanished conversation too: a restore whose draft file is gone, and a host-reported notfound` |
 | 删除非当前、非指针会话时干净成功并广播 CHAT_DELETED | `test/adapter-chats.test.mjs :: deleting a non-current chat that is not the character-card pointer resolves cleanly and emits CHAT_DELETED` |
 | 删除后核实读取暂时性失败时有界重试，直到确认文件消失才报 deleted | `test/adapter-chats.test.mjs :: the post-delete existence check retries through transient read failures and resolves deleted once the listing confirms removal` |
 | 核实读取成功但文件仍在时立即如实报 deleted:false，不进入轮询 | `test/adapter-chats.test.mjs :: a listing that successfully reads back but still shows the file resolves deleted:false immediately, without polling` |
@@ -879,6 +881,14 @@ flag 断言原生只挂 1 行。性能对照仍可用 `--truncation-guard off` �
   文本）；仍属浏览器层缺口的只剩 `updateMessageBlock` 更丰富的副作用断言——
   reasoning UI、code-block 复制按钮、媒体重挂目前无显式断言（smoke 只验证
   `.mes_text` 文本），可并入未来的浏览器场景补测。
+- **新增（pr7 收官）：`store/vanished-chat-store.ts` 的广播被 store 层单测钉死
+  （§3 两行），但它到缓存失效的那一段接线在 `ui/use-st-query-bridge.ts` 里，
+  仍是零自动化覆盖**——「广播 → `invalidateQueries(byCharacter(avatar))` ＋
+  recents 重取 → 那一行真的从列表里消失」这条端到端只有真机手测过
+  （danglinglease 格）。该桥接模块导入 React Query 与 preact/compat，不在
+  `dist/runtime` 的可单测出口里（`scripts/build.mjs` 的 `RUNTIME_ENTRY_FILES`
+  只收纯模块），要覆盖得起一个挂载 QueryClientProvider 的浏览器场景，与上面
+  ConfirmDialogHost / TopbarTitle 的缺口同一类。
 - **2026-07-19 复审 meta-finding（Tier 2 后现状更新）**：现有两道真实 Chromium
   门禁（`e2e/smoke.spec.mjs`、`scripts/e2e/measure-chat-switch.mjs`）均未驱动任
   何消息动作分发路径——前者只验证会话渲染 + 一次消息**编辑**往返，后者只做切换

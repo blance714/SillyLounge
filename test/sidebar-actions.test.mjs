@@ -452,3 +452,96 @@ test('discarding a quarantined draft whose file has already vanished drops the l
         await host.dispose();
     }
 });
+
+// ---------------------------------------------------------------------
+// Announcing a conversation that is not there
+//
+// Dropping the lease is only half of settling one of these: the row the
+// reader is looking at comes from the sidebar's *cached* per-character
+// listing (ui/query-client.ts), which still holds the missing file and
+// which no ST event is going to invalidate — nothing was deleted, so
+// CHAT_DELETED never fires. Real-machine evidence (danglinglease 格) is that
+// the card therefore does not disappear at all; it turns into an ordinary
+// history row pointing at a file nothing can open. store/vanished-chat-store.js
+// is the announcement ui/use-st-query-bridge.ts turns into the refetch.
+// ---------------------------------------------------------------------
+
+test('settling a delete against a file that is not there announces the vanished conversation, so the cached listing cannot go on serving it as ordinary history', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a'));
+
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+        const vanishedStore = await host.importModule('store/vanished-chat-store.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+
+        const announced = [];
+        const unsubscribe = vanishedStore.subscribeVanishedChats(vanished => announced.push(vanished));
+
+        assert.equal(vanishedStore.getLastVanishedChat(), null, 'nothing has vanished yet');
+        tempChatStore.setTempChat({ avatar: 'bob.png', fileName: 'ghost-draft' });
+
+        await sidebarActions.deleteChatuiChat('bob.png', 'ghost-draft');
+        unsubscribe();
+
+        assert.deepEqual(
+            announced,
+            [{ avatar: 'bob.png', fileName: 'ghost-draft' }],
+            'the settlement must be announced exactly once, naming the character whose listing is now lying',
+        );
+        assert.deepEqual(vanishedStore.getLastVanishedChat(), { avatar: 'bob.png', fileName: 'ghost-draft' });
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('both of openChatuiChatForCharacter\'s "it is not there" exits announce the vanished conversation too: a restore whose draft file is gone, and a host-reported notfound', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+
+        const router = createRouter(host);
+        // The restore's own pre-flight existence check: the draft file is not
+        // in the character's directory.
+        router.queue('/api/characters/chats', rawListing('chat-a'));
+
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+        const toastStore = await host.importModule('store/toast-store.js');
+        const vanishedStore = await host.importModule('store/vanished-chat-store.js');
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+
+        const announced = [];
+        const unsubscribe = vanishedStore.subscribeVanishedChats(vanished => announced.push(vanished));
+
+        tempChatStore.setTempChat({ avatar: 'bob.png', fileName: 'ghost-draft' });
+        await sidebarActions.openChatuiChatForCharacter('bob.png', 'ghost-draft');
+
+        assert.deepEqual(tempChatStore.getTempChats(), [], 'the lease goes, as it already did');
+        assert.deepEqual(
+            announced,
+            [{ avatar: 'bob.png', fileName: 'ghost-draft' }],
+            'and 恢复 announces the same fact 丢弃 does — the two buttons must not disagree about one missing file',
+        );
+
+        // The ordinary-card version of the same discovery: the host itself
+        // reports the conversation does not exist (here because the character
+        // card is gone), with no lease involved at all.
+        await sidebarActions.openChatuiChatForCharacter('gone.png', 'old-chat');
+        unsubscribe();
+
+        assert.deepEqual(
+            announced.at(-1),
+            { avatar: 'gone.png', fileName: 'old-chat' },
+            'a row the host says does not exist must not survive the click that proved it',
+        );
+        assert.deepEqual(
+            toastStore.getToasts().map(toast => [toast.kind, toast.text]),
+            [['error', '草稿文件已不存在'], ['error', '角色或对话不存在']],
+        );
+    } finally {
+        await host.dispose();
+    }
+});

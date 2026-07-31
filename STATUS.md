@@ -106,6 +106,7 @@ src/
     config-store.ts       persisted per-feature config (via adapter/config.ts)
     ui-store.ts           ephemeral session UI state (settings mode / drawer selection)
     toast-store.ts        ChatUI feedback layer
+    vanished-chat-store.ts announces a conversation proved absent (no ST event exists)
   shield/
     st-dom-shield.ts      #chatui-root + body.chatui-active + shield levels
   ui/
@@ -372,9 +373,14 @@ the architecture review:
   objects. The parent chat store keeps message ids while each row subscribes to
   its own DTO slot, so coalesced streaming refresh is O(1) without a full-list
   clone or parent rerender. The declarative ST event → Query invalidation table
-  covers update/delete/swipe. The extracted bounded coordinator marks an active
-  query dirty and requeues exactly one follow-up; inactive first-prefetch work
-  awaits the old promise then calls `query.fetch()` directly;
+  covers update/delete/swipe. ChatUI's own "this conversation is not there"
+  discoveries (a draft whose file vanished, a row the host reports notfound)
+  reach the same bridge through `store/vanished-chat-store.ts`, because a file
+  that went missing behind ST's back emits no event and the cached listing
+  would otherwise keep serving it. The extracted bounded coordinator marks an
+  active query dirty and requeues exactly one follow-up; inactive
+  first-prefetch work awaits the old promise then calls `query.fetch()`
+  directly;
 - runtime publication is staging-first and atomic. The Node suite's coverage is
   inventoried invariant-by-invariant in INVARIANTS.md (bidirectionally validated
   by `pnpm run check:invariants`, so counts are never hand-written here): typed
