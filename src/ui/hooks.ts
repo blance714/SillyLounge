@@ -69,11 +69,12 @@ function finiteNumber(value: unknown): number {
 
 /**
  * The cast list: characters that own at least one conversation, most recently
- * active first. Both rails read it — the spine draws one avatar per entry, the
- * playbill groups conversations under the same entries — so it is defined once
- * rather than twice. Two copies of this predicate would let the spine and the
- * playbill disagree about who is on the bill, and the spine's whole job is to
- * answer "who is on now".
+ * active first. This is the spine's feed — the one place that decides who is
+ * on the bill. The playbill deliberately does *not* read it: a playbill is one
+ * character's programme (DESIGN §4.2), so it selects the current character
+ * directly rather than filtering the cast, which also keeps a character whose
+ * `chatSize` has not been written back yet from having an open conversation
+ * with no column to list it in.
  */
 function orderConversationCharacters(characters: CharacterSummary[]): CharacterSummary[] {
     return characters
@@ -218,7 +219,6 @@ export function useSidebarData(): ChatuiSidebarState {
         ...sidebarQueryOptions.recents(SIDEBAR_RECENTS_MAX),
         placeholderData: [],
     });
-    const recentsReady = recentsQuery.isSuccess && !recentsQuery.isPlaceholderData;
     const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
     const [pendingBackfillAvatars, setPendingBackfillAvatars] = useState<Set<string>>(() => new Set());
     const [pendingMoreAvatars, setPendingMoreAvatars] = useState<Set<string>>(() => new Set());
@@ -231,8 +231,14 @@ export function useSidebarData(): ChatuiSidebarState {
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
 
+    // The playbill lists exactly one character (DESIGN §4.2), so this fan-out
+    // is one entry wide. It used to be the whole cast, back when the column
+    // was a whole-cast accordion; leaving it that wide now would keep firing a
+    // /api/chats/search backfill per character to fill groups nothing renders.
+    // Everything downstream is per-group and unchanged — 更多 paging, retry and
+    // the temp-chat hiding all still work, they just work on the one group.
     const groupHeaders = useMemo<CharacterSummary[]>(
-        () => orderConversationCharacters(characters),
+        () => characters.filter((character: CharacterSummary) => character.isCurrent),
         [characters],
     );
 
@@ -278,14 +284,21 @@ export function useSidebarData(): ChatuiSidebarState {
         return map;
     }, [recentsQuery.data]);
 
+    // Every character in the feed — which is now just the one the playbill is
+    // showing — gets its full listing fetched, not only the ones missing from
+    // the recents page. Back when this fanned out over the whole cast, "only
+    // if recents told us nothing" was the rule that kept a large cast from
+    // firing one request per character; one column of one character costs one
+    // request, and without it the recents page (capped at five rows per
+    // character) is all the column ever has: no honest 「的对话 · N」, no way
+    // past the fifth conversation, and a draft snapshot that has to declare
+    // itself incomplete.
     const backfillNeededAvatarKey = useMemo(() => groupHeaders
-        .filter((group: CharacterSummary) => (recentsByAvatar.get(group.avatar) ?? []).length === 0)
         .map((group: CharacterSummary) => group.avatar)
         .sort()
-        .join('\u0001'), [groupHeaders, recentsByAvatar]);
+        .join('\u0001'), [groupHeaders]);
 
     useEffect(() => {
-        if (!recentsReady) return;
         const avatars = (backfillNeededAvatarKey ? backfillNeededAvatarKey.split('\u0001') : [])
             .filter(avatar => {
                 if (requestedBackfillRef.current.has(avatar)) return false;
@@ -322,7 +335,7 @@ export function useSidebarData(): ChatuiSidebarState {
         ));
 
         return () => { cancelled = true; };
-    }, [backfillNeededAvatarKey, queryClient, recentsReady]);
+    }, [backfillNeededAvatarKey, queryClient]);
 
     const shouldHideChat = useCallback((avatar: string, chat: ChatListItem): boolean => {
         if (tempChats.some(pointer => (
@@ -380,9 +393,35 @@ export function useSidebarData(): ChatuiSidebarState {
         const sourceChats = (draftActive && tempDraft && !tempDraft.complete)
             ? recentChats
             : (full?.chats ?? recentChats);
-        const totalCount = full?.totalCount ?? Math.max(finiteNumber(group.chatSize), sourceChats.length);
-        const visibleSourceChats = dedupeSortChats(sourceChats)
+        // Raw listing size, drafts included — only ever compared against the
+        // source list to decide whether more pages exist. The count the header
+        // prints is the ordinary-conversation one further down.
+        const sourceTotalCount = full?.totalCount ?? Math.max(finiteNumber(group.chatSize), sourceChats.length);
+        const dedupedSourceChats = dedupeSortChats(sourceChats);
+        const visibleSourceChats = dedupedSourceChats
             .filter(chat => !shouldHideChat(group.avatar, chat));
+        // Draft cards are driven by the lease set, not by the chat listing:
+        // the quarantine is what makes a file a draft, and it is authoritative
+        // even when the listing has not caught up. The listing only decorates
+        // (title/preview/time); an undecorated draft still gets a card, which
+        // is why the fallback below is a bare pointer rather than a skip.
+        const draftChats = tempChats
+            .filter(pointer => pointer.avatar === group.avatar && !(
+                currentChat?.avatar === pointer.avatar && currentChat.fileName === pointer.fileName
+            ))
+            .map(pointer => dedupedSourceChats.find(
+                chat => normalizeFileName(chat.fileName) === pointer.fileName,
+            ) ?? {
+                fileName: pointer.fileName,
+                displayName: pointer.fileName,
+                messageCount: 0,
+                preview: '',
+                fileSize: '',
+                lastMesTs: 0,
+                lastMesLabel: '',
+                isCurrent: false,
+            })
+            .sort((a, b) => chatRecencyTs(b) - chatRecencyTs(a));
         const displayChats = visibleSourceChats
             .slice(0, full ? visibleCount : INITIAL_VISIBLE_COUNT)
             .map(chat => ({
@@ -412,11 +451,17 @@ export function useSidebarData(): ChatuiSidebarState {
             dateLastChatTs: finiteNumber(group.dateLastChatTs),
             chatSize: finiteNumber(group.chatSize),
             chats: displayChats,
+            draftChats,
+            // Honest only once the full per-character listing has landed: until
+            // then `sourceChats` is the recents page, capped at five, and
+            // `chatSize` is a byte count. Null means "unknown", and the header
+            // prints nothing rather than a number it cannot stand behind.
+            totalCount: full ? visibleSourceChats.length : null,
             visibleCount: full ? visibleCount : displayChats.length,
             chatsLoaded: sourceChats.length > 0 || !!full,
             fullyLoaded: full
                 ? visibleCount >= visibleSourceChats.length
-                : totalCount <= sourceChats.length && displayChats.length >= visibleSourceChats.length,
+                : sourceTotalCount <= sourceChats.length && displayChats.length >= visibleSourceChats.length,
             pending,
         };
     }), [
@@ -428,6 +473,7 @@ export function useSidebarData(): ChatuiSidebarState {
         pendingMoreAvatars,
         recentsByAvatar,
         shouldHideChat,
+        tempChats,
         tempDraft,
         visibleCounts,
     ]);
@@ -442,7 +488,13 @@ export function useSidebarData(): ChatuiSidebarState {
         error: headerQuery.isError || charactersQuery.isError || recentsQuery.isError ? 'load-failed' : null,
         charGroups,
         charGroupsLoading: charactersQuery.isLoading || recentsQuery.isLoading,
-        charGroupsError: charactersQuery.isError || recentsQuery.isError ? 'load-failed' : null,
+        // Only a failed *character* list is a column-wide failure. The recents
+        // page is a first-paint shortcut the playbill can do without now that
+        // it fetches the current character's own listing unconditionally, and
+        // a failure of that listing is reported inside the column with a retry
+        // (group.pending === 'error') — which is both more accurate and more
+        // actionable than painting 「加载失败」 over a list that loaded.
+        charGroupsError: charactersQuery.isError ? 'load-failed' : null,
         loadMoreCharacterChats,
         retryCharacterChats,
     };

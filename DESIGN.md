@@ -95,11 +95,15 @@
   已收敛的区域不得再退回 `rem`，未收敛的区域不新增 `rem` 间距。
   **已收敛**：topbar（`.cui-root-topbar*`、`.cui-root-shell-toggle`/`-close`）、
   composer（`.cui-root-composer*`、`.cui-root-plus`/`-plus-btn`，不含 ＋菜单自身
-  的下拉内容）——pr4 第 3 棒。`--cui-content-max-width` 仍是 `rem`：它是跨区域共享
-  token（topbar/composer/messages/QR bar 都读它），且已被 §3.1 单独钉给侧栏那一棒，
-  不属于"哪个区域碰到就顺手收敛"的范围。`.cui-root-selchip*` 的共享基类同理不算
-  谁的区域，留给拥有该组件的批次。**未收敛**：spine/playbill、消息流正文、
-  ＋菜单下拉（tiles/tools/header）、附件 chips、设置页。
+  的下拉内容）——pr4 第 3 棒；spine（`.cui-root-rails`/`.cui-root-spine*`）——pr9
+  第 1 棒；playbill 全列（`.cui-root-sidebar`、`.cui-root-shell-header`、
+  `.cui-root-convlist*`、`.cui-root-playbill-*`、`.cui-root-nested-chat-row*`、
+  `.cui-root-draft-card*`、`.cui-root-newchat`）——pr9 第 2 棒，同批删掉了
+  `--cui-sidebar-row-padding-x`/`-avatar-size`/`-row-gap`/`-indent` 这一组只服务
+  旧手风琴缩进的 `rem` token。`--cui-content-max-width` 已随 §3.1 的联合标定改为
+  `680px`（pr9 第 1 棒）；`.cui-root-selchip*` 的共享基类不算谁的区域，留给拥有
+  该组件的批次。**未收敛**：消息流正文、＋菜单下拉（tiles/tools/header）、
+  附件 chips、设置页。
 
 ## 3. 页面结构
 

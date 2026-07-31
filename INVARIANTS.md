@@ -403,6 +403,7 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 过卷（负距离）与不可滚动容器一律判为贴底且不出胶囊 | `test/follow-scroll-math.test.mjs :: readFollowGates: over-scroll and unscrollable containers both count as pinned` |
 | 标头时间戳把 ST 写过的每种 `send_date`（ISO 8601 / `humanizedDateTime` / epoch 毫秒数与数字串）都渲染成时钟时间，无法辨认的原样透出而不臆造 | `test/format.test.mjs :: formatTimestamp renders every send_date shape SillyTavern writes as a clock time, and never invents one it cannot read` |
 | 时长与体积格式化保持中文口径，且「没有数值」不被四舍五入成「零」 | `test/format.test.mjs :: formatDuration and formatBytes stay in the language the rest of the UI speaks and refuse to round a non-quantity into one` |
+| 场刊卡片元信息按「N 条」计消息数、绝不写成「N 楼」（楼＝用户回合，会话列表只有 `chat_items` 总条数，写成楼就与楼层轨自相矛盾），缺失的一半连同分隔点一起消失 | `test/format.test.mjs :: the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator` |
 
 ## 10. 构建与运行时契约
 

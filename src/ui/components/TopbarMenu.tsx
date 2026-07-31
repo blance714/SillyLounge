@@ -53,7 +53,7 @@ export function TopbarMenu(): ComponentChild {
         const next = draft.trim();
         if (target && next && next !== target.displayName) {
             if (!_isLiveTarget(target)) return;
-            void renameChatuiChat(target.fileName, next);
+            void renameChatuiChat(target.avatar, target.fileName, next);
         }
     };
 

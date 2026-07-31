@@ -1,77 +1,103 @@
 import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { openChatuiChatForCharacter, deleteChatuiChat, switchChatuiCharacter } from '../../actions.js';
+import { openChatuiChatForCharacter, deleteChatuiChat, renameChatuiChat } from '../../actions.js';
+import { formatConversationMeta } from '../../format.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
+import { QuarantinedDrafts } from './QuarantinedDrafts.js';
 import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '../../types.js';
 
 /**
- * Single character header row: avatar + name.
- * Clicking switches to that character (loads their last-active chat).
+ * One conversation card in the playbill (DESIGN §4.2, 原型 L66-83): a bound
+ * leaf rather than a list row — small radius, a 14px binding gutter down the
+ * left, title / preview / meta stacked inside it, and an action dock that
+ * surfaces on hover.
+ *
+ * `.cui-root-nested-chat-row` and `.cui-root-nested-chat-row-name` are kept
+ * verbatim, including the `.is-current` state: the chat-switch release gate
+ * (scripts/e2e/measure-chat-switch.mjs) asserts on both, and reads the name
+ * element's text as the file name, so nothing else may share that element.
  */
-function CharacterGroupHeader({
-    group,
-    onClick,
+function ConversationCard({
+    chat,
+    charAvatar,
 }: {
-    group: CharConversationGroup;
-    onClick: () => void;
-}): ComponentChild {
-    return (
-        <button
-            className="cui-root-char-group-header"
-            type="button"
-            title={group.name}
-            onClick={onClick}
-        >
-            {group.thumbnailUrl
-                ? <img className="cui-root-char-group-avatar" src={group.thumbnailUrl} alt="" />
-                : <i className="fa-solid fa-user cui-root-char-group-avatar-fallback" />}
-            <span className="cui-root-char-group-name">{group.name}</span>
-        </button>
-    );
-}
-
-type NestedChatRowProps = {
     chat: ChatListItem;
     charAvatar: string;
-};
-
-/**
- * Indented chat row nested under a character header.
- * Click opens that specific chat (cross-character if needed).
- * Delete is guarded by a ConfirmDialog.
- */
-function NestedChatRow({ chat, charAvatar }: NestedChatRowProps): ComponentChild {
+}): ComponentChild {
     const [confirmingDelete, setConfirmingDelete] = useState(false);
+    const [renameDraft, setRenameDraft] = useState<string | null>(null);
+    const isRenaming = renameDraft !== null;
 
-    const open = () => { void openChatuiChatForCharacter(charAvatar, chat.fileName); };
+    const open = () => {
+        if (isRenaming) return;
+        void openChatuiChatForCharacter(charAvatar, chat.fileName);
+    };
+
+    const commitRename = () => {
+        const next = (renameDraft ?? '').trim();
+        setRenameDraft(null);
+        // The adapter refuses an empty or unchanged name anyway; refusing here
+        // too keeps a no-op keystroke from taking a slot in the host queue.
+        if (!next || next === chat.displayName) return;
+        void renameChatuiChat(charAvatar, chat.fileName, next);
+    };
+
+    const meta = formatConversationMeta(chat.messageCount, chat.lastMesLabel);
 
     return (
         <li
-            className={`cui-root-nested-chat-row${chat.isCurrent ? ' is-current' : ''}`}
+            className={`cui-root-playbill-card cui-root-nested-chat-row${chat.isCurrent ? ' is-current' : ''}`}
             role="button"
             tabIndex={0}
             onClick={open}
-            onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
+            onKeyDown={(event) => {
+                if (isRenaming) return;
+                if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
                     open();
                 }
             }}
         >
-            <i className="fa-regular fa-message cui-root-nested-chat-row-icon" />
-            <div className="cui-root-nested-chat-row-main">
-                <span className="cui-root-nested-chat-row-name">{chat.displayName}</span>
+            <span className="cui-root-playbill-card-binding" aria-hidden="true" />
+            <div className="cui-root-playbill-card-body">
+                {isRenaming ? (
+                    <input
+                        className="cui-root-nested-chat-row-rename"
+                        type="text"
+                        value={renameDraft}
+                        autoFocus
+                        aria-label="重命名对话"
+                        onClick={(event) => event.stopPropagation()}
+                        onInput={(event) => setRenameDraft(event.currentTarget.value)}
+                        onBlur={() => setRenameDraft(null)}
+                        onKeyDown={(event) => {
+                            event.stopPropagation();
+                            if (event.key === 'Enter') { event.preventDefault(); commitRename(); }
+                            else if (event.key === 'Escape') { event.preventDefault(); setRenameDraft(null); }
+                        }}
+                    />
+                ) : (
+                    <span className="cui-root-nested-chat-row-name">{chat.displayName}</span>
+                )}
                 {chat.preview && <span className="cui-root-nested-chat-row-preview">{chat.preview}</span>}
+                {meta && <span className="cui-root-playbill-card-meta">{meta}</span>}
             </div>
-            {chat.lastMesLabel && <span className="cui-root-nested-chat-row-time">{chat.lastMesLabel}</span>}
-            {chat.isCurrent && <i className="fa-solid fa-check cui-root-nested-chat-row-check" />}
-            <div className="cui-root-nested-chat-row-actions">
+            <div className="cui-root-playbill-card-dock">
                 <button
-                    className="cui-root-chat-row-act cui-root-chat-row-act-danger"
+                    className="cui-root-playbill-card-act"
+                    type="button"
+                    aria-label="重命名"
+                    title="重命名"
+                    onClick={(event) => { event.stopPropagation(); setRenameDraft(chat.displayName); }}
+                >
+                    <i className="fa-solid fa-pen" />
+                </button>
+                <button
+                    className="cui-root-playbill-card-act cui-root-playbill-card-act-danger"
                     type="button"
                     aria-label="删除"
                     title="删除"
-                    onClick={(e) => { e.stopPropagation(); setConfirmingDelete(true); }}
+                    onClick={(event) => { event.stopPropagation(); setConfirmingDelete(true); }}
                 >
                     <i className="fa-solid fa-trash" />
                 </button>
@@ -93,86 +119,121 @@ function NestedChatRow({ chat, charAvatar }: NestedChatRowProps): ComponentChild
     );
 }
 
+function ConversationCards({
+    group,
+    onNavigate,
+    loadMoreCharacterChats,
+    retryCharacterChats,
+}: {
+    group: CharConversationGroup;
+    onNavigate: () => void;
+    loadMoreCharacterChats: (avatar: string) => Promise<void>;
+    retryCharacterChats: (avatar: string) => Promise<void>;
+}): ComponentChild {
+    // "Nothing has arrived yet" is a third state, not an empty column: the
+    // per-character listing is fetched by an effect, so the first render after
+    // a character switch has neither chats nor a pending flag. Reading that as
+    // 「还没有对话」 would flash a wrong answer at every switch.
+    const showLoading = group.pending === 'backfill'
+        || group.pending === 'more'
+        || (!group.chatsLoaded && group.pending !== 'error');
+    const showMore = group.chatsLoaded && !group.fullyLoaded;
+    const isEmpty = group.chats.length === 0
+        && group.draftChats.length === 0
+        && !showLoading
+        && group.pending !== 'error';
+
+    if (isEmpty) return <div className="cui-root-convlist-note">还没有对话</div>;
+
+    return (
+        <ul className="cui-root-playbill-cards">
+            <QuarantinedDrafts
+                drafts={group.draftChats}
+                avatar={group.avatar}
+                characterName={group.name}
+                onNavigate={onNavigate}
+            />
+            {group.chats.map(chat => (
+                <ConversationCard
+                    key={chat.fileName}
+                    chat={chat}
+                    charAvatar={group.avatar}
+                />
+            ))}
+            {showLoading && (
+                <li className="cui-root-convlist-status">
+                    {group.pending === 'more' ? '加载更多…' : '加载中…'}
+                </li>
+            )}
+            {group.pending === 'error' && (
+                <li className="cui-root-convlist-status is-error">
+                    <span>加载失败</span>
+                    {/* No disabled state: pressing retry flips `pending` to
+                        'backfill', which swaps this whole row for the loading
+                        one, so the button cannot be pressed twice. The old
+                        `disabled={pending === 'backfill'}` was unreachable for
+                        exactly that reason. */}
+                    <button
+                        className="cui-root-convlist-retry"
+                        type="button"
+                        onClick={() => { void retryCharacterChats(group.avatar); }}
+                    >
+                        重试
+                    </button>
+                </li>
+            )}
+            {showMore && (
+                <li>
+                    <button
+                        className="cui-root-convlist-more"
+                        type="button"
+                        disabled={group.pending === 'more'}
+                        onClick={() => { void loadMoreCharacterChats(group.avatar); }}
+                    >
+                        更多
+                    </button>
+                </li>
+            )}
+        </ul>
+    );
+}
+
 /**
- * Playbill list body: all single characters grouped with up to 5 nested chat
- * rows each, sorted by most-recently-active.
+ * Playbill body: **one** character's conversations as cards, newest first
+ * (DESIGN §4.2). It is a programme, not an inbox — the whole-cast accordion it
+ * replaces answered "who exists", which is now the spine's question and only
+ * the spine's.
  *
- * The feed arrives as a prop rather than from useSidebarData() here, because
- * the playbill header above this list has to count the current character's
- * conversations too — one owner of that fan-out, read in two places.
+ * The empty states distinguish three different absences on purpose, because
+ * they call for three different next moves: nobody imported yet, nobody picked
+ * yet, and this character simply has no history.
  */
-export function CharacterConversationList({ sidebar }: { sidebar: ChatuiSidebarState }): ComponentChild {
-    const { charGroups, charGroupsError, header, loadMoreCharacterChats, retryCharacterChats } = sidebar;
+export function CharacterConversationList({
+    sidebar,
+    onNavigate,
+}: {
+    sidebar: ChatuiSidebarState;
+    onNavigate: () => void;
+}): ComponentChild {
+    const { charGroups, charGroupsError, characters, header, loadMoreCharacterChats, retryCharacterChats } = sidebar;
+    const group = charGroups[0];
 
-    if (header.isGroup) {
-        return (
-            <div className="cui-root-convlist">
-                <div className="cui-root-convlist-note">群聊对话列表即将支持</div>
-            </div>
-        );
-    }
-
-    const body = charGroupsError
-        ? <div className="cui-root-convlist-note">对话列表加载失败</div>
-        : charGroups.length === 0
-            ? <div className="cui-root-convlist-note">{charGroups.length === 0 ? '还没有角色' : '还没有对话'}</div>
-            : (
-                <div className="cui-root-chargroups">
-                    {charGroups.map(group => {
-                        const showLoading = group.pending === 'backfill' || group.pending === 'more';
-                        const showMore = group.chatsLoaded && !group.fullyLoaded;
-                        const showList = group.chats.length > 0 || showLoading || group.pending === 'error';
-                        const retryDisabled = group.pending === 'backfill';
-                        return (
-                            <div key={group.avatar} className="cui-root-char-group">
-                                <CharacterGroupHeader
-                                    group={group}
-                                    onClick={() => { void switchChatuiCharacter(group.avatar); }}
-                                />
-                                {showList && (
-                                    <ul className="cui-root-char-group-chats">
-                                        {group.chats.map(chat => (
-                                            <NestedChatRow
-                                                key={chat.fileName}
-                                                chat={chat}
-                                                charAvatar={group.avatar}
-                                            />
-                                        ))}
-                                        {showLoading && (
-                                            <li className="cui-root-char-group-note">
-                                                {group.pending === 'more' ? '加载更多…' : '加载中…'}
-                                            </li>
-                                        )}
-                                        {group.pending === 'error' && (
-                                            <li className="cui-root-char-group-note is-error">
-                                                <span>加载失败</span>
-                                                <button
-                                                    className="cui-root-char-group-retry"
-                                                    type="button"
-                                                    disabled={retryDisabled}
-                                                    onClick={() => { void retryCharacterChats(group.avatar); }}
-                                                >
-                                                    重试
-                                                </button>
-                                            </li>
-                                        )}
-                                    </ul>
-                                )}
-                                {showMore && (
-                                    <button
-                                        className="cui-root-char-group-more"
-                                        type="button"
-                                        disabled={group.pending === 'more'}
-                                        onClick={() => { void loadMoreCharacterChats(group.avatar); }}
-                                    >
-                                        更多
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            );
+    const body = header.isGroup
+        ? <div className="cui-root-convlist-note">群聊对话列表即将支持</div>
+        : charGroupsError
+            ? <div className="cui-root-convlist-note">对话列表加载失败</div>
+            : characters.length === 0
+                ? <div className="cui-root-convlist-note">书架还空着。请一位角色，对话会列在这里。</div>
+                : !group
+                    ? <div className="cui-root-convlist-note">从书脊选一位角色</div>
+                    : (
+                        <ConversationCards
+                            group={group}
+                            onNavigate={onNavigate}
+                            loadMoreCharacterChats={loadMoreCharacterChats}
+                            retryCharacterChats={retryCharacterChats}
+                        />
+                    );
 
     return (
         <div className="cui-root-convlist">

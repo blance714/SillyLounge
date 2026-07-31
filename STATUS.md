@@ -209,10 +209,15 @@ sends, edits, swipes, generates, or otherwise mutates it. After successful
 navigation, ChatUI keeps an untouched file in a persisted quarantine set instead
 of releasing it into ordinary history. Navigation captures the active lease only
 after older queued creation has completed, so the quick “new → old chat” path
-cannot miss the concrete filename. Dormant drafts are recoverable from the
-separate 未完成草稿 shelf and do not block another new chat. ST still lacks an
-atomic server-side conditional DELETE, so physical deletion remains an explicit
-user action rather than unsafe background GC. Restore first checks the raw file
+cannot miss the concrete filename. Dormant drafts do not block another new chat
+and are recoverable from 未完成草稿 cards inlined in that character's playbill
+column (pr9 second baton — they were a separate cross-character shelf before,
+and the container is all that changed: the lease set still decides which files
+these are, and they are still never mixed into ordinary history). ST still
+lacks an atomic server-side conditional DELETE, so physical deletion remains an
+explicit user action rather than unsafe background GC — a draft card's 丢弃 is
+that explicit action, and it goes through the same checked delete transaction
+and the same confirm dialog as any other conversation. Restore first checks the raw file
 list; prompt dry-runs and quiet background generation do not adopt a draft; an
 uncertain rename keeps both possible filenames quarantined until raw state
 settles.

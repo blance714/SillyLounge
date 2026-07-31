@@ -27,7 +27,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { formatBytes, formatDuration, formatTimestamp } from '../dist/runtime/ui/format.js';
+import {
+    formatBytes,
+    formatConversationMeta,
+    formatDuration,
+    formatTimestamp,
+} from '../dist/runtime/ui/format.js';
 
 /** 2026-01-04T00:00:02.000Z, expressed every way ST has ever stored it. */
 const INSTANT_MS = Date.UTC(2026, 0, 4, 0, 0, 2, 0);
@@ -91,4 +96,25 @@ test('formatDuration and formatBytes stay in the language the rest of the UI spe
     assert.equal(formatBytes(1024 * 1024 * 1024), '1.0 GB');
     assert.equal(formatBytes(null), '');
     assert.equal(formatBytes(-1), '');
+});
+
+test('the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator', () => {
+    // 楼 has exactly one meaning in this app — a user turn, the number the
+    // floor rail and the message header both count. A chat listing only
+    // carries ST's `chat_items` (total .jsonl messages), so labelling that as
+    // 楼 would put a number on the card that contradicts the rail one click
+    // away. This test is the guard on that: if anyone "restores the design
+    // copy" by swapping the unit, it fails here rather than in a screenshot.
+    assert.equal(formatConversationMeta(42, '昨天'), '42 条 · 昨天');
+    assert.ok(!formatConversationMeta(42, '昨天').includes('楼'));
+
+    // Either half may be genuinely missing: a chat with no readable last_mes,
+    // or a leased draft whose listing row has not arrived. Neither placeholder
+    // is invented, and the separator leaves with the half it separated.
+    assert.equal(formatConversationMeta(42, ''), '42 条');
+    assert.equal(formatConversationMeta(0, '昨天'), '昨天');
+    assert.equal(formatConversationMeta(0, ''), '');
+    assert.equal(formatConversationMeta(Number.NaN, '  '), '');
+    // An empty chat is not a chat with zero messages worth announcing.
+    assert.equal(formatConversationMeta(-3, '10:24'), '10:24');
 });
