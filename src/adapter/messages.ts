@@ -1047,3 +1047,45 @@ export async function swipeMessageById(mesId: MessageId, direction: SwipeDirecti
     }
     await swipeMessage(mesEl, direction);
 }
+
+/**
+ * Jump straight to `targetSwipeId` instead of stepping through every swipe
+ * in between (the segment ticks' click target, design §43). This uses ST's
+ * own `forceSwipeId` option on `swipe()` — the exact mechanism ST's built-in
+ * swipe picker (public/scripts/swipe-picker.js, `openSwipePicker`) uses for
+ * its own "jump to swipe N" popup — rather than synthesizing N-1 sequential
+ * left/right calls: a step-simulation would run every intermediate swipe's
+ * side effects (each one re-renders, each one could re-trigger a debounced
+ * save) for versions the user never asked to see, purely to land on the one
+ * they clicked.
+ *
+ * `direction` is derived from the live current swipe_id (not trusted from
+ * the caller) so it only ever steers which way the swap animates — the
+ * landing index is `forceSwipeId`, not direction-derived — matching
+ * swipe-picker.js's own `targetSwipeId > currentSwipeId ? RIGHT : LEFT`.
+ */
+export async function swipeMessageToIndexById(mesId: MessageId, targetSwipeId: number): Promise<void> {
+    const normalizedId = Number(mesId);
+    if (!Number.isInteger(normalizedId) || normalizedId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid message id for swipe: ${mesId}`);
+    }
+    if (!Number.isInteger(targetSwipeId) || targetSwipeId < 0) {
+        throw new Error(`[ChatUI/adapter] Invalid target swipe id for swipe: ${targetSwipeId}`);
+    }
+    const mesEl = getMessageElementById(normalizedId);
+    if (!mesEl) {
+        throw new Error(`[ChatUI/adapter] Message element not found for swipe: ${normalizedId}`);
+    }
+    const rawMessage = getMessageById(normalizedId);
+    const parsedMessage = parseMessageRecord(rawMessage);
+    if (!parsedMessage) {
+        throw new Error(`[ChatUI/adapter] Message record not found for swipe: ${normalizedId}`);
+    }
+    if (targetSwipeId >= parsedMessage.swipes.length) {
+        throw new Error(`[ChatUI/adapter] Target swipe id ${targetSwipeId} out of range for message: ${normalizedId}`);
+    }
+    const currentSwipeId = parsedMessage.swipe_id ?? 0;
+    if (targetSwipeId === currentSwipeId) return;
+    const direction: SwipeDirection = targetSwipeId > currentSwipeId ? 'right' : 'left';
+    await stSwipe(null, direction, { forceMesId: normalizedId, forceSwipeId: targetSwipeId, message: rawMessage });
+}

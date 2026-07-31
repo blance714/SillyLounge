@@ -26,6 +26,7 @@ export {
     subscribeChatuiQuickReplies,
     subscribeChatuiSelectorSync,
     swipeChatuiMessage,
+    swipeChatuiMessageToIndex,
     triggerChatuiMessageAction,
     triggerChatuiQuickReply,
     triggerChatuiWandItem,
