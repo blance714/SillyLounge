@@ -41,6 +41,7 @@ export {
 export {
     deleteChatuiChat,
     getChatuiCurrentChatHeader,
+    getChatuiPendingDraftQuarantineCharacter,
     listChatuiCharacters,
     listChatuiChatsForCharacterAvatar,
     listChatuiRecentCharacterChatRows,

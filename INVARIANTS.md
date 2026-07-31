@@ -145,6 +145,7 @@ autoload 已经先到就当场成立，没到就等本页后续的 CHAT_CHANGED�
 | 删除后仍有真实剩余对话时绝不排队草稿隔离凭证，也绝不污染隔离集 | `test/sidebar-actions.test.mjs :: deleting a chat that leaves a real remaining conversation never queues a draft-quarantine tombstone` |
 | 非兜底文件的 CHAT_CHANGED 既不隔离它、也不丢弃凭证，继续等真正那一条 | `test/sidebar-actions.test.mjs :: a pending draft quarantine ignores chat changes that are not its fallback file, and keeps waiting for the one that is` |
 | 没有待处理凭证时 `finalizeChatuiDraftQuarantine` 是纯空操作：零网络请求、隔离集不变、不留下任何 CHAT_CHANGED 监听 | `test/sidebar-actions.test.mjs :: finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombstone is pending` |
+| 凭证不消费也不认领即可读出它指向哪个角色（供 spine 入列），peek 之后 arm/resolve 语义一字不变 | `test/adapter-chats.test.mjs :: peekPendingCharacterChatDraftQuarantine reports who a waiting credential is about without arming or consuming it` |
 
 pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时
 选择（`this_chid`）；ST 把持久化的 `active_character` 写在自己
@@ -478,6 +479,35 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 标头时间戳把 ST 写过的每种 `send_date`（ISO 8601 / `humanizedDateTime` / epoch 毫秒数与数字串）都渲染成时钟时间，无法辨认的原样透出而不臆造 | `test/format.test.mjs :: formatTimestamp renders every send_date shape SillyTavern writes as a clock time, and never invents one it cannot read` |
 | 时长与体积格式化保持中文口径，且「没有数值」不被四舍五入成「零」 | `test/format.test.mjs :: formatDuration and formatBytes stay in the language the rest of the UI speaks and refuse to round a non-quantity into one` |
 | 场刊卡片元信息按「N 条」计消息数、绝不写成「N 楼」（楼＝用户回合，会话列表只有 `chat_items` 总条数，写成楼就与楼层轨自相矛盾），缺失的一半连同分隔点一起消失 | `test/format.test.mjs :: the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator` |
+
+### 书脊入列规则（ui/spine-cast.ts）
+
+spine 是 ChatUI 唯一的换角色入口（ST 原生列表在遮罩之下），所以「不在 spine 上」等于
+「在 ChatUI 里走不到」。原规则只看 `chat_size > 0`，而 `chat_size` 是 ST 每次启动枚举
+角色 chats 目录得到的**磁盘快照**（`calculateChatSize`，src/endpoints/characters.js），
+本页内不再刷新——于是删空某角色最后一条对话并重载后，正站在台上的那个角色当场从轨上
+消失，且再也回不去。入列改为四类来源的并集：磁盘上有对话 ∪ 当前在台 ∪ 持有 temp-chat
+隔离租约 ∪ pending 草稿隔离凭证指向；「从未用过的角色不上 spine」这个原始目的保留。
+
+排序是两段：第一段是「ChatUI 知道它此刻活着、而磁盘快照还报零」的（即仅靠后三类来源
+入列的），第二段是其余；段内一律按 `dateLastChatTs` 降序，也就是 spine 一直用的那个
+键。第一段之所以存在，是因为对这些条目而言那个键不是「旧」而是「没有」——同一次目录
+扫描报 `chat_size: 0` 的角色，`date_last_chat` 同样是 0——按它排会把这条规则本要救的
+角色压到一条会滚动的轨的最底下。段内并列（第一段全部并列）退回入册顺序即 ST 自己的
+`characters` 数组序，`Array.prototype.sort` 自 ES2019 起由规范保证稳定，这是保证而非
+引擎实现细节。磁盘快照已经能为其发言的角色一律留在第二段，所以普通 spine 的顺序一字
+未动，只有本来会缺席的条目获得了位次。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 四类来源各自都能让角色入列，被多类同时指向也只占一个位子 | `test/spine-cast.test.mjs :: the spine enrols the union of the four sources and seats a character named by several of them exactly once` |
+| 没有任何会话内来源时，spine 恰好等于「磁盘上有对话」那一批（原始过滤目的保留） | `test/spine-cast.test.mjs :: with no session sources at all the spine is exactly the characters that have conversations on disk` |
+| 缺 avatar 或缺名字的条目任何来源都无法让它入列 | `test/spine-cast.test.mjs :: entries with no usable identity are refused no matter which source names them` |
+| 仅靠会话内来源入列的角色排在最前（其 recency 键是「没有」而不是「旧」） | `test/spine-cast.test.mjs :: a character ChatUI knows is live leads the rail, because its recency key is absent rather than old` |
+| 磁盘快照已能为其发言的角色保持原有 recency 位次，在台/持租约/被凭证指向都不改变它 | `test/spine-cast.test.mjs :: a character the disk snapshot already accounts for keeps its recency seat, on stage or not` |
+| 并列时退回入册顺序（ST 的 characters 数组序），而不是任何从 avatar 推出来的次序 | `test/spine-cast.test.mjs :: ties fall back to the incoming cast order, so two session-known characters keep ST's own sequence` |
+| 畸形的 size/recency 值一律读作 0，不污染排序 | `test/spine-cast.test.mjs :: malformed recency and size values are read as zero instead of poisoning the order` |
+| 绝不就地改动传入的 cast 数组（它属于查询缓存，原地排序会改掉所有读者看到的顺序） | `test/spine-cast.test.mjs :: the source list is never mutated` |
 
 ## 10. 构建与运行时契约
 
