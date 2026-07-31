@@ -157,9 +157,20 @@ pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById
 cancel-and-re-arm 计时器，刷新落在它 1000ms 窗口内就会静默丢掉这次写入
 （同一条理由见 `index.ts` 的 `disableChatuiLayers`）。
 
+下标必须**以字符串**交给 `setActiveCharacter`，这不是风格问题：它先过一道真值门
+（`active_character = entityOrKey ? getTagKeyForEntity(entityOrKey) : null`，
+script.js:834-837），数字 `0`——也就是列表里的第一个角色——是假值，传进去不但不会
+持久化该角色，反而会把指针清空；下次启动时 `RA_autoloadchat` 整段分支都不进，读者
+落到「一个角色都没选中」，比这条写入本来要修的「落到旧角色」更糟（真机 1.18.0 实测：
+切到 index 0 后 `active_character` 变成 `null`，刷新后 `characterId`/`chatId` 全空）。
+ST 自己的处理器不会踩到，是因为 `$(this).attr('data-chid')` 是 DOM 属性、永远是字符串；
+`String(index)` 传的就是同一个值。上面「不传 avatar」的理由只针对 avatar，与下标的
+字符串化无关（`getTagKeyForEntity('0')` 仍经 `parseInt()` 解析回 `characters[0]`）。
+
 | 不变量 | 验证 |
 | --- | --- |
 | 换角色成功落地后，按 ST 原生处理器的同一顺序持久化 active_character（传实时下标而非 avatar）并清空 active_group | `test/adapter-chats.test.mjs :: switchCharacter persists the character it just selected as ST's active character, mirroring the native list click` |
+| 列表里第一个角色（下标 0）同样被持久化：交给 ST 的键必须是真值，否则等于持久化「没有角色」 | `test/adapter-chats.test.mjs :: the first character in the list persists like any other, even though its index is the one value ST would treat as "no character"` |
 | 角色未找到或切换未落地（busy）时绝不持久化，刷新后不会落到一个从未切成功的角色上 | `test/adapter-chats.test.mjs :: a character switch that does not land persists nothing, so a reload never comes back on a character ChatUI failed to select` |
 | 打开别的角色的对话同样持久化该角色；该路径被拒绝（busy 回滚）时同样不持久化 | `test/adapter-chats.test.mjs :: opening another character's conversation persists that character too, and rolls back without persisting when the switch is refused` |
 | 持久化失败绝不连累读者真正要的那次切换 | `test/adapter-chats.test.mjs :: a failure to persist the active character never fails the switch the reader asked for` |

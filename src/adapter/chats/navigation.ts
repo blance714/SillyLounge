@@ -44,12 +44,26 @@ import {
  * through `parseInt()` first — an avatar like `3.png` would resolve to
  * `characters[3]`, a different card.
  *
+ * That index goes over as a *string*, which is not cosmetic and not a style
+ * choice: `setActiveCharacter` gates on truthiness before it resolves anything
+ * (`active_character = entityOrKey ? getTagKeyForEntity(entityOrKey) : null`,
+ * script.js:834-837). The number `0` — the first character in the list — is
+ * falsy, so passing it would not persist that character but silently erase the
+ * pointer, and the next boot would find nothing to come back to at all
+ * (RA_autoloadchat skips the whole branch on a null `active_character`), which
+ * is worse than the stale pointer this function exists to fix. ST's own
+ * handler never hits that because `$(this).attr('data-chid')` is a DOM
+ * attribute and therefore always a string; passing `String(index)` is
+ * literally the same value it passes. `getTagKeyForEntity('0')` still resolves
+ * through `parseInt()` to `characters[0]` — the ambiguity that rules out
+ * strings above is about *avatars*, never about a stringified index.
+ *
  * Never throws: failing to persist the selection must not fail the switch the
  * reader actually asked for.
  */
 function persistStActiveCharacter(index: number): void {
     try {
-        setActiveCharacter(index);
+        setActiveCharacter(String(index));
         setActiveGroup(null);
         saveSettingsDebounced();
     } catch (error) {

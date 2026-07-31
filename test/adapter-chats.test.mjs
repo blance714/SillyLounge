@@ -1687,10 +1687,22 @@ test('resolvePendingCharacterChatDraftQuarantine reports settled without reading
 // gets handed to setActiveCharacter.
 // =======================================================================
 
-/** Record the exact setActiveCharacter/setActiveGroup/save call sequence. */
+/**
+ * Record the exact setActiveCharacter/setActiveGroup/save call sequence.
+ *
+ * `setActiveCharacter` records what ST would actually *persist*, not what it
+ * was handed: ST resolves the key behind a truthiness gate
+ * (`active_character = entityOrKey ? getTagKeyForEntity(entityOrKey) : null`,
+ * script.js:834-837), so a falsy key persists `null`. A stub that recorded the
+ * raw argument would happily accept the number `0` — the first character in
+ * the list — and report a persist that never happened.
+ */
 function recordActiveSelection(host) {
     const calls = [];
-    host.registry.setActiveCharacter = (value) => calls.push(['setActiveCharacter', value]);
+    host.registry.setActiveCharacter = (value) => calls.push([
+        'setActiveCharacter',
+        value ? String(value) : null,
+    ]);
     host.registry.setActiveGroup = (value) => calls.push(['setActiveGroup', value]);
     host.registry.saveSettingsDebounced = () => calls.push(['saveSettingsDebounced']);
     return calls;
@@ -1718,9 +1730,43 @@ test('switchCharacter persists the character it just selected as ST\'s active ch
             // The live index, never the avatar string: getTagKeyForEntity()
             // runs a string through parseInt() first, so an avatar like
             // "3.png" would resolve to a different card.
-            ['setActiveCharacter', 1],
+            ['setActiveCharacter', '1'],
             // A character selection must also retire any persisted group, or
             // ST's boot finds both set and drops the character.
+            ['setActiveGroup', null],
+            ['saveSettingsDebounced'],
+        ]);
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('the first character in the list persists like any other, even though its index is the one value ST would treat as "no character"', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'ann.png' });
+        // Ann is characters[0] — the position every list has and ST's own
+        // handler only survives because a DOM attribute is always a string.
+        host.context.characters = [
+            { avatar: 'ann.png', name: 'Ann', chat: 'ann-chat.jsonl' },
+            { avatar: 'bob.png', name: 'Bob', chat: 'bob-chat.jsonl' },
+        ];
+        host.context.characterId = 1;
+        const calls = recordActiveSelection(host);
+        host.registry.selectCharacterById = (index) => {
+            host.context.characterId = index;
+        };
+
+        const navigation = await host.importModule('adapter/chats/navigation.js');
+
+        assert.equal(await navigation.switchCharacter('ann.png'), 'ok');
+        assert.deepEqual(calls, [
+            // Not the number 0: setActiveCharacter resolves the key behind
+            // `entityOrKey ? … : null`, so a falsy index would persist "no
+            // character at all" and the next boot would skip RA_autoloadchat's
+            // whole branch — landing the reader nowhere, which is worse than
+            // the stale pointer this write exists to fix.
+            ['setActiveCharacter', '0'],
             ['setActiveGroup', null],
             ['saveSettingsDebounced'],
         ]);
@@ -1781,7 +1827,7 @@ test('opening another character\'s conversation persists that character too, and
         };
         assert.equal(await navigation.openChatForCharacter('bob.png', 'bob-night-two'), 'ok');
         assert.deepEqual(calls, [
-            ['setActiveCharacter', 1],
+            ['setActiveCharacter', '1'],
             ['setActiveGroup', null],
             ['saveSettingsDebounced'],
         ]);
