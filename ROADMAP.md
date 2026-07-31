@@ -221,7 +221,8 @@ Last updated: 2026-07-31
 
 整场重构是 `main`(基础层:token/字阶、宣纸浮层、宣纸确认弹窗)加上一条五节未合
 分支栈:`pr4-stage-skin` → `pr5-actions-ia` → `pr6-swipe-segments` →
-`pr9-spine-playbill` → `pr7-topbar-trio`,共 45 个提交。沿途每一棒都如实报了自己
+`pr9-spine-playbill` → `pr7-topbar-trio`,共 49 个提交(与本文末「当前分支与工作树」
+那张栈图逐层相加同数)。沿途每一棒都如实报了自己
 **没做**的事;下面把这些遗留合并成一张可执行清单。每条给「现状 → 落点 → 建议
 做法 → 依赖」,不复述各棒的叙述。
 
@@ -380,6 +381,19 @@ SC,拿不到就回退到本机已装的思源/宋体系」。真要按稿呈现�
 到。落点:让 `isCurrent` 只认一个真源(chat store 的 `currentChat`),header 只负
 责显示。
 
+**G4 点开一条文件已消失的普通历史行,得到的是一场崭新的对话,而不是一句实话。**
+终审真机实测(smoke 样张 + 第二条普通会话,把 `.jsonl` 从盘上删掉再点那一行):
+既没有 toast,那一行也不消失,`chatId` 照旧是那个名字,而 `chat.length === 1`——
+ST 按新对话加载并放上角色的开场白。读者看不出任何异样,下一次保存就把这个名字
+重新写实,变成一场与原来那场毫无关系的对话。根因在 `adapter/chats/navigation.ts` 的 `openChatForCharacter`:它只在
+**角色卡不在名册**或文件名为空时回 `notfound`,而对已在台上的角色,打开一个不存在
+的文件对 ST 根本不是错误,`openCharacterChat()` 就按空对话加载。收官轮补的
+`vanished-chat-store` 广播因此覆盖不到这一格(草稿/租约两条路径已实测覆盖并做过
+变异体验证,见 `INVARIANTS.md` §3)。落点:`openChatForCharacter` 在切换前先问一次
+`hasCharacterChatFile`(同函数里草稿路径已经这么做),文件不在就回 `notfound`,让既
+有广播接手。**注意成本**:那是每次打开都多一次目录读取,要么只在「读缓存里有、但
+可能已过期」时问,要么接受这次读取——先量再定。
+
 ---
 
 ## 剩余工作(按优先级 · 已按 价值/成本 + 避免返工 重排)
@@ -439,8 +453,9 @@ main 86995df
      └─ refactor/pr5-actions-ia    7b3ea04  +4         所有楼层共用同一条四钮操作条
          └─ refactor/pr6-swipe-segments 184f4d1  +5    swipe 版本改画成刻度段
              └─ refactor/pr9-spine-playbill 207d8a4 +13 侧栏拆成书脊 + 场刊
-                 └─ refactor/pr7-topbar-trio        +6 topbar 就地改名 + ⋯ 三件套
-                                                       （末个代码提交 271f795）＋本次收尾文档
+                 └─ refactor/pr7-topbar-trio        +8 topbar 就地改名 + ⋯ 三件套
+                                                       （末个代码提交 2054c94：终审真机
+                                                       抓到的就地改名焦点缺陷）＋收尾文档
 ```
 
 编号是章节的**拟稿顺序**，不是叠放顺序（pr7 最后写、叠在 pr9 上；没有 pr8 分支），
