@@ -2,6 +2,7 @@ import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { openChatuiChatForCharacter, deleteChatuiChat, renameChatuiChat } from '../../actions.js';
 import { formatConversationMeta } from '../../format.js';
+import { useCaretOnMount } from '../../hooks.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
 import { QuarantinedDrafts } from './QuarantinedDrafts.js';
 import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '../../types.js';
@@ -27,6 +28,9 @@ function ConversationCard({
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [renameDraft, setRenameDraft] = useState<string | null>(null);
     const isRenaming = renameDraft !== null;
+    // Not `autoFocus`: it is inert for a field mounted after load, which left
+    // focus sitting on the pencil button — see hooks.ts's useCaretOnMount.
+    const renameRef = useCaretOnMount<HTMLInputElement>(isRenaming);
 
     const open = () => {
         if (isRenaming) return;
@@ -62,10 +66,10 @@ function ConversationCard({
             <div className="cui-root-playbill-card-body">
                 {isRenaming ? (
                     <input
+                        ref={renameRef}
                         className="cui-root-nested-chat-row-rename"
                         type="text"
                         value={renameDraft}
-                        autoFocus
                         aria-label="重命名对话"
                         onClick={(event) => event.stopPropagation()}
                         onInput={(event) => setRenameDraft(event.currentTarget.value)}

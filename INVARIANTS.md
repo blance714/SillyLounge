@@ -890,6 +890,15 @@ flag 断言原生只挂 1 行。性能对照仍可用 `--truncation-guard off` �
   disabled 属性是否真的挡住点击）零浏览器级驱动——与上面 ConfirmDialogHost 的
   缺口同一类，`e2e/smoke.spec.mjs` 只静态断言 `.cui-root-topbar-title`/
   `-eyebrow` 的文本，从不触发改名态。
+  **2026-08-01 终审补记**：这条缺口被手工真机驱动了一轮（pinned 1.18.0 + 真
+  Chromium，非入库脚本），当场抓到它存在的理由——两处就地改名的输入框**都拿不到
+  焦点**（topbar 的停在 `<body>`，场刊卡的停在铅笔钮本身），因为 `autoFocus` 对
+  「加载完成之后才挂载」的元素本就无效，而 Preact 没有 React 那层 shim。已按
+  `MessageEditor.tsx` 的既有先例改成显式 focus（`hooks.ts` 的 `useCaretOnMount`，
+  两处共用）。缺口本身**依然登记**：这一轮是手工的，仓库里仍没有任何自动化门禁会
+  在下次回归时发现同样的事。要补的那条 Chromium 场景至少应断言：铅笔只在
+  hover/focus-within 显影、点开后 `document.activeElement` 就是输入框、Enter 真的
+  改名而 Esc 真的不改、⋯ 六行的顺序/danger/disabled、以及群聊态下三行禁用。
 - **2026-07-19 Tier 3 后现状更新**：`saveMessageEditById` 本身（DOM-DECOUPLING.md
   Tier 3 分叉）已完全 DOM-free，不再依赖 `#chat .mes[mesid="X"]` 复合选择器，
   这条湮灭的缺口不再登记——契约测试（regexPlacement/characterOverride/
