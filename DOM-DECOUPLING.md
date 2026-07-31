@@ -114,7 +114,15 @@ Tier 3 落地一并移除的：Tier 2 的 `this_edit_mes_id` 影子变量（其�
    共享宿主队列**之外**，只有真正决定要执行的变更才入队，避免用户盯着对话框
    发呆时挡住其它排队操作。措辞（"Are you sure you want to delete this
    message?" / "Delete Swipe" / "Delete Message" / "Cancel"）与 ST 原生逐字一
-   致，用户已经认得这套文案。adapter 层（`src/adapter/messages.ts`）现在完全
+   致，用户已经认得这套文案。
+   **2026-07-31 长廊剧场重构推翻了这条措辞规则**：改为设计稿 §9 的中文文案
+   （「删除这一楼？」/「仅删除此条」/「删除整楼」/「取消」）。「与原生逐字一
+   致」买到的是辨识度，在这个弹窗还是 ST 弹窗的替身时值这个价；现在它是 ChatUI
+   自己的宣纸面，周围全是中文，而 "Delete Swipe" 说的是 ST 的实现术语而不是屏幕
+   上那个东西——辨识度不值一个「中文按钮配英文问句」。三态里升级项与两态确认项
+   实际执行的都是整条删除，措辞却不同：只有升级项身边站着另一个选项，也只有它
+   需要说清自己是哪一个。
+   adapter 层（`src/adapter/messages.ts`）现在完全
    不含任何 UI：`getDeleteEligibility()`/`getConfirmMessageDeleteSetting()` 只
    读不问，`deleteMessageWithIntent()` 只按调用方已经决定好的 intent 执行，从
    不弹窗、从不读设置。

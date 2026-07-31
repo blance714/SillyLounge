@@ -42,7 +42,7 @@
 | 不变量 | 验证 |
 | --- | --- |
 | confirm_message_delete 为 false 时跳过确认对话框，直接整条删除 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): confirm_message_delete === false skips the confirm dialog entirely and runs a full-message delete immediately` |
-| 仅删 swipe 资格具备 + confirm 开启时请求三态对话框（措辞与 ST 原生逐字一致），选择默认项按该消息的已选 swipe id 执行仅删 swipe | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with ST's own wording; choosing "confirm" runs the swipe-only mini-fork with the message's selected swipe id` |
+| 仅删 swipe 资格具备 + confirm 开启时请求三态对话框（措辞照设计稿 §9，2026-07-31 起不再与 ST 原生逐字一致），选择默认项按该消息的已选 swipe id 执行仅删 swipe | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on requests a three-way dialog with the design's own wording; choosing "confirm" runs the swipe-only mini-fork with the message's selected swipe id` |
 | 三态对话框选择「升级」项时改执行整条删除，绝不二次弹窗 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): swipe-eligible + confirm on — choosing "escalate" in the three-way dialog runs the full-message fork instead, with no second dialog` |
 | 任一对话框变体选择取消时零变更、零删除相关宿主调用 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): choosing "cancel" (either dialog variant) leaves the chat untouched and never calls any delete-execution host function` |
 | 不具备仅删 swipe 资格 + confirm 开启时请求纯两态对话框，确认后整条删除 | `test/chat-actions.test.mjs :: triggerChatuiMessageAction("delete"): not swipe-eligible + confirm on requests a plain two-way dialog; confirming deletes the whole message` |
