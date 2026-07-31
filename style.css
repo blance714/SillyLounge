@@ -719,6 +719,8 @@ body.chatui-active .cui-root-topbar-eyebrow {
 }
 
 body.chatui-active .cui-root-topbar-title {
+    flex: 1 1 auto;
+    min-width: 0;
     margin: 0;
     font-family: var(--cui-font-display);
     font-size: var(--cui-font-title);
@@ -727,6 +729,71 @@ body.chatui-active .cui-root-topbar-title {
     font-weight: 700;
     letter-spacing: var(--cui-tracking-title);
     line-height: 1.28;
+}
+
+/* README §7 / DESIGN §4.1: hover the title, a pencil fades in beside it and
+   swaps the title for an in-place rename input. The row is the hover/focus
+   surface — not the title itself — so the pencil's own hover state (its
+   background tint) never fights the title row's reveal state. */
+body.chatui-active .cui-root-topbar-title-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+body.chatui-active .cui-root-topbar-rename-trigger {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 22.4px;
+    height: 22.4px;
+    border: none;
+    border-radius: var(--cui-radius-sm);
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
+    font-size: var(--cui-font-chip);
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--cui-motion-reveal) ease;
+}
+
+body.chatui-active .cui-root-topbar-title-row:hover .cui-root-topbar-rename-trigger,
+body.chatui-active .cui-root-topbar-title-row:focus-within .cui-root-topbar-rename-trigger {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+body.chatui-active .cui-root-topbar-rename-trigger:hover,
+body.chatui-active .cui-root-topbar-rename-trigger:focus-visible {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    color: var(--cui-color-text);
+    outline: none;
+}
+
+/* Touch has no hover (same reasoning as the playbill card dock, §4.2): a
+   pencil nobody can reveal is a pencil nobody has. */
+@media (max-width: 768px) {
+    body.chatui-active .cui-root-topbar-rename-trigger {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+body.chatui-active .cui-root-topbar-title-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+body.chatui-active .cui-root-topbar-rename-hint {
+    color: color-mix(in srgb, var(--cui-color-text) 50%, transparent);
+    font-family: var(--cui-font-ui);
+    /* README §7: the「Enter 保存 · Esc 取消」reminder line is 10px. */
+    font-size: var(--cui-font-xs);
+    letter-spacing: var(--cui-tracking-btn);
 }
 
 body.chatui-active .cui-root-topbar-tools {
@@ -800,7 +867,8 @@ body.chatui-active .cui-root-topbar-menu {
         padding: 4px 0 9.6px;
     }
 
-    body.chatui-active .cui-root-topbar-title {
+    body.chatui-active .cui-root-topbar-title,
+    body.chatui-active .cui-root-topbar-rename {
         font-size: var(--cui-font-base);
     }
 
@@ -821,25 +889,29 @@ body.chatui-active .cui-root-topbar-menu {
         min-width: 32px;
         padding-inline: 0;
     }
-
-    body.chatui-active .cui-root-topbar-rename {
-        width: min(42vw, 192px);
-    }
 }
 
-/* Inline rename input shown in place of the ⋯ button */
+/* In-place title rename (README §7 / DESIGN §4.1): the title becomes an
+   input where it stands, at the title's own type, gaining only the rust
+   ("暖棕") outline the playbill card's own in-place rename uses
+   (.cui-root-nested-chat-row-rename, §4.2) — one rename affordance, one
+   border treatment, regardless of which surface it appears on. */
 body.chatui-active .cui-root-topbar-rename {
-    height: 34.4px;
-    padding: 0 8px;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-md);
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 1px 6px;
+    border: 1px solid var(--cui-color-user-mark);
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-card);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-title);
+    font-weight: 700;
+    letter-spacing: var(--cui-tracking-title);
     outline: none;
     min-width: 0;
-    width: min(60vw, 192px);
 }
 
 /* The topbar menu dropdown opens below and to the right */

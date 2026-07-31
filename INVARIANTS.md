@@ -548,6 +548,29 @@ spine 是 ChatUI 唯一的换角色入口（ST 原生列表在遮罩之下），
 | 畸形的 size/recency 值一律读作 0，不污染排序 | `test/spine-cast.test.mjs :: malformed recency and size values are read as zero instead of poisoning the order` |
 | 绝不就地改动传入的 cast 数组（它属于查询缓存，原地排序会改掉所有读者看到的顺序） | `test/spine-cast.test.mjs :: the source list is never mutated` |
 
+### Topbar 改名与分支门禁（ui/topbar-menu-logic.ts）
+
+pr7：topbar 标题改成就地改名（README §7 / DESIGN §4.1 铅笔钮 + 输入框），⋯ 菜单
+的「重命名对话」行改为触发同一处编辑而不是自己另开一个输入框——两个入口共享
+一份「这次提交该不该真的发生」的判定，因此判定本身被下沉成纯函数，可以脱离
+TopbarTitle.tsx/TopbarMenu.tsx 两处渲染分别单测。`resolveTopbarRenameCommit`
+把 pr7 之前散落在 TopbarMenu 内部 `commitRename`/`_isLiveTarget` 里的两条判断
+（trim 后判空/判同名、改名过程中会话是否被切走）合并成一条：任何一条不成立都
+返回 `null`，调用方据此决定要不要真的调 `renameChatuiChat`。`resolveBranchFromLastFloor`
+则是「从末楼开新分支」这一行的启用判定与目标 id 解析，与 app.tsx 里
+`handleEditLast`（编辑最后一楼）用的是同一条门槛——末楼正在生成时禁用，而不是
+另发明一条规则。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 空白（含纯空格）改名草稿一律当空处理，拒绝提交 | `test/topbar-menu-logic.test.mjs :: resolveTopbarRenameCommit: a whitespace-only draft is refused as a no-op` |
+| trim 后与原名相同的草稿拒绝提交（防止一次无意义按键占用宿主队列） | `test/topbar-menu-logic.test.mjs :: resolveTopbarRenameCommit: a draft identical to the name on record (after trim) is refused` |
+| 改名期间会话已切走（avatar 或 fileName 任一变化，含彻底无当前会话）时拒绝提交，绝不改错文件 | `test/topbar-menu-logic.test.mjs :: resolveTopbarRenameCommit: a live identity that no longer matches the chat rename was started against is refused` |
+| trim 后确有变化且会话仍是发起改名时的那个，提交返回 trim 后的目标名 | `test/topbar-menu-logic.test.mjs :: resolveTopbarRenameCommit: a genuine, trimmed rename against the still-live target commits` |
+| 没有消息时「从末楼开新分支」禁用且不给出目标 id | `test/topbar-menu-logic.test.mjs :: resolveBranchFromLastFloor: no messages yields disabled with no target id` |
+| 有消息且未在生成时启用，目标 id 取最后一条消息 | `test/topbar-menu-logic.test.mjs :: resolveBranchFromLastFloor: messages present and idle targets the last message id` |
+| 即使有消息，正在生成时也禁用（末楼还没写完，不该从它分支） | `test/topbar-menu-logic.test.mjs :: resolveBranchFromLastFloor: generation in flight disables the row even with messages present` |
+
 ## 10. 构建与运行时契约
 
 | 不变量 | 验证 |
@@ -834,6 +857,14 @@ flag 断言原生只挂 1 行。性能对照仍可用 `--truncation-guard off` �
   比上一条「mesEl?.remove() 的真实效果」更外层、更贴近用户可感知行为的一层缺口，
   没有便宜地折进现有任何一道浏览器门禁（`e2e/smoke.spec.mjs`、
   `scripts/e2e/measure-chat-switch.mjs`），需要专门补一条 Chromium 场景。
+- **新增（pr7）：topbar 标题的就地改名（铅笔钮悬停显影 → 输入框 → Enter/Esc）、
+  ⋯ 菜单新增的「从末楼开新分支」「角色卡设定……」两行，三者的启用/禁用判定
+  （§9 新增小节）与提交判定（`resolveTopbarRenameCommit`）都已单测覆盖，但组件
+  本身（TopbarTitle.tsx 的悬停显影是否真的只在 hover/focus-within 时发生、
+  input 是否真的拿到焦点、TopbarMenu.tsx 三行是否真的按设计稿 §7 的顺序渲染、
+  disabled 属性是否真的挡住点击）零浏览器级驱动——与上面 ConfirmDialogHost 的
+  缺口同一类，`e2e/smoke.spec.mjs` 只静态断言 `.cui-root-topbar-title`/
+  `-eyebrow` 的文本，从不触发改名态。
 - **2026-07-19 Tier 3 后现状更新**：`saveMessageEditById` 本身（DOM-DECOUPLING.md
   Tier 3 分叉）已完全 DOM-free，不再依赖 `#chat .mes[mesid="X"]` 复合选择器，
   这条湮灭的缺口不再登记——契约测试（regexPlacement/characterOverride/

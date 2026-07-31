@@ -24,12 +24,15 @@ import { ConfirmDialogHost } from './components/ConfirmDialogHost.js';
 import { SettingsNav } from './components/settings/SettingsNav.js';
 import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
+import { TopbarTitle } from './components/TopbarTitle.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings } from './hooks.js';
-import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMessageEditDraftStore } from './actions.js';
+import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings, useTopbarChatTarget } from './hooks.js';
+import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, renameChatuiChat, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMessageEditDraftStore } from './actions.js';
 import { teardownCardEmbedRuntime } from './card-embed.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
+import { resolveTopbarRenameCommit } from './topbar-menu-logic.js';
+import type { TopbarChatTarget } from './topbar-menu-logic.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
 
 /**
@@ -138,9 +141,17 @@ function ChatuiApp(): ComponentChild {
     const sidebarBasics = useSidebarBasics();
     const chatHeader = sidebarBasics.header;
     const isTempChatActive = useIsTempChatActive();
+    const { hasCurrentChat: canRenameTopbarTitle, target: topbarChatTarget } = useTopbarChatTarget();
     const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
     const initializedVirtualChatKeyRef = useRef<string | null>(null);
     const [editingMessage, setEditingMessage] = useState<EditingMessageTarget | null>(null);
+    // Which chat the topbar's in-place rename input is open for, and its
+    // draft text kept in a separate state (not nested inside the target) so
+    // typing a keystroke doesn't also re-run the stale-target effect below.
+    // Lifted here, not owned by TopbarTitle, because TopbarMenu's own
+    // 「重命名对话」row (design §7) must be able to start this exact edit.
+    const [topbarRenameTarget, setTopbarRenameTarget] = useState<TopbarChatTarget | null>(null);
+    const [topbarRenameDraft, setTopbarRenameDraft] = useState('');
     const headerMode: MessageHeaderMode = state.chat.isGroup ? config.headerGroup : config.headerSolo;
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const { settingsOpen } = useSettings();
@@ -219,6 +230,20 @@ function ChatuiApp(): ComponentChild {
         setIsSidebarMobileOpen(false);
     }, [settingsOpen, state.chat.chatKey]);
 
+    // The reader switching chats (spine, playbill, temp-chat navigation — any
+    // of them) while the topbar rename input is still open must not leave a
+    // stale rename box floating over the *new* chat's title, and must never
+    // let a later Enter rename the chat that is no longer on screen.
+    useEffect(() => {
+        if (!topbarRenameTarget) return;
+        const stillLive = !!topbarChatTarget
+            && topbarChatTarget.avatar === topbarRenameTarget.avatar
+            && topbarChatTarget.fileName === topbarRenameTarget.fileName;
+        if (stillLive) return;
+        setTopbarRenameTarget(null);
+        setTopbarRenameDraft('');
+    }, [topbarChatTarget, topbarRenameTarget]);
+
     const { awayFromLatest, scrollToBottom } = useAutoScroll(listNode, messageIds, state.chat.isGenerating, state.chat.chatKey);
     useEscapeToStopGeneration(state.chat.isGenerating);
 
@@ -229,6 +254,23 @@ function ChatuiApp(): ComponentChild {
         if (lastMessageId === undefined || state.chat.isGenerating) return;
         setEditingMessage({ chatKey: state.chat.chatKey, id: lastMessageId });
     }, [messageIds, state.chat.isGenerating, state.chat.chatKey]);
+    const startTopbarRename = useCallback((target: TopbarChatTarget) => {
+        setTopbarRenameTarget(target);
+        setTopbarRenameDraft(target.displayName);
+    }, []);
+    const cancelTopbarRename = useCallback(() => {
+        setTopbarRenameTarget(null);
+        setTopbarRenameDraft('');
+    }, []);
+    const commitTopbarRename = useCallback(() => {
+        const target = topbarRenameTarget;
+        const draft = topbarRenameDraft;
+        setTopbarRenameTarget(null);
+        setTopbarRenameDraft('');
+        if (!target) return;
+        const outcome = resolveTopbarRenameCommit(target, draft, topbarChatTarget);
+        if (outcome) void renameChatuiChat(outcome.avatar, outcome.fileName, outcome.nextName);
+    }, [topbarRenameTarget, topbarRenameDraft, topbarChatTarget]);
 
     return (
         <>
@@ -271,13 +313,22 @@ function ChatuiApp(): ComponentChild {
                           >
                               <i className="fa-solid fa-bars" />
                           </button>
-                          <div className="cui-root-topbar-heading">
-                              <span className="cui-root-topbar-eyebrow">{conversationEyebrow}</span>
-                              <h1 className="cui-root-topbar-title">{conversationTitle}</h1>
-                          </div>
+                          <TopbarTitle
+                              title={conversationTitle}
+                              eyebrow={conversationEyebrow}
+                              canRename={canRenameTopbarTitle}
+                              isRenaming={topbarRenameTarget !== null}
+                              draft={topbarRenameDraft}
+                              onStartRename={() => {
+                                  if (topbarChatTarget) startTopbarRename(topbarChatTarget);
+                              }}
+                              onDraftChange={setTopbarRenameDraft}
+                              onCommit={commitTopbarRename}
+                              onCancel={cancelTopbarRename}
+                          />
                           <div className="cui-root-topbar-tools">
                               <SelectorChips kinds={['persona']} />
-                              <TopbarMenu />
+                              <TopbarMenu onStartRename={startTopbarRename} />
                           </div>
                       </header>
                       <div className="cui-root-message-stage">
