@@ -62,18 +62,39 @@
     --cui-color-seal: color-mix(in srgb, var(--cui-color-user-mark) 46%, var(--cui-color-accent));
 
     /* Paper surface: the light popover/dialog ground and the ink that sits on
-       it. Deliberately unconsumed in this pass — the shared paper popover is
-       its own change — but the palette is one system, so the values live here
-       instead of being invented twice later. */
+       it. Written one pass ahead of the surface that would use it, on the
+       argument that the palette is one system; the shared paper popover now
+       consumes all of it except --cui-paper-btn-text, which is still waiting
+       on the design's paper buttons (§2/§9). */
     --cui-paper-top: #b9ab8c;
     --cui-paper-bottom: #a89877;
     --cui-paper-text: #1c140b;
     --cui-paper-accent: #8a5636;
     --cui-paper-accent-strong: #6e3f1f;
     --cui-paper-btn-text: #f0e6d2;
-    --cui-paper-rule: rgba(120, 80, 45, 0.4);
     --cui-paper-danger: #8c3a2a;
     --cui-paper-danger-strong: #7a2f1f;
+
+    /* Paper has its own ink for everything drawn *on* the sheet rather than
+       written on it: the binding rule and every wash a row picks up when it
+       is hovered, pinned or pressed. The dark stage got --cui-tint-* for this
+       exact job, but the paper surface then re-scattered the same brown as
+       four hand-tuned rgba() literals across four rules — the pattern that
+       scale was introduced to end. One ink, four steps, so the fifth paper
+       component copies a name instead of a number. Steps are colors rather
+       than percentages because paper mixes toward its own ink, not toward the
+       text color the dark tints mix toward. */
+    --cui-paper-ink: #78502d;
+    --cui-paper-rule: color-mix(in srgb, var(--cui-paper-ink) 40%, transparent);
+    --cui-paper-tint-rest: color-mix(in srgb, var(--cui-paper-ink) 7%, transparent);
+    --cui-paper-tint-hover: color-mix(in srgb, var(--cui-paper-ink) 14%, transparent);
+    --cui-paper-tint-active: color-mix(in srgb, var(--cui-paper-ink) 16%, transparent);
+    --cui-paper-tint-danger: color-mix(in srgb, var(--cui-paper-danger) 14%, transparent);
+    /* The inner glow is part of what paper *is* — the design gives the menu
+       (§8) and the confirm dialog (§9) the same inset and only differs their
+       outer drop shadow — so the shared half is named and the per-surface
+       elevation stays at its call site. */
+    --cui-paper-glow: inset 0 0 22px rgba(80, 60, 35, 0.28);
 
     /* Type roles: serif for read content (names, message/reasoning body,
        composer input), sans for chrome (buttons, labels, timestamps). Most
@@ -205,7 +226,7 @@
        "message-bubble-shaped" spots the audit found. */
     --cui-plus-tile-border: 1px dashed var(--cui-paper-rule);
     --cui-plus-tile-radius: var(--cui-radius-paper);
-    --cui-plus-tile-bg: rgba(120, 80, 45, 0.07);
+    --cui-plus-tile-bg: var(--cui-paper-tint-rest);
 
     /* Sidebar nested-row indent: derived from the same three tokens that
        actually govern the char-group-header row it needs to line up under
@@ -321,9 +342,12 @@ body.chatui-active .cui-paper {
     background-size: 140px 140px, auto;
     background-blend-mode: overlay, normal;
     color: var(--cui-paper-text);
+    /* The drop shadow is this surface's own elevation (§8); the inner glow is
+       the sheet itself catching stage light and is identical on the confirm
+       dialog (§9), so only that half is a token. */
     box-shadow:
         0 18px 50px rgba(0, 0, 0, 0.65),
-        inset 0 0 22px rgba(80, 60, 35, 0.28);
+        var(--cui-paper-glow);
     animation: cui-paper-in 0.12s ease;
 }
 
@@ -382,7 +406,7 @@ body.chatui-active .cui-paper-item {
 
 body.chatui-active .cui-paper-item:hover,
 body.chatui-active .cui-paper-item:focus-visible {
-    background-color: rgba(120, 80, 45, 0.14);
+    background-color: var(--cui-paper-tint-hover);
     color: var(--cui-paper-text);
     outline: none;
 }
@@ -393,7 +417,7 @@ body.chatui-active .cui-paper-item.is-danger {
 
 body.chatui-active .cui-paper-item.is-danger:hover,
 body.chatui-active .cui-paper-item.is-danger:focus-visible {
-    background-color: rgba(140, 58, 42, 0.14);
+    background-color: var(--cui-paper-tint-danger);
     color: var(--cui-paper-danger-strong);
 }
 
@@ -2483,7 +2507,7 @@ body.chatui-active .cui-root-plus-tile > i {
 
 body.chatui-active .cui-root-plus-tile:hover,
 body.chatui-active .cui-root-plus-tile:focus-visible {
-    background-color: rgba(120, 80, 45, 0.16);
+    background-color: var(--cui-paper-tint-active);
     outline: none;
 }
 
