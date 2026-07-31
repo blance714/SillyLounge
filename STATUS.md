@@ -6,28 +6,47 @@ This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
 `ROADMAP.md` is the live completeness map + priority backlog.
 
-Current development branch: `main`. The 2026-07-10/11 architecture hardening,
-visual restoration, and desktop floor navigation described below are kept as
-reviewable semantic batches. Two unmerged corridor-theater refactor branches sit
-on top of it — see Current Visual Identity.
+Current development branch: `main`, plus one unmerged corridor-theater stack of
+five branches on top of it. The 2026-07-10/11 architecture hardening, visual
+restoration, and desktop floor navigation described below are kept as reviewable
+semantic batches; the stack follows the same rule. See Current Branch Stack for
+the topology and Current Visual Identity for what it renders.
 
 ## Current Visual Identity
 
-The visual identity is mid-transition. `DESIGN.md` now specifies the corridor
-theater (长廊剧场) direction — an ink-dark stage, a 58px character spine plus a
-252px playbill of conversation cards, xuan-paper popovers, cinnabar danger,
-dashed binding rules — and it replaced the Manuscript Flow contract as the north
-star on 2026-07-31. `main` has not caught up yet.
+The corridor theater (长廊剧场) has landed. `DESIGN.md` — the north star since
+2026-07-31 — specifies an ink-dark stage, a 58px character spine plus a 252px
+playbill of conversation cards, xuan-paper popovers, cinnabar danger and dashed
+binding rules, and that is what the app now renders. "New palette, old layout"
+was the honest reading of this document's previous revision; it is out of date.
+The correct reading today is "new palette, new layout, four surfaces still
+speaking the old dialect" — see the chapter table below.
 
-What has landed lives on two branches that are **not merged**:
-`refactor/pr0-design-tokens` (`da23813`) rewrote the token layer and the type
-scale onto the ink-theatre palette, and `refactor/pr2-paper-popover` (`2d56365`,
-built on top of `da23813`) gave every menu one shared `.cui-paper` surface. That
-is the design system plus one of the ten handoff chapters; the sidebar
-information architecture, message flow, topbar, composer, and confirm dialog are
-untouched, so `main` still renders the Manuscript Flow surface. "New palette,
-old layout" is an accurate reading of the current build, not a rendering
-glitch.
+Only the foundation is on `main` (tokens, type scale, the shared `.cui-paper`
+popover, the paper confirm dialog). The stage, action bar, swipe ticks, spine,
+playbill and topbar all sit on the unmerged stack, so a checkout of `main` still
+shows the two-pane Manuscript Flow surface.
+
+Chapter by chapter against the handoff's ten Screens/Views
+(`~/Developer/design_handoff_corridor_theater/README.md`):
+
+| # | Chapter | State | Landed on |
+| --- | --- | --- | --- |
+| 1 | 对话列表卡片 | **done** — cards, binding gutter, hover action dock, in-place rename, dashed 未完成草稿 cards | pr9 |
+| 2 | 空态（无角色） | **half** — the playbill says 「书架还空着……」; the 300px 空戏单 card on the stage (虚位以待, drag in a PNG/JSON card, 浏览文件) is not built | — |
+| 3 | 楼层刻度轨 | **refused on purpose** (`DESIGN.md` §4.3) — desktop keeps ChatUI's own measured `2px/8px` ticks, 40px safety and bounded wheel window; only the preview bubble's floor number and edge fade were aligned | main |
+| 4 | 消息流 | **done** — stage ground, connector header row, ruled body, thinking block, action bar, swipe ticks, in-place editor, ⋯ menu, 回到最新 capsule | pr4·pr5·pr6 |
+| 5 | 开场白选择 | **not built** — none of the three forms (inline list, 520px modal, 「换一个开场」 capsule); `DESIGN.md` has not adopted the chapter either | — |
+| 6 | Composer | **done** — fade mask, decoration row, preset chip, ＋menu, send/stop, hint row | pr4 |
+| 7 | Topbar | **most of it** — two-tier title, persona chip and the rename pencil are in; the ⋯ menu carries 3 of the handoff's 5 rows plus rename, and is missing 让模型重拟题名 and 导出为纯文本 (both need adapter exports that do not exist) | pr4·pr7 |
+| 8 | 宣纸菜单 | **done** — one shared `.cui-paper` surface | main |
+| 9 | 删除确认弹窗 | **done** — outline danger button, 300ms Enter guard | main |
+| 10 | Toast | **token-only** — reads the palette but keeps the old grammar: top-centered pill row, not the design's bottom-120px card | — |
+
+Three more surfaces are in the same position as chapter 10: the settings shell,
+code blocks and the QR bar read `--cui-*` so they inherit the ink palette, but
+none of them was given the dialect. They were left out of every chapter above
+deliberately, not missed.
 
 The Manuscript Flow grammar is not discarded wholesale — `DESIGN.md` keeps it as
 the grammar *inside* the stage: a title-page topbar, three tiers of hairline
@@ -35,7 +54,39 @@ rules, open reading-flow messages, a rust user margin, a seal-shaped generation
 state, and a ledger composer. Desktop long-form reading keeps its own left-spine
 floor index (the handoff's rail spec is explicitly not adopted): it forms a local
 wave and reveals a short excerpt only while inspected. What the corridor theater
-changes is the navigation architecture around all of that.
+changed is the navigation architecture around all of that.
+
+`DESIGN.md` §9.1 lists four things that are refused on architectural rather than
+taste grounds and are therefore *not* backlog items: per-character `chunk-in`
+streaming, a global `scroll-behavior: smooth`, any external CDN (which is why
+Noto Serif SC is requested and then falls back to locally installed serifs
+rather than being fetched), and any unscoped `::-webkit-scrollbar`.
+
+## Current Branch Stack
+
+`main` (`86995df`) carries the corridor-theater foundation: design tokens and the
+type scale, token conformance, the shared xuan-paper popover, the paper confirm
+dialog, the PR gate, and the design decisions. `refactor/pr0-design-tokens`,
+`refactor/pr1-token-conformance`, `refactor/pr2-paper-popover` and
+`refactor/pr3-paper-confirm` are all ancestors of `main` now and are kept only as
+review-sized records.
+
+Everything else is stacked, each branch on the previous one's head:
+
+```text
+main 86995df
+ └─ refactor/pr4-stage-skin        c44a0b8  19 commits  stage / message / composer / topbar skin
+     └─ refactor/pr5-actions-ia    7b3ea04  +4          one action bar for every turn
+         └─ refactor/pr6-swipe-segments 184f4d1  +5     swipe versions as segment ticks
+             └─ refactor/pr9-spine-playbill 207d8a4 +13 sidebar → spine + playbill
+                 └─ refactor/pr7-topbar-trio        +8  topbar rename + the ⋯ trio, then the
+                                                        final-gate focus fix (last code commit
+                                                        2054c94) and the doc passes  ← HEAD
+```
+
+49 commits since `main`. The numbers are the order the chapters were *planned*,
+not the order they are stacked (pr7 was written last and sits on pr9; there is no
+`pr8` branch), so the diagram is the authority on what rebases onto what.
 
 ---
 
@@ -106,21 +157,30 @@ src/
     config-store.ts       persisted per-feature config (via adapter/config.ts)
     ui-store.ts           ephemeral session UI state (settings mode / drawer selection)
     toast-store.ts        ChatUI feedback layer
+    vanished-chat-store.ts announces a conversation proved absent (no ST event exists)
   shield/
     st-dom-shield.ts      #chatui-root + body.chatui-active + shield levels
   ui/
-    app.tsx               root Preact shell (two-pane sidebar | chat; settings swaps both panes)
+    app.tsx               root Preact shell (spine | playbill | stage; settings swaps the
+                          playbill slot and the stage, the spine stays mounted)
     root.ts               stable runtime wrapper for dist/root-app.mjs
     actions.ts hooks.ts format.ts types.ts sidebar-queries.ts query-client.ts
+    use-st-query-bridge.ts  ST event / vanished-chat → Query invalidation table
+    card-embed.ts         HTML fenced card iframe host
+    spine-cast.ts  floor-rail-math.ts  follow-scroll-math.ts
+    swipe-segment-math.ts  topbar-menu-logic.ts
+                          dependency-free decision modules, unit-tested directly
     components/
       Composer  PlusMenu  QRBar  SelectorChip  AttachmentChips
-      MessageItem  MessageFloorRail  TopbarMenu  ConfirmDialog  Toaster
+      MessageItem  MessageFloorRail  TopbarTitle  TopbarMenu
+      ConfirmDialog  ConfirmDialogHost  Toaster
       composer/ NewChatCharacterPicker
-      sidebar/  Sidebar CharacterConversationList NewChatButton SettingsEntry
+      sidebar/  Spine Sidebar CharacterConversationList QuarantinedDrafts
+                NewChatButton SettingsEntry
       settings/ SettingsNav SettingsContent ChatUiSettingsContent StDrawerHost
       config/   ConfigSelect PlusPinEditor
       message/  ActionButton MenuItem MessageActions MessageAvatar
-                MessageEditor MessageMedia MessageReasoning
+                MessageEditor MessageMedia MessageReasoning SwipeSegments
   types/st-externals.d.ts SillyTavern host-module declarations
 scripts/                  build / dev / validated atomic-runtime tooling
   e2e/                    dataRoot / host / Playwright / performance harnesses
@@ -142,11 +202,12 @@ validated release generation. `dev` uses the same validation/publication path.
 
 ## Ownership Boundary
 
-ChatUI owns: the sidebar navigation center, the root topbar, the visible message
-list and its desktop floor navigator, message body/media/reasoning rendering,
-the inline edit surface, the composer (＋menu, selector chips, attachment chips,
-QR bar), the toast feedback
-layer, and the ChatUI-native settings shell.
+ChatUI owns: the navigation center (the character spine and the playbill of
+conversation cards), the root topbar including its in-place title rename, the
+visible message list and its desktop floor navigator, message
+body/media/reasoning rendering, the inline edit surface, the composer (＋menu,
+selector chips, attachment chips, QR bar), the toast feedback layer, and the
+ChatUI-native settings shell.
 
 SillyTavern still owns: chat persistence, generation/regeneration, settings,
 extension events, file previews, and all native drawer panel contents. ChatUI may
@@ -183,15 +244,21 @@ real ST export functions — delete / swipe / rename / chat-switch are no longer
 simulated clicks. The old three-form sidebar cycle and third settings column have
 been replaced by the Codex-app-style two-pane model: `Sidebar | chat`, with
 settings as a mode swap that shows ChatUI-owned nav on the left and either
-ChatUI-native settings or a live ST drawer host on the right. This two-pane shell
-is what ships today; `DESIGN.md` §3 now targets `Spine | Playbill | Stage`, and
-that rework has not started.
+ChatUI-native settings or a live ST drawer host on the right. That two-pane shell
+is what `main` still ships; on the unmerged stack `DESIGN.md` §3's
+`Spine | Playbill | Stage` is what actually renders (pr9), with settings still a
+mode swap — the nav takes the playbill's slot and the spine stays mounted beside
+it, which is why picking a character from a settings pane also leaves settings.
 
 Desktop long conversations now expose a left-spine user-turn navigator beside a
 shared bounded reading column. One `2px` hairline represents one user message, with a
 fixed `8px` gap (`85778e6` loosened it from the `6px` this section used to
 report); short stacks are vertically centered and inset `16px` from the
-main edge. The shared reading column is capped at `54rem`; the rail mounts only
+main edge. The shared reading column is capped at `680px` — pr9 recalibrated it
+from `54rem` in the same change that added the `58px` spine, because the rail's
+mount threshold is a function of both (`DESIGN.md` §3.1: keeping `54rem` would
+have pushed it to ~`1310px` and made the rail vanish on a 1280px laptop with
+nothing failing to say so). The rail mounts only
 when the resulting left gutter leaves at least `12px` after its wave, so it never
 overlays prose. Hover previews that user's words plus the next character reply.
 Overflow becomes a height-bounded tick window with `40px`
@@ -209,13 +276,122 @@ sends, edits, swipes, generates, or otherwise mutates it. After successful
 navigation, ChatUI keeps an untouched file in a persisted quarantine set instead
 of releasing it into ordinary history. Navigation captures the active lease only
 after older queued creation has completed, so the quick “new → old chat” path
-cannot miss the concrete filename. Dormant drafts are recoverable from the
-separate 未完成草稿 shelf and do not block another new chat. ST still lacks an
-atomic server-side conditional DELETE, so physical deletion remains an explicit
-user action rather than unsafe background GC. Restore first checks the raw file
+cannot miss the concrete filename. Dormant drafts do not block another new chat
+and are recoverable from 未完成草稿 cards inlined in that character's playbill
+column (pr9 second baton — they were a separate cross-character shelf before,
+and the container is all that changed: the lease set still decides which files
+these are, and they are still never mixed into ordinary history). ST still
+lacks an atomic server-side conditional DELETE, so physical deletion remains an
+explicit user action rather than unsafe background GC — a draft card's 丢弃 is
+that explicit action, and it goes through the same checked delete transaction
+and the same confirm dialog as any other conversation. Restore first checks the raw file
 list; prompt dry-runs and quiet background generation do not adopt a draft; an
 uncertain rename keeps both possible filenames quarantined until raw state
 settles.
+
+Deleting a character's *last* chat (pr9 third baton, rewritten by the fourth)
+also lands on a quarantined draft rather than a permanent history entry,
+closing the one gap in "never leave a character selected with no conversation"
+(DESIGN §3, evaluation §5 3.6). `delete-transaction.ts` already had to move the
+durable chat pointer somewhere when no real chat survives to replace the
+deleted one; it now reports that fabricated name back
+(`fallbackChatFileName`) instead of letting it become an anonymous entry.
+`sidebar-actions.ts` queues a tombstone (`deletion-finalization.ts`'s
+`queueCharacterChatDraftQuarantine`, a `sessionStorage` sibling of the existing
+`CHAT_DELETED` replay tombstone) right before the mandatory reload the
+current-chat delete path already requires.
+
+The next boot does *not* check whether ST has materialized that file — it
+cannot. ST does so on a fire-and-forget chain APP_READY does not wait for
+(`initRossMods()` at script.js:772 never awaits `RA_autoloadchat()`), so the
+first version of this handoff asked the chat directory too early on every
+single boot, found nothing, and destroyed the intent; measured on a real
+1.18.0 host, the listing came back at t≈848ms and the file was only saved at
+t≈949ms. What replaced it keeps one condition — the fabricated name is this
+character's live current chat. `finalizeChatuiDraftQuarantine` arms the intent
+for this page load and watches: immediately, in case ST's autoload got there
+first, then on CHAT_CHANGED. A chat change that is not the fallback file leaves
+the tombstone alone (its meaning is "if this name goes live, it is a draft",
+and landing elsewhere is no evidence against that); an intent the page never
+resolves is expired by the next boot, so nothing dangles and no wall-clock
+timeout was invented. Once it fires, the file folds into the same quarantine
+set `newChatuiChat()` uses — same 未完成草稿 card, same 丢弃 action, same
+lease rules. The whole boot half is request-free. The decision lives in the
+adapter (read-only over live identity) and the store owns the actual quarantine
+write, keeping the adapter/store boundary intact. Deleting down to a
+*remaining* real chat is unaffected — that path already worked and queues
+nothing new.
+
+Be precise about what that condition proves, because the two branches differ
+and this document previously claimed the stronger fact for both. On the
+CHAT_CHANGED branch the file really is saved already — `getChatResult()` awaits
+`saveChatConditional()` before emitting, so the event cannot arrive early. The
+*immediate* branch — the one a real boot actually takes, since autoload
+finishes before APP_READY — reads `getCurrentChatDetails().sessionName`, which
+is `characters[this_chid].chat`: the durable pointer ChatUI itself wrote before
+forcing the reload. It proves identity, not a file on disk; measured on the
+same host, the lease was written at t=843ms and `POST /api/chats/save` only
+went out at t=985ms. Two consequences are accepted rather than overlooked: a
+`saveChatConditional()` that fails outright leaves a lease pointing at a file
+that never appears (recoverable through the *dormant* card — restoring checks
+the raw listing and drops the lease, and discarding now reports `absent` and
+drops it too; while the reader is still standing in that chat the conversation
+is alive and merely unsaved, so the delete transaction withholds `absent` there
+and the lease survives the next save that writes the file back), and a 丢弃
+inside that ~142ms window would send DELETE before ST's CREATE, leaving the
+file unleased. The window is not humanly reachable — the card must render, be
+found, be clicked and its confirm accepted within a tenth of a second of the
+page appearing — and closing it properly would mean waiting for a CHAT_CHANGED
+that a real boot has already emitted before this code first runs, which would
+strand every ordinary autoload boot instead.
+
+ST's `power_user.auto_load_chat` is **false** by default (power-user.js:335),
+and this repo's e2e fixture forces it true — which is why every earlier
+real-machine result for this rule came from a non-default setting. On a stock
+install the mandatory reload comes back with *no character selected at all*:
+ST never loads the deleted character, never writes the fallback file, and the
+credential waits for a signal that will never be sent. So when a credential is
+still pending and nothing at all holds the stage,
+`finalizeChatuiDraftQuarantine` selects the character that credential names.
+That is the closing move of a transaction the reader committed to (they
+confirmed the delete; the reload is ChatUI's own doing), not a vote on their
+autoload preference — the adapter refuses the moment ST landed anywhere, group
+or character (`selectCharacterIfNobodyIsOnStage`), and the credential then
+keeps its ordinary meaning. It runs at most once per page load, is never
+retried, and never toasts, and it goes through the shared serialized host lane
+like every other host mutation rather than beside it. In bootstrap mode
+(`settings.enabled === false`) it is the one part of the handoff that is
+switched off — ST's own interface is the only one on screen, and an extension
+the reader turned off must not pick a character in it; arming and the fold keep
+running, because they are what bound the credential to this page and keep a
+fallback file ST does write a recoverable draft.
+
+The character a delete like that empties is also on the spine now, which is
+what makes any of it reachable by hand at all. The spine's membership rule
+(`ui/spine-cast.ts`) used to be
+「`chat_size > 0`」 alone, and `chat_size` is a per-boot disk snapshot that is
+never refreshed inside the page — so the character you were standing on
+vanished from the only rail that can change character. Membership is now the
+union of four sources: conversations on disk, on stage now, holding a
+quarantine lease, or named by a pending draft-quarantine credential. The
+original purpose of the filter (a character nobody ever opened is not on the
+bill) is kept. Ordering gains one band in front — the characters ChatUI knows
+are live while the snapshot still reports nothing, whose recency key is absent
+rather than old — and is otherwise the same `date_last_chat` order as before,
+so the ordinary rail is untouched and only otherwise-absent entries gain a
+position.
+
+That handoff also depends on the reload coming back on the same character,
+which it did not: `selectCharacterById()` moves only the live selection, and ST
+writes the persisted `active_character` exclusively from its own
+`.character_select` click handler (RossAscends-mods.js:849-854) — a row no
+ChatUI path touches. With the spine as the only way to change character, every
+reload used to land on whoever the reader last picked from ST's native list.
+`adapter/chats/navigation.ts` now mirrors that handler's three calls on any
+character selection that actually lands, and `sidebar-actions.ts` awaits a real
+`saveSettings()` before its own forced reloads, because `saveSettingsDebounced()`
+is one shared cancel-and-re-arm timer whose window a reload silently loses (the
+same reasoning `index.ts`'s disable path already documents).
 
 The committed 2026-07-10/11 hardening closes the main correctness gaps found in
 the architecture review:
@@ -269,9 +445,14 @@ the architecture review:
   objects. The parent chat store keeps message ids while each row subscribes to
   its own DTO slot, so coalesced streaming refresh is O(1) without a full-list
   clone or parent rerender. The declarative ST event → Query invalidation table
-  covers update/delete/swipe. The extracted bounded coordinator marks an active
-  query dirty and requeues exactly one follow-up; inactive first-prefetch work
-  awaits the old promise then calls `query.fetch()` directly;
+  covers update/delete/swipe. ChatUI's own "this conversation is not there"
+  discoveries (a draft whose file vanished, a row the host reports notfound)
+  reach the same bridge through `store/vanished-chat-store.ts`, because a file
+  that went missing behind ST's back emits no event and the cached listing
+  would otherwise keep serving it. The extracted bounded coordinator marks an
+  active query dirty and requeues exactly one follow-up; inactive
+  first-prefetch work awaits the old promise then calls `query.fetch()`
+  directly;
 - runtime publication is staging-first and atomic. The Node suite's coverage is
   inventoried invariant-by-invariant in INVARIANTS.md (bidirectionally validated
   by `pnpm run check:invariants`, so counts are never hand-written here): typed
@@ -383,6 +564,49 @@ main increment to the eagerly formatted/mounted full message list (800 articles,
 not the bounded floor rail. Exact method, results and the proposed virtualized
 message-window direction are recorded in `PERFORMANCE.md`; timings remain
 report-only until stable cross-run budgets exist.
+
+**2026-07-31 corridor-theater stack verification**: the spine/playbill draft
+lifecycle was driven on the real pinned 1.18.0 host across a 14-cell matrix —
+autoload on/off × plain boot, last-chat delete, index-0 character, group on
+stage, a zero-conversation character holding a lease, a pending credential that
+points elsewhere / at nobody / at a deleted card / at a previous page, a draft
+whose file vanished behind ChatUI's back, and a delete issued from inside a
+draft whose file had already vanished. Each cell recorded spine membership and
+order, the current character, leases, draft cards, `newChatActive`, the
+sessionStorage credential, the persisted `active_character`, and
+console/pageerror. All 14 passed, and the run found two real defects that were
+fixed on the branch rather than filed: deleting the conversation you are
+standing in was being settled as `absent` (which downgraded a live draft into
+permanent history the moment ST saved it again), and an expiring credential
+could seat a ghost character at the head of the spine for a whole session. That
+matrix ran on `207d8a4`; what all of it still leaves uncovered is listed in
+`INVARIANTS.md` §16 and in `ROADMAP.md`'s corridor-theater backlog.
+
+**2026-08-01 final-gate live pass** (six more cells on the same pinned host,
+driven by hand rather than by a committed script — the §16 gap is still a gap):
+the topbar's in-place rename end to end (pencil reveal, focus, an Enter that
+really renames the chat on ST, an Esc that really does not, the ⋯ row opening
+the same edit), the ⋯ menu's six rows in design §7 order with 删除对话…… alone
+in cinnabar, 从末楼开新分支 producing a real branch chat, 角色卡设定…… opening
+ST's own right-nav panel, a group on stage disabling exactly rename / delete /
+card-settings while 从末楼开新分支 stays live, a quarantined draft whose file
+vanished leaving the playbill on 丢弃, and bootstrap mode selecting nobody
+(with the ChatUI-on control confirming the same boot *does* select). Two
+findings: the in-place rename inputs never took focus (fixed in `2054c94` —
+both surfaces, root cause was `autoFocus` on a post-load mount), and an
+ordinary history row whose file vanished still opens as an empty conversation
+rather than announcing itself (`ROADMAP.md` G4, not fixed). The vanished-chat
+invalidation was mutation-audited: neutering the bridge subscriber in the built
+runtime reproduced the exact reported symptom — the draft card degrading into
+an ordinary row pointing at nothing — and the fix removes it.
+
+**2026-07-31 400-floor gate re-run** on `271f795`: `measure-long-chat.mjs`'s
+floor-rail contract passed unchanged after the reskin — the wheel moved the tick
+window (`324 → 319`) and left the message list's `scrollTop` at delta `0`,
+Home/End previews and the `第 N 楼` numbering held, and no frame gap exceeded
+50 ms (max 17.5 ms). The structural counts it reports are a *new* baseline; see
+`PERFORMANCE.md`'s 2026-07-31 section for why the historical button counts are
+retired.
 
 Automated checks for the committed hardening baseline:
 

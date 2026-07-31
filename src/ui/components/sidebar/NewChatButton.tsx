@@ -3,8 +3,10 @@ import type { ComponentChild } from 'preact';
 import { beginTempChatDraft, newChatuiChat } from '../../actions.js';
 
 /**
- * Region-5 ＋新对话 · creates a new chat for the current character.
- * Disabled when no character is selected (doNewChat would silently no-op).
+ * The playbill's footer entry (DESIGN §4.2, 原型 L88): a dashed outline that
+ * reads as an empty slot waiting to be filled, pinned below the card column
+ * instead of riding at the top of it. Creates a new chat for the current
+ * character; disabled when none is selected (doNewChat would silently no-op).
  */
 export function NewChatButton({
     disabled,
@@ -34,7 +36,7 @@ export function NewChatButton({
                 onNavigate();
             }}
         >
-            <i className="fa-solid fa-plus" />
+            <i className="fa-solid fa-plus" aria-hidden="true" />
             <span>新对话</span>
         </button>
     );

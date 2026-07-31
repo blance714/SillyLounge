@@ -61,6 +61,39 @@ export type DeleteCharacterChatResultDto = Readonly<{
     reconciled: boolean;
     uncertain: boolean;
     reloadRequired: boolean;
+    /**
+     * This conversation does not exist anywhere: the host's own raw directory
+     * listing does not have the file, and nothing live is claiming the name
+     * either. So there was nothing to delete and nothing failed. Distinct from
+     * every other `deleted: false` outcome — those mean the delete was
+     * attempted or abandoned and the file is (or may still be) on disk —
+     * because ChatUI's own state may still name it: a quarantine lease for a
+     * draft whose file vanished is otherwise unremovable, since its only
+     * removal path is the delete this reports on.
+     *
+     * Two things it is deliberately never true for:
+     * - a listing that could not be read — an unreadable directory is not
+     *   evidence of absence;
+     * - the chat the runtime is *standing in* — that conversation is alive and
+     *   merely unsaved, and the next save writes its file back, so settling it
+     *   as a real deletion would strand the re-materialized file with no lease
+     *   (delete-transaction.ts has the full argument).
+     */
+    absent: boolean;
+    /**
+     * Set only when deleting the *current* chat left its character with no
+     * other real chat file to fall back to: the durable pointer was moved to
+     * a fabricated name (delete-transaction.ts's `fallbackName`) that does
+     * not exist yet. ST's own post-reload boot always materializes some file
+     * there (greeting or empty, via getChatResult()'s unconditional
+     * saveChatConditional()) — this is the name of that file, so the caller
+     * can fold it into the same draft quarantine every other new chat goes
+     * through instead of leaving it as an unlabelled permanent history entry
+     * (DESIGN §3 / evaluation §5 3.6: never stop at "character selected, no
+     * conversation"). Null whenever a real remaining/preferred chat was used
+     * instead, or the deletion did not target the live current chat.
+     */
+    fallbackChatFileName: string | null;
 }>;
 
 export type RenameCharacterChatResultDto = Readonly<{

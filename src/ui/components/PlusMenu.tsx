@@ -51,11 +51,8 @@ const TOOLS: PlusTool[] = PLUS_TOOL_META.map(meta => ({ ...meta, run: RUN_BY_ID[
 
 export function PlusMenu({
     chatKey,
-    topSlot,
 }: {
     chatKey: string;
-    /** Optional content pinned above the tool list — single-line mode parks selector B here (DESIGN §4.2). */
-    topSlot?: ComponentChild;
 }): ComponentChild {
     const [isOpen, setIsOpen] = useState(false);
     const [wandItems, setWandItems] = useState<WandItem[]>([]);
@@ -82,12 +79,12 @@ export function PlusMenu({
     return (
         <div className="cui-root-plus">
             <button
-                className="cui-root-plus-btn"
+                className={`cui-root-plus-btn${isOpen ? ' is-open' : ''}`}
                 type="button"
-                aria-label="More actions"
+                aria-label="附件与工具"
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
-                title="More actions"
+                title="附件与工具"
                 onClick={() => setIsOpen(open => !open)}
             >
                 <i className="fa-solid fa-plus" />
@@ -97,7 +94,7 @@ export function PlusMenu({
                     <button
                         className="cui-root-plus-backdrop"
                         type="button"
-                        aria-label="Close menu"
+                        aria-label="关闭菜单"
                         onClick={() => setIsOpen(false)}
                     />
                     <div className="cui-root-plus-menu cui-paper" role="menu">
@@ -106,16 +103,13 @@ export function PlusMenu({
                             <button
                                 className="cui-root-plus-close"
                                 type="button"
-                                aria-label="Close menu"
-                                title="Close"
+                                aria-label="关闭菜单"
+                                title="关闭菜单"
                                 onClick={() => setIsOpen(false)}
                             >
                                 <i className="fa-solid fa-xmark" />
                             </button>
                         </header>
-                        {topSlot && (
-                            <div className="cui-root-plus-topslot">{topSlot}</div>
-                        )}
                         {pinnedTools.length > 0 && (
                             <div className="cui-root-plus-tiles">
                                 {pinnedTools.map(tool => (

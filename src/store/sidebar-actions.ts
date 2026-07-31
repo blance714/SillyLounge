@@ -45,6 +45,7 @@ import {
     prepareTempChatDeparture,
 } from './temp-chat-navigation.js';
 import { pushToast } from './toast-store.js';
+import { publishVanishedChat } from './vanished-chat-store.js';
 
 type ChatIdentity = { avatar: string; fileName: string } | null | undefined;
 type RecentRowsOptions = { max?: number; signal?: AbortSignal };
@@ -233,30 +234,63 @@ export function openChatuiChat(fileName: string): Promise<void> {
 }
 
 /**
- * Rename one of the current character's chats.
+ * The terminal reload a chat transaction requires, with ST's own settings
+ * landed first.
+ *
+ * Sealing the host queue stops new ChatUI work; it does nothing about the
+ * writes ST has *already* queued behind its shared `saveSettingsDebounced()`
+ * timer, and reloading inside that 1000ms window drops them. One of those
+ * writes is now load-bearing for exactly this reload: the persisted
+ * `active_character` the character switch wrote (adapter/chats/navigation.ts's
+ * persistStActiveCharacter) is what decides which character ST's boot comes
+ * back on. Losing it lands the reader on some earlier character, holding a
+ * conversation list that is not the one they just acted in.
+ *
+ * A failed flush must not cancel the reload: the reload is what makes the
+ * runtime consistent with the durable pointer this transaction already moved,
+ * and staying on a stale in-memory chat is strictly worse than reloading onto
+ * the wrong character.
+ *
+ * @returns {Promise<void>}
+ */
+async function _reloadForChatTransaction(): Promise<void> {
+    sealHostOperationQueueForReload();
+    try {
+        await chatuiAdapter.configActions.flushSettings();
+    } catch (error) {
+        console.error('[ChatUI] failed to flush ST settings before the mandatory reload', error);
+    }
+    window.location.reload();
+}
+
+/**
+ * Rename one of a character's chats, named by stable avatar + file name.
+ *
+ * The target is explicit rather than "whatever is open", because the playbill
+ * renames a card, and a card is a conversation on disk — not necessarily the
+ * live one. The adapter is already written for both cases: it re-reads the
+ * live identity when it runs and takes the current-chat protocol (save flush,
+ * cancelled debounces, post-rename safety reconciliation) only if this really
+ * is the open chat. That is also why the old "the open chat moved, try again"
+ * bail is gone: it turned a still-valid intent (rename *that* file) into a
+ * failure whenever a navigation landed between the click and the queue slot,
+ * and the honest handling of that race is the adapter's non-current path.
+ *
+ * @param {string} avatar
  * @param {string} oldFileName
  * @param {string} newName
  * @returns {Promise<void>}
  */
-export function renameChatuiChat(oldFileName: string, newName: string): Promise<void> {
-    const expectedAvatar = chatuiAdapter.getCurrentChatIdentity()?.avatar ?? null;
-    const expectedFileName = typeof oldFileName === 'string'
-        ? oldFileName.replace(/\.jsonl$/i, '')
-        : '';
+export function renameChatuiChat(avatar: string, oldFileName: string, newName: string): Promise<void> {
     return enqueueHostTask(async () => {
         try {
-            const liveTarget = chatuiAdapter.getCurrentChatIdentity();
-            if (
-                !expectedAvatar
-                || liveTarget?.avatar !== expectedAvatar
-                || liveTarget.fileName !== expectedFileName
-            ) {
-                pushToast('info', '对话已切换，请重试');
+            if (!avatar) {
+                pushToast('error', '重命名失败');
                 return;
             }
             const tempSnapshot = getTempChatSnapshot();
             const result = await chatuiAdapter.sidebarActions.renameCharacterChat(
-                expectedAvatar,
+                avatar,
                 oldFileName,
                 newName,
             );
@@ -294,8 +328,7 @@ export function renameChatuiChat(oldFileName: string, newName: string): Promise<
             if (result.reloadRequired) {
                 // Persist quarantine migration before the reload: the durable
                 // pointer names a real winner while the live buffer does not.
-                sealHostOperationQueueForReload();
-                window.location.reload();
+                await _reloadForChatTransaction();
                 return;
             }
             if (result.uncertain) {
@@ -322,6 +355,31 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
     return enqueueHostTask(async () => {
         try {
             const result = await chatuiAdapter.sidebarActions.deleteCharacterChat(avatar, fileName);
+            if (result.absent) {
+                // The conversation exists nowhere — not in the host's listing,
+                // and not as the chat the runtime is standing in (the adapter
+                // withholds `absent` for that one on purpose). So the reader's
+                // intent ("this conversation should not exist") is satisfied
+                // and only ChatUI's own bookkeeping is left. Settle it exactly
+                // as a real deletion would and say so plainly.
+                //
+                // Reading this as a failure is what stranded a quarantined
+                // draft whose file had vanished: 丢弃 is this call, so the one
+                // path that could drop the lease refused to, and the card
+                // stayed on the shelf for the rest of the session. (Restoring
+                // such a draft already recovered — openChatuiChatForCharacter
+                // checks the file first and drops the lease — which made the
+                // shelf's two buttons disagree about the same missing file.)
+                deleteComposerDraft(createCharacterChatKey(avatar, createConversationLocator(fileName)));
+                removeTempChat(avatar, fileName);
+                // Nothing deleted means no CHAT_DELETED, and the sidebar's
+                // cached listing still holds this file: without this the card
+                // does not go away, it turns into an ordinary history row
+                // pointing at nothing (vanished-chat-store.ts).
+                publishVanishedChat(avatar, fileName);
+                pushToast('info', '该对话已不存在，已移出列表');
+                return;
+            }
             if (result.deleted) {
                 deleteComposerDraft(createCharacterChatKey(avatar, createConversationLocator(fileName)));
                 removeTempChat(avatar, fileName);
@@ -331,11 +389,26 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
                 // untouched after deletion. Reload immediately from its checked
                 // durable replacement pointer; do not let another queued host
                 // mutation run against the deleted in-memory conversation.
-                sealHostOperationQueueForReload();
                 if (result.deleted) {
                     chatuiAdapter.sidebarActions.queueCurrentCharacterChatDeletionFinalization(avatar, fileName);
                 }
-                window.location.reload();
+                if (result.fallbackChatFileName) {
+                    // This character's history is now empty: the durable
+                    // pointer was moved to a name nothing has written yet.
+                    // ST's reload boot will materialize *something* there
+                    // regardless (greeting or empty) — queue it for the next
+                    // boot to fold into the same draft quarantine ＋新对话
+                    // uses, so it never becomes a permanent history entry the
+                    // reader never asked to keep (DESIGN §3, evaluation §5 3.6).
+                    chatuiAdapter.sidebarActions.queueCharacterChatDraftQuarantine(
+                        avatar,
+                        result.fallbackChatFileName,
+                    );
+                }
+                // Both tombstone writes above are synchronous sessionStorage
+                // writes, so they are already durable by the time the queue is
+                // sealed inside this call.
+                await _reloadForChatTransaction();
             } else if (result.uncertain) {
                 pushToast('error', '无法确认删除结果，请刷新对话列表');
             } else if (!result.reconciled) {
@@ -352,6 +425,193 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
             pushToast('error', '删除失败');
         }
     });
+}
+
+/**
+ * One look at the live chat: fold the fallback file into the quarantine set if
+ * this is the moment the tombstone names.
+ *
+ * @returns {boolean} true once there is nothing left to watch for — either the
+ *   pointer was committed, or no tombstone is queued at all.
+ */
+function _resolveChatuiDraftQuarantine(): boolean {
+    let match;
+    try {
+        match = chatuiAdapter.sidebarActions.resolvePendingCharacterChatDraftQuarantine();
+    } catch (error) {
+        console.error('[ChatUI] failed to resolve draft-quarantine handoff', error);
+        // Keep watching: an unreadable tombstone this instant is not proof
+        // there is nothing to quarantine.
+        return false;
+    }
+    if (match.status === 'waiting') return false;
+    if (match.status === 'quarantine') {
+        try {
+            commitTempChatDraft(match.pointer, getTempChatDraftSnapshot());
+        } catch (error) {
+            console.error('[ChatUI] failed to commit draft-quarantine handoff', error);
+        }
+    }
+    return true;
+}
+
+/**
+ * The character a queued-but-unresolved draft-quarantine credential is about,
+ * or null when nothing is pending.
+ *
+ * For the spine's membership rule (ui/spine-cast.ts): while this credential is
+ * waiting, ST's boot-time disk snapshot still reports zero conversations for
+ * that character, and hiding it is precisely what makes the transaction
+ * unfinishable by hand.
+ *
+ * @returns {string | null}
+ */
+export function getChatuiPendingDraftQuarantineCharacter(): string | null {
+    try {
+        return chatuiAdapter.sidebarActions.peekPendingCharacterChatDraftQuarantine()?.avatar ?? null;
+    } catch (error) {
+        console.error('[ChatUI] failed to read the pending draft-quarantine credential', error);
+        return null;
+    }
+}
+
+/**
+ * Finish the delete transaction on a host that deliberately came back on
+ * nobody.
+ *
+ * `power_user.auto_load_chat` is false by default, so a stock install answers
+ * the mandatory reload with an empty stage: the fallback file ST was going to
+ * write is never written, the credential above waits forever, and the reader
+ * is left in the "character selected, no conversation" state pr9 exists to
+ * abolish — one worse, in fact, with no character selected either.
+ *
+ * So when — and only when — a credential is still pending and nothing at all
+ * holds the stage, ChatUI selects the character that credential names. This is
+ * the closing move of a transaction the reader started (they confirmed the
+ * delete; the reload is ChatUI's own doing), not a vote on their autoload
+ * preference: the adapter refuses the moment ST landed anywhere, group or
+ * character (adapter/chats/navigation.ts's selectCharacterIfNobodyIsOnStage).
+ *
+ * Exactly once per page: `armPendingCharacterChatDraftQuarantine` stamps the
+ * credential, so a second `finalizeChatuiDraftQuarantine` in the same load
+ * finds nothing to arm and never reaches here. A landing that does not happen
+ * is not retried and never toasts — the credential simply keeps its ordinary
+ * meaning and the reader can now walk to the character by hand, because the
+ * spine shows it (ui/spine-cast.ts).
+ *
+ * Runs on the shared serialized lane like every other host mutation in this
+ * module — `selectCharacterById` mutates the one live chat context, so being
+ * boot work earns it no exemption. Three things make the lane usable this
+ * early, and all three are worth stating because the alternative was a
+ * fire-and-forget call that could interleave with the reader's first click:
+ *
+ * 1. The lane needs no initialization. Its state is module-level and already
+ *    correct at evaluation time (an idle tail, epoch 0, unsealed), so a boot
+ *    enqueue is served on the very next microtask.
+ * 2. The epoch it captures is still current when it runs. Only
+ *    `resetHostOperationQueueLifecycle` moves it, and the only callers are the
+ *    UI teardown (store/composer-draft-store.ts's reset, from app.tsx) and the
+ *    terminal reload seal. Mounting the root does neither, so the mount that
+ *    `index.ts` performs right after this cannot cancel the landing. A
+ *    teardown *would* cancel it — correctly: a reader who switched ChatUI off
+ *    in that window must not have a character selected for them afterwards,
+ *    which is exactly what the un-queued version did.
+ * 3. Queueing can only delay this call, never advance it, so the one ordering
+ *    constraint the handoff has — the CHAT_CHANGED watch is registered before
+ *    the landing, because the event that resolves the credential is emitted
+ *    from inside `selectCharacterById` — is strengthened rather than lost. The
+ *    watch is registered synchronously below, before this is enqueued.
+ */
+async function _completePendingChatTransactionLanding(avatar: string): Promise<void> {
+    try {
+        const landing = await chatuiAdapter.sidebarActions.selectCharacterIfNobodyIsOnStage(avatar);
+        // 'occupied' is the ordinary outcome on an autoload host and says
+        // nothing is wrong; the rest are worth one line, once.
+        if (landing !== 'selected' && landing !== 'occupied') {
+            console.warn('[ChatUI] could not finish the pending chat transaction', landing, avatar);
+        }
+    } catch (error) {
+        console.error('[ChatUI] failed to finish the pending chat transaction', error);
+    }
+}
+
+/**
+ * Complete the draft-quarantine handoff `deleteChatuiChat` queues when
+ * deleting a character's last chat leaves it pointed at a fallback file
+ * nothing had written yet. Call once at boot (after ST is ready), alongside
+ * `finalizePendingCharacterChatDeletion`.
+ *
+ * This does not assume ST's boot has already got there. It cannot: ST
+ * materializes that file on a fire-and-forget chain that APP_READY does not
+ * wait for (deletion-finalization.ts's section comment has the full ordering,
+ * with the byte-level trace of the boot where this used to lose every time).
+ * So the handoff arms itself for this page and then watches for the fallback
+ * file to *become* the live chat — immediately, in case ST's autoload already
+ * finished, and on every CHAT_CHANGED after that, which ST emits at the end of
+ * loading a chat. The listener stops the moment the intent is either committed
+ * or gone; while it is neither, an unrelated chat change is simply not the
+ * event we are waiting for.
+ *
+ * If nothing at all holds the stage once that watch is armed, this also
+ * finishes the transaction itself rather than waiting for a signal a stock
+ * (auto_load_chat: false) host will never send — see
+ * `_completePendingChatTransactionLanding` above for why that is a completion
+ * and not a preference override, and why it goes through the shared host lane.
+ * The watch is registered *before* the landing is enqueued, because the
+ * CHAT_CHANGED that resolves the credential is emitted from inside that very
+ * call.
+ *
+ * `completeLanding: false` keeps everything above except that last move, and
+ * exists for the one caller that must not make it: bootstrap mode, where
+ * ChatUI's own interface is switched off and the reader is looking at ST's
+ * native UI. Selecting a character *there* would be an invisible extension
+ * moving a stage it does not own, so the reader keeps the empty stage ST gave
+ * them. Everything else still has to run, and for reasons that outlive this
+ * page: arming is what bounds the credential to the load it belongs to (an
+ * un-armed one would survive into some far later boot and retroactively
+ * quarantine a file the reader has been treating as ordinary history), and the
+ * watch is what keeps the fallback file — if ST's autoload does write it — a
+ * recoverable draft instead of permanent history nobody asked to keep. The
+ * lease is persisted, so it is still a draft whenever ChatUI comes back.
+ *
+ * That is also the whole of the credential's fate when the reader switches
+ * ChatUI off, reloads, and switches it back on. Turning it back on does not
+ * re-run this (`index.ts` only mounts), and would change nothing if it did:
+ * the credential is already armed for this page. If the fallback file went
+ * live, the lease is waiting in the quarantine set; if nobody ever took the
+ * stage, the credential is still pending and the spine seats that character
+ * the moment ChatUI's UI is back (ui/spine-cast.ts reads it through `peek`),
+ * so the reader can walk over and finish the transaction by hand. The next
+ * reload after that expires it, exactly as it expires any credential the page
+ * that owned it never redeemed.
+ *
+ * @param {{ completeLanding?: boolean }} [options]
+ * @returns {void}
+ */
+export function finalizeChatuiDraftQuarantine(
+    { completeLanding = true }: { completeLanding?: boolean } = {},
+): void {
+    let pending: TempChatPointer | null = null;
+    try {
+        pending = chatuiAdapter.sidebarActions.armPendingCharacterChatDraftQuarantine();
+    } catch (error) {
+        console.error('[ChatUI] failed to arm draft-quarantine handoff', error);
+        return;
+    }
+    if (!pending) return;
+    if (_resolveChatuiDraftQuarantine()) return;
+
+    let stopWatching: (() => void) | null = null;
+    // `subscribe` registers synchronously, so the handler cannot run before
+    // stopWatching is assigned below.
+    stopWatching = chatuiAdapter.subscribe('CHAT_CHANGED', () => {
+        if (!_resolveChatuiDraftQuarantine()) return;
+        stopWatching?.();
+        stopWatching = null;
+    });
+
+    if (!completeLanding) return;
+    void enqueueHostTask(() => _completePendingChatTransactionLanding(pending.avatar));
 }
 
 /**
@@ -426,6 +686,7 @@ export function openChatuiChatForCharacter(avatar: string, fileName: string): Pr
                 && !await chatuiAdapter.sidebarActions.hasCharacterChatFile(avatar, fileName)
             ) {
                 removeTempChat(avatar, fileName);
+                publishVanishedChat(avatar, fileName);
                 if (operation.isLatest()) pushToast('error', '草稿文件已不存在');
                 return;
             }
@@ -434,6 +695,17 @@ export function openChatuiChatForCharacter(avatar: string, fileName: string): Pr
                 // The host is authoritative: a stale quarantined lease whose
                 // file vanished must not become an immortal shelf row.
                 removeTempChat(avatar, fileName);
+                // Nor an immortal row of any other kind the cached listing may
+                // still be serving (vanished-chat-store.ts). Note what the
+                // host actually means by `notfound` here, because it is
+                // narrower than it reads: navigation.ts returns it when the
+                // *character card* is not in the roster, or the file name is
+                // blank — never for a chat file that vanished. Opening a
+                // missing chat on the character already on stage is not an
+                // error to ST at all; it loads an empty conversation. So an
+                // ordinary history row whose file disappeared does **not**
+                // arrive here — see ROADMAP.md G4.
+                publishVanishedChat(avatar, fileName);
                 if (operation.isLatest()) pushToast('error', '角色或对话不存在');
             } else if (result === 'busy') {
                 if (operation.isLatest()) pushToast('info', '正在保存或生成，请稍候');

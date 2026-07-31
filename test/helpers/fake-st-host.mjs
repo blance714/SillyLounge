@@ -287,6 +287,13 @@ import { eventSource, event_types, makeStub } from '${BRIDGE_FROM_PUBLIC_ROOT}';
 export { eventSource, event_types };
 
 export const saveSettingsDebounced = makeStub('saveSettingsDebounced');
+export const saveSettings = makeStub('saveSettings');
+// The persisted "who is selected" pair ST itself only writes from its
+// .character_select click handler (RossAscends-mods.js:849-854) — see
+// adapter/chats/navigation.ts's persistStActiveCharacter. Registry stubs so a
+// test can assert exactly what ChatUI passed and in what order.
+export const setActiveCharacter = makeStub('setActiveCharacter');
+export const setActiveGroup = makeStub('setActiveGroup');
 export const stopGeneration = makeStub('stopGeneration');
 export const extractMessageBias = makeStub('extractMessageBias');
 export const removeMacros = makeStub('removeMacros');
@@ -472,7 +479,7 @@ export const favsToHotswap = makeStub('favsToHotswap');
 }
 
 // ---------------------------------------------------------------------
-// window/document/localStorage/fetch fakes
+// window/document/localStorage/sessionStorage/fetch fakes
 // ---------------------------------------------------------------------
 //
 // None of dist/runtime/**/*.js touches these at module-evaluation time
@@ -720,7 +727,12 @@ class FakeWindow extends EventTarget {
     }
 }
 
-function createLocalStorage() {
+// One in-memory Storage-alike shape backs both globalThis.localStorage
+// (cross-tab-shaped, used by temp-chat-store.ts's persisted quarantine set)
+// and globalThis.sessionStorage (used by deletion-finalization.ts's
+// reload-scoped tombstones) — real browsers give each its own separate
+// backing store, so each caller gets its own Map instance below.
+function createStorage() {
     const store = new Map();
     return {
         getItem(key) {
@@ -822,6 +834,9 @@ function createFetchController() {
  *   (no real delay, but still asynchronous — never synchronously reentrant).
  * @property {object} localStorage The object installed as
  *   `globalThis.localStorage` (in-memory Storage-alike).
+ * @property {object} sessionStorage The object installed as
+ *   `globalThis.sessionStorage` (in-memory Storage-alike, its own separate
+ *   backing store from localStorage's — matches real browsers).
  * @property {{
  *   setSwipeState(v: string): void, get swipeState(): string,
  *   setChatSaving(v: boolean): void, get isChatSaving(): boolean,
@@ -834,11 +849,12 @@ function createFetchController() {
  *   `importModule('adapter/chats/rename-transaction.js')`,
  *   `importModule('store/chat-store.js')`. Path is relative to `extensionDir`.
  * @property {() => void} activate (Re)installs this host's window/document/
- *   localStorage/fetch/requestAnimationFrame/MutationObserver/HTMLElement*
- *   globals onto `globalThis`. Called once automatically at creation. These
- *   globals are process-wide (see caveat below) — call this again before
- *   exercising a particular host's call-time DOM/window/fetch-touching code
- *   if more than one host is alive and you've exercised another one since.
+ *   localStorage/sessionStorage/fetch/requestAnimationFrame/MutationObserver/
+ *   HTMLElement* globals onto `globalThis`. Called once automatically at
+ *   creation. These globals are process-wide (see caveat below) — call this
+ *   again before exercising a particular host's call-time DOM/window/fetch-
+ *   touching code if more than one host is alive and you've exercised
+ *   another one since.
  *   `registry`, `eventSource`, `event_types`, `context`, and `state` never
  *   need this: they're captured per-host through each host's own copy of
  *   the bridge module, not through globals.
@@ -935,13 +951,15 @@ export async function createFakeStHost(options = {}) {
     const timerEngine = createTimerEngine(maxTimerInvocations);
     const fakeWindow = new FakeWindow(timerEngine);
     const fakeDocument = new FakeDocument();
-    const fakeLocalStorage = createLocalStorage();
+    const fakeLocalStorage = createStorage();
+    const fakeSessionStorage = createStorage();
     const fetchController = createFetchController();
 
     function activate() {
         globalThis.window = fakeWindow;
         globalThis.document = fakeDocument;
         globalThis.localStorage = fakeLocalStorage;
+        globalThis.sessionStorage = fakeSessionStorage;
         globalThis.fetch = fetchController.fn;
         globalThis.requestAnimationFrame = (fn) => timerEngine.schedule(fn, []);
         globalThis.cancelAnimationFrame = (id) => timerEngine.cancel(id);
@@ -975,6 +993,7 @@ export async function createFakeStHost(options = {}) {
         fetch: fetchController,
         window: fakeWindow,
         localStorage: fakeLocalStorage,
+        sessionStorage: fakeSessionStorage,
         state,
         importModule,
         activate,

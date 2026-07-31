@@ -278,9 +278,9 @@ async function readEditDraftState(page, messageId) {
  * the committed text back from both ST state and rendered DOM.
  */
 async function assertHistoricalUserEditPersists(page, target) {
-    // An interior *user* turn a few floors before the last one: user messages
-    // tile the Edit action inline (no overflow menu to open first -- see
-    // MessageActions.tsx's canShowUserMenu branch), the text is short (fast
+    // An interior *user* turn a few floors before the last one: every row
+    // tiles Edit inline since the action bar's regroup (MessageActions.tsx's
+    // `tiled` list -- no overflow menu to open first), the text is short (fast
     // to diff), and it stays clear of the marker text baked into message 0
     // and message (messageCount - 1) by applyConversationMarker.
     const editMessageId = target.messageCount - 4;
@@ -306,7 +306,7 @@ async function assertHistoricalUserEditPersists(page, target) {
     assert.equal(typeof originalMes, 'string');
 
     await article.hover();
-    await article.getByRole('button', { name: 'Edit' }).click();
+    await article.getByRole('button', { name: '编辑' }).click();
     const editor = article.locator('.cui-root-edit-textarea');
     await editor.waitFor({ state: 'visible', timeout: 30_000 });
     await waitForSettledEditorFocus(page, editMessageId);
@@ -347,7 +347,7 @@ async function assertHistoricalUserEditPersists(page, target) {
         'draft must survive the round trip back to the message unchanged',
     );
 
-    await article.getByRole('button', { name: 'Save edit' }).click();
+    await article.getByRole('button', { name: '落笔' }).click();
     await page.waitForFunction(({ editMessageId, marker }) => {
         const context = globalThis.SillyTavern?.getContext?.();
         const editedArticle = document.querySelector(`[data-cui-message-id="${editMessageId}"]`);
@@ -389,33 +389,60 @@ async function assertHistoricalUserEditPersists(page, target) {
 }
 
 /**
- * Character messages expose Edit only through their portaled overflow menu.
- * Drive that presentation rather than invoking local component state or the
- * adapter directly, then prove the same save contract reaches ST and the DOM.
+ * The other half of the editing-pin guard: a *historical character* row, driven
+ * entirely through the presentation a user actually gets. Edit used to live
+ * behind a character row's ⋯ menu and this walked in through there; the action
+ * bar's regroup (design §42) tiles it instead, so the entry path is rewritten
+ * and everything it was protecting — enter edit on a non-trailing character
+ * row, save, and prove the same contract reaches ST state, the external draft
+ * store and the DOM — is asserted exactly as before.
+ *
+ * The ⋯ menu is still opened first, because this is also the only browser-level
+ * check that the portaled menu opens, carries the regrouped rows, and closes
+ * again. Both presentations are therefore covered in one pass rather than one
+ * being traded for the other.
  */
-async function assertCharacterOverflowEditPersists(page, target) {
+async function assertCharacterTiledEditPersists(page, target) {
     const editMessageId = target.messageCount - 3;
     const article = page.locator(`[data-cui-message-id="${editMessageId}"]`);
     await article.waitFor({ state: 'visible', timeout: 30_000 });
     assert.equal(
         await article.getAttribute('data-cui-message-role'),
         'character',
-        'overflow-edit target must be a character turn (fixture role layout drifted)',
+        'tiled-edit target must be a character turn (fixture role layout drifted)',
     );
 
     await article.hover();
-    await article.getByRole('button', { name: 'More actions' }).click();
+    await article.getByRole('button', { name: '更多操作' }).click();
     const overflowMenu = page.locator('body > .cui-root-menu');
     await overflowMenu.waitFor({ state: 'visible', timeout: 5_000 });
-    await overflowMenu.locator('.cui-root-menu-item').filter({ hasText: /^Edit$/ }).click();
+    assert.deepEqual(
+        await overflowMenu.locator('.cui-root-menu-item').allInnerTexts(),
+        ['复制', '复制原文', '从此楼开分支', '在此楼设检查点', '隐藏此楼'],
+        'the ⋯ menu must carry exactly the regrouped rows, in design order (§45)',
+    );
+    assert.equal(
+        await overflowMenu.locator('.cui-root-menu-item').filter({ hasText: /^编辑$/ }).count(),
+        0,
+        '编辑 must no longer be behind ⋯ — it is a tiled button now',
+    );
+    // The backdrop is the only way out: it covers the whole viewport at a
+    // z-index above the ⋯ trigger, so clicking the trigger again would be
+    // intercepted. Aim at the top-left corner, which the right-aligned menu
+    // can never occupy.
+    await page.locator('body > .cui-root-menu-backdrop').click({ position: { x: 4, y: 4 } });
+    await overflowMenu.waitFor({ state: 'detached', timeout: 5_000 });
+
+    await article.hover();
+    await article.getByRole('button', { name: '编辑' }).click();
 
     const editor = article.locator('.cui-root-edit-textarea');
     await editor.waitFor({ state: 'visible', timeout: 30_000 });
-    assert.equal(await overflowMenu.count(), 0, 'choosing Edit must close the portaled overflow menu');
+    assert.equal(await overflowMenu.count(), 0, 'entering edit must leave no portaled menu behind');
     await waitForSettledEditorFocus(page, editMessageId);
-    const marker = `SAVED-CHARACTER-OVERFLOW-EDIT::${target.fileName}::${editMessageId}`;
+    const marker = `SAVED-CHARACTER-TILED-EDIT::${target.fileName}::${editMessageId}`;
     await editor.fill(marker);
-    await article.getByRole('button', { name: 'Save edit' }).click();
+    await article.getByRole('button', { name: '落笔' }).click();
     await page.waitForFunction(({ editMessageId, marker }) => {
         const context = globalThis.SillyTavern?.getContext?.();
         const editedArticle = document.querySelector(`[data-cui-message-id="${editMessageId}"]`);
@@ -424,12 +451,12 @@ async function assertCharacterOverflowEditPersists(page, target) {
             && editedArticle?.querySelector('.cui-root-message-body')?.textContent?.includes(marker);
     }, { editMessageId, marker }, { timeout: 30_000 });
     const savedState = await readEditDraftState(page, editMessageId);
-    assert.equal(savedState.mes, marker, 'overflow-menu edit must commit the character message to SillyTavern state');
+    assert.equal(savedState.mes, marker, 'tiled edit must commit the character message to SillyTavern state');
     assert.deepEqual(savedState.remainingDrafts, [], 'character edit save must clear the external draft');
 
     return {
         messageId: editMessageId,
-        enteredThroughOverflowMenu: true,
+        enteredThroughTiledButton: true,
         draftCleared: savedState.remainingDrafts.length === 0,
     };
 }
@@ -673,7 +700,7 @@ export async function measureChatSwitch({
         // report's DOM/heap measurements.
         const editAcceptance = {
             historicalUser: await assertHistoricalUserEditPersists(page, expected(first, second)),
-            characterOverflow: await assertCharacterOverflowEditPersists(page, expected(first, second)),
+            characterTiled: await assertCharacterTiledEditPersists(page, expected(first, second)),
         };
         await page.screenshot({ path: path.join(resolvedEvidenceRoot, 'edit-acceptance.png') });
 

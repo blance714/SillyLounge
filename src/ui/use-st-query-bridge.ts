@@ -7,6 +7,7 @@ import {
     disableChatui,
     getChatuiCurrentChatIdentity,
     subscribeChatuiEvent,
+    subscribeVanishedChatuiChats,
 } from './actions.js';
 import { SIDEBAR_BACKFILL_CONCURRENCY, SIDEBAR_RECENTS_MAX, sidebarQueryKeys } from './sidebar-queries.js';
 
@@ -21,6 +22,11 @@ export type SidebarInvalidationScope =
  * Single source of truth for translating ST domain events into sidebar cache
  * invalidations. Keeping this declarative makes omissions visible and lets the
  * event/cache contract be unit-tested without mounting Preact.
+ *
+ * ST's events are not the only input this bridge has to serve: a file that
+ * vanished behind the host's back produces no event at all, and ChatUI's own
+ * discovery of it arrives through store/vanished-chat-store.ts instead (wired
+ * below, same translation job).
  */
 export const SIDEBAR_INVALIDATIONS_BY_EVENT: Readonly<Record<string, readonly SidebarInvalidationScope[]>> = Object.freeze({
     [chatuiEventKeys.CHAT_CHANGED]: ['header', 'characters', 'current-character'],
@@ -68,12 +74,14 @@ export function useStQueryBridge(): void {
         const invalidateRecents = (): void => {
             void queryClient.invalidateQueries({ queryKey: sidebarQueryKeys.recents(SIDEBAR_RECENTS_MAX) });
         };
-        const invalidateCurrentByCharacter = (): void => {
-            const avatar = getChatuiCurrentChatIdentity()?.avatar;
+        const invalidateByCharacter = (avatar: string | undefined): void => {
             if (!avatar) return;
             const prefix = sidebarQueryKeys.byCharacter(avatar);
             void queryClient.invalidateQueries({ queryKey: prefix, refetchType: 'none' });
             enqueueLoadableByCharacterRefetches(prefix);
+        };
+        const invalidateCurrentByCharacter = (): void => {
+            invalidateByCharacter(getChatuiCurrentChatIdentity()?.avatar);
         };
         const enqueueLoadableByCharacterRefetches = (prefix: QueryKey): void => {
             const loadableQueries = queryClient.getQueryCache()
@@ -144,6 +152,21 @@ export function useStQueryBridge(): void {
                     for (const scope of scopes) invalidateScope(scope);
                 })));
             }
+            // A conversation ChatUI proved absent while settling something else
+            // (store/vanished-chat-store.ts). The host announced nothing, so
+            // both caches that can still be serving that file — this
+            // character's own listing and the recents page the playbill falls
+            // back to — are refetched from the only authority there is, the
+            // host's directory. Not `characters`: ST's in-memory cast is not
+            // re-read from disk here, so refetching it would return the same
+            // stale numbers for the cost of a full fan-out.
+            subscriptions.push(subscribeVanishedChatuiChats(vanished => {
+                if (!vanished) return;
+                schedule(() => {
+                    invalidateByCharacter(vanished.avatar);
+                    invalidateRecents();
+                });
+            }));
         } catch (error) {
             dispose();
             console.error('[ChatUI] sidebar query bridge initialization failed', error);

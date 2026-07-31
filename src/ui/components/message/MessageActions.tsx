@@ -7,8 +7,16 @@ import {
 import type { ChatuiAction, ChatuiMessage } from '../../types.js';
 import { ActionButton } from './ActionButton.js';
 import { MenuItem } from './MenuItem.js';
+import { SwipeSegments } from './SwipeSegments.js';
 
-type MenuAction = { label: string; iconClass: string; onClick: () => void; danger?: boolean };
+type MenuAction = {
+    label: string;
+    iconClass: string;
+    onClick: () => void;
+    danger?: boolean;
+    /** Design §45 rules a dashed line off before the destructive row. */
+    separatorBefore?: boolean;
+};
 
 /**
  * Portals its dropdown to document.body: this button lives inside the
@@ -51,8 +59,8 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={anchor != null}
-                aria-label="More actions"
-                title="More actions"
+                aria-label="更多操作"
+                title="更多操作"
                 onClick={(event) => { event.stopPropagation(); toggle(); }}
             >
                 <i className="fa-solid fa-ellipsis" />
@@ -62,7 +70,7 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                     <button
                         className="cui-root-menu-backdrop"
                         type="button"
-                        aria-label="Close"
+                        aria-label="关闭菜单"
                         onClick={() => setAnchor(null)}
                     />
                     <div
@@ -70,13 +78,15 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                         style={{ position: 'fixed', top: `${anchor.top}px`, right: `${anchor.right}px` }}
                     >
                         {items.map(item => (
-                            <MenuItem
-                                key={item.label}
-                                label={item.label}
-                                iconClass={item.iconClass}
-                                danger={item.danger}
-                                onClick={() => { setAnchor(null); item.onClick(); }}
-                            />
+                            <React.Fragment key={item.label}>
+                                {item.separatorBefore && <div className="cui-paper-sep" />}
+                                <MenuItem
+                                    label={item.label}
+                                    iconClass={item.iconClass}
+                                    danger={item.danger}
+                                    onClick={() => { setAnchor(null); item.onClick(); }}
+                                />
+                            </React.Fragment>
                         ))}
                     </div>
                 </>,
@@ -95,64 +105,70 @@ export function MessageActions({
 }): ComponentChild {
     const dispatch = (action: ChatuiAction) => triggerChatuiMessageAction(message.id, action, message.chatKey);
 
-    // Each action is defined once and routed to either the tiled row or the
-    // overflow menu, so the two presentations never drift apart.
-    const edit: MenuAction = { label: 'Edit', iconClass: 'fa-solid fa-pencil', onClick: onEdit };
-    const branch: MenuAction = { label: 'Branch', iconClass: 'fa-solid fa-code-branch', onClick: () => dispatch('branch') };
-    const checkpoint: MenuAction = { label: 'Checkpoint', iconClass: 'fa-solid fa-flag-checkered', onClick: () => dispatch('checkpoint') };
-    const hide: MenuAction = { label: 'Hide', iconClass: 'fa-solid fa-eye-slash', onClick: () => dispatch('hide') };
-    const del: MenuAction = { label: 'Delete', iconClass: 'fa-solid fa-trash', onClick: () => dispatch('delete'), danger: true };
+    // The split is by *kind of act*, not by who spoke (design §42/§45), so both
+    // roles read the same way and nothing has to be learned twice.
+    //
+    // Tiled — what you do *to* this turn, one click, no menu in the way. 重写
+    // only exists for the message ST would actually regenerate: the trailing
+    // character reply. Every other row therefore tiles three, not four.
+    const regen: MenuAction = { label: '重写', iconClass: 'fa-solid fa-rotate-right', onClick: () => dispatch('regen') };
+    const edit: MenuAction = { label: '编辑', iconClass: 'fa-solid fa-pen', onClick: onEdit };
+    const del: MenuAction = { label: '删除', iconClass: 'fa-solid fa-trash-can', onClick: () => dispatch('delete'), danger: true };
 
-    // User messages tile every action inline — 平铺全显，无 overflow (DESIGN §5.C):
-    // Copy is always rendered below, so the rest join it as flat buttons. Character
-    // messages keep their secondary actions behind ⋯; system messages get neither.
-    const tiled: MenuAction[] = message.ui.canShowUserMenu ? [edit, del, branch, checkpoint, hide] : [];
-    const overflow: MenuAction[] = message.isSystem || message.ui.canShowUserMenu
-        ? []
-        : [edit, branch, checkpoint, hide, del];
+    // Menu — what you do *with* it: take it somewhere else, or take it out of
+    // the conversation. 隐藏此楼 is ruled off below the rest because it is the
+    // only one that changes what the model is told.
+    const copy: MenuAction = { label: '复制', iconClass: 'fa-solid fa-copy', onClick: () => dispatch('copy') };
+    const copySource: MenuAction = { label: '复制原文', iconClass: 'fa-solid fa-clipboard', onClick: () => dispatch('copySource') };
+    const branch: MenuAction = { label: '从此楼开分支', iconClass: 'fa-solid fa-code-branch', onClick: () => dispatch('branch') };
+    const checkpoint: MenuAction = { label: '在此楼设检查点', iconClass: 'fa-solid fa-flag-checkered', onClick: () => dispatch('checkpoint') };
+    const hide: MenuAction = { label: '隐藏此楼', iconClass: 'fa-solid fa-eye-slash', onClick: () => dispatch('hide'), danger: true, separatorBefore: true };
+
+    // System rows are not a turn anyone speaks: nothing may be written to them
+    // or branched from them, but their text is still text you may want. Which
+    // rows count as a turn is unchanged from before the regroup — only where
+    // each action is presented changed.
+    const isTurn = !message.isSystem;
+    const tiled: MenuAction[] = isTurn
+        ? [...(message.ui.isLast && message.isChar ? [regen] : []), edit, del]
+        : [];
+    const overflow: MenuAction[] = isTurn
+        ? [copy, copySource, branch, checkpoint, hide]
+        : [copy, copySource];
 
     return (
         <div className="cui-root-message-actions">
-            <ActionButton
-                label="Copy"
-                iconClass="fa-regular fa-copy"
-                onClick={() => dispatch('copy')}
-            />
-            {message.ui.isLast && message.isChar && (
-                <ActionButton
-                    label="Regenerate"
-                    iconClass="fa-solid fa-rotate-right"
-                    onClick={() => dispatch('regen')}
-                />
-            )}
-            {message.ui.canShowSwipe && (
-                <>
-                    {message.swipe.id > 0 && (
-                        <ActionButton
-                            label="Previous swipe"
-                            iconClass="fa-solid fa-chevron-left"
-                            onClick={() => swipeChatuiMessage(message.id, 'left', message.chatKey)}
-                        />
-                    )}
-                    {message.swipe.hasMultiple && (
-                        <span className="cui-root-message-swipe">{message.swipe.label}</span>
-                    )}
-                    <ActionButton
-                        label="Next swipe"
-                        iconClass="fa-solid fa-chevron-right"
-                        onClick={() => swipeChatuiMessage(message.id, 'right', message.chatKey)}
-                    />
-                </>
-            )}
             {tiled.map(item => (
                 <ActionButton
                     key={item.label}
                     label={item.label}
                     iconClass={item.iconClass}
+                    danger={item.danger}
                     onClick={item.onClick}
                 />
             ))}
             <MoreMenu items={overflow} />
+            {message.ui.canShowSwipe && (
+                <>
+                    {/* Design §43 draws the swipe group after 重写/编辑/删除/⋯,
+                        ruled off from them — what you do to this turn, then a
+                        seam, then which candidate reply you're looking at. */}
+                    <span className="cui-root-action-divider" aria-hidden="true" />
+                    {message.swipe.id > 0 && (
+                        <ActionButton
+                            label="上一版本"
+                            iconClass="fa-solid fa-chevron-left"
+                            onClick={() => swipeChatuiMessage(message.id, 'left', message.chatKey)}
+                        />
+                    )}
+                    <SwipeSegments message={message} />
+                    <ActionButton
+                        label="下一版本"
+                        iconClass="fa-solid fa-chevron-right"
+                        onClick={() => swipeChatuiMessage(message.id, 'right', message.chatKey)}
+                    />
+                </>
+            )}
         </div>
     );
 }

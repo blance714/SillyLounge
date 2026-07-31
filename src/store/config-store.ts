@@ -61,13 +61,21 @@ function isPlusToolId(value: unknown): value is PlusToolId {
 // ── Store ─────────────────────────────────────────────────────────────────────
 
 /**
- * Defaults follow DESIGN §5.A: group chats show avatars (tell characters apart),
- * solo chats stay clean (pure ChatGPT, no header). Composer defaults to multi-line.
+ * Group chats show avatars, because that is how you tell speakers apart.
+ *
+ * Solo chats default to 'name' as of the corridor-theater pass. They used to
+ * default to 'none' — "stay clean, pure ChatGPT, no header" — which quietly
+ * meant the design's defining motif (作者名 + 连接线 + 第 N 楼 · 时间) did not
+ * render at all in the overwhelmingly common case. A motif that has to be
+ * switched on is not the design. The settings page keeps all three modes, so a
+ * reader who wants the bare column can still choose 'none'.
+ *
+ * Composer defaults to multi-line.
  * @type {ChatuiConfig}
  */
 const DEFAULT_CONFIG: ChatuiConfig = {
     headerGroup: 'icon',
-    headerSolo: 'none',
+    headerSolo: 'name',
     composerLines: 'multi',
     // DESIGN §4.3 defaults to [重生成, 删除], but batch-delete needs ChatUI's own
     // message-selection UI (ST's delete mode checkboxes live in the parked #chat),

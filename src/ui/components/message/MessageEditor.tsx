@@ -94,27 +94,30 @@ export function MessageEditor({
                 }}
             />
             <div className="cui-root-edit-actions">
+                {/* README §44's own reminder line — a decorative caption at
+                    low contrast, not the sole conveyor of the ⌘Enter/Esc
+                    behavior, same treatment as the composer's own ⏎/⇧⏎ hint
+                    row (evaluation report §6 D2). */}
+                <span className="cui-root-edit-hint">⌘Enter 保存 · Esc 取消</span>
                 <button
                     className="cui-root-edit-btn"
                     type="button"
                     disabled={isSaving}
-                    aria-label="Cancel edit"
-                    title="Cancel edit"
+                    aria-label="取消"
+                    title="取消"
                     onClick={cancel}
                 >
-                    <i className="fa-solid fa-xmark" />
-                    <span>Cancel</span>
+                    取消
                 </button>
                 <button
                     className="cui-root-edit-btn cui-root-edit-save"
                     type="button"
                     disabled={isSaving}
-                    aria-label="Save edit"
-                    title="Save edit"
+                    aria-label="落笔"
+                    title="落笔"
                     onClick={() => void save()}
                 >
-                    <i className={isSaving ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-check'} />
-                    <span>{isSaving ? 'Saving' : 'Save'}</span>
+                    落笔
                 </button>
             </div>
         </div>

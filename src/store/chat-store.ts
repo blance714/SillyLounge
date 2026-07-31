@@ -63,6 +63,16 @@ export type ChatuiMessageDto = {
     displayText: string;
     html: string;
     sendDate: string | number | null;
+    /**
+     * 1-based floor (楼) this message belongs to: the Nth user turn plus the
+     * reply that answered it share floor N. `null` when the message belongs to
+     * no floor at all — an opening greeting that precedes every user turn, a
+     * system notice, or (in a group chat) the 2nd..Nth character reply inside
+     * one turn, since a turn records only the first responder. The header
+     * renders the floor segment only when this is a number, so "no defined
+     * floor" stays visibly absent instead of being invented.
+     */
+    floorNumber: number | null;
     forceAvatar: boolean;
     forceAvatarSrc: string;
     swipe: { id: number; count: number; hasMultiple: boolean; label: string };
@@ -148,6 +158,16 @@ const _messageChangeSubscribers = new Set<() => void>();
 const MESSAGE_DTO_CACHE_LIMIT = 96;
 const FORMAT_HTML_CACHE_LIMIT = 1024;
 let _messageIndexes: ReadonlyArray<MessageIndexSnapshotDto> = [];
+/**
+ * messageId -> 1-based floor, derived from the same user-turn pass that feeds
+ * the floor rail. It lives beside `_messageIndexes` rather than in store state
+ * because it is index-derived data the lazy DTO projection reads, not something
+ * the UI subscribes to: every path that can change floors (append, delete,
+ * role flip) already funnels through `refreshChatuiStore`, which rebuilds both
+ * this map and the DTO cache together. `refreshChatuiMessage` deliberately
+ * cannot reach those cases — it bails out to a full rebuild first.
+ */
+let _floorNumbers: ReadonlyMap<number, number> = new Map();
 let _messageDtos = new Map<number, ChatuiMessageDto>();
 let _messageDtoBuildCount = 0;
 
@@ -238,6 +258,7 @@ function _projectChatuiMessage(
     message: MessageSnapshotDto,
     lastMessageId: number,
     chatKey: string,
+    floorNumber: number | null,
 ): ChatuiMessageDto {
     const { id, isUser, isSystem } = message;
     const isChar = !isUser && !isSystem;
@@ -263,6 +284,7 @@ function _projectChatuiMessage(
         displayText: message.displayText,
         html: _formatMessageHtmlCached(message, chatKey, false),
         sendDate: message.sendDate,
+        floorNumber,
         forceAvatar: message.forceAvatar,
         forceAvatarSrc: message.forceAvatarSrc,
         swipe: {
@@ -307,6 +329,7 @@ function _projectChatuiMessage(
 function _buildMessageIndex(snapshots: ReadonlyArray<MessageIndexSnapshotDto>): {
     visibleMessageIds: number[];
     userTurns: ChatuiUserTurn[];
+    floorNumbers: Map<number, number>;
     lastMessageId: number | null;
     lastMessageNeedsGenerate: boolean;
 } {
@@ -333,11 +356,23 @@ function _buildMessageIndex(snapshots: ReadonlyArray<MessageIndexSnapshotDto>): 
             pendingTurnIndex = null;
         }
     }
+    // One floor per user turn, numbered the same way the floor rail numbers its
+    // ticks (turn index + 1), so "第 N 楼" in a message header and "第 N 楼" in
+    // the rail popover always name the same turn. Both members of the turn — the
+    // user message and the reply it drew — carry that number; everything else
+    // (greeting, system notice, extra group responders) stays unnumbered.
+    const floorNumbers = new Map<number, number>();
+    for (const [index, turn] of userTurns.entries()) {
+        const floorNumber = index + 1;
+        floorNumbers.set(turn.userMessageId, floorNumber);
+        if (turn.responseMessageId !== null) floorNumbers.set(turn.responseMessageId, floorNumber);
+    }
     const lastMessage = lastMessageId === null ? null : snapshots[lastMessageId];
 
     return {
         visibleMessageIds,
         userTurns,
+        floorNumbers,
         lastMessageId,
         lastMessageNeedsGenerate: lastMessage?.isUser ?? false,
     };
@@ -385,6 +420,7 @@ function _materializeMessageDto(messageId: number): ChatuiMessageDto | null {
         message,
         state.chat.lastMessageId ?? -1,
         state.chat.chatKey,
+        _floorNumbers.get(messageId) ?? null,
     ));
 }
 
@@ -492,6 +528,7 @@ export function refreshChatuiStore() {
     const state = getChatuiState();
     const isGroup = chatuiAdapter.getIsGroupChat();
     _messageIndexes = snapshot.messages;
+    _floorNumbers = messageState.floorNumbers;
     _messageDtos = new Map();
     _messageDtoBuildCount = 0;
 
@@ -856,6 +893,7 @@ export function teardownChatuiStore() {
     _messageSubscribers.clear();
     _messageChangeSubscribers.clear();
     _messageIndexes = [];
+    _floorNumbers = new Map();
     _messageDtos = new Map();
     _messageDtoBuildCount = 0;
 

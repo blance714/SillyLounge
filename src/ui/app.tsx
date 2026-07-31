@@ -18,19 +18,58 @@ import { NewChatCharacterPicker } from './components/composer/NewChatCharacterPi
 import { MessageItem } from './components/MessageItem.js';
 import { MessageFloorRail } from './components/MessageFloorRail.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
+import { Spine } from './components/sidebar/Spine.js';
 import { Toaster } from './components/Toaster.js';
 import { ConfirmDialogHost } from './components/ConfirmDialogHost.js';
 import { SettingsNav } from './components/settings/SettingsNav.js';
 import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
+import { TopbarTitle } from './components/TopbarTitle.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings } from './hooks.js';
-import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMessageEditDraftStore } from './actions.js';
+import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings, useTopbarChatTarget } from './hooks.js';
+import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, renameChatuiChat, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMessageEditDraftStore } from './actions.js';
 import { teardownCardEmbedRuntime } from './card-embed.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
+import { resolveTopbarRenameCommit } from './topbar-menu-logic.js';
+import type { TopbarChatTarget } from './topbar-menu-logic.js';
 import type { ChatuiMessage, MessageHeaderMode, RootApi } from './types.js';
 
+/**
+ * Assumed height of a message row the virtualizer has not measured yet. It is
+ * only ever wrong — the question is by how much, and in which direction.
+ *
+ * Re-measured against both 400-floor e2e fixtures in the real pinned host on
+ * 2026-07-31, after the corridor-theater reskin raised every row (line-height
+ * 1.82 -> 1.9, 20.8px -> 26px between rows, and a header that solo chats now
+ * render by default). Mean measured row height, before -> after the reskin:
+ *
+ *   long-plain (short turns both sides)   110px -> 135px
+ *   long-rich  (assistant p50 6147 chars) 4523px -> 4719px
+ *
+ * So this constant is ~2.4x too large for one corpus and ~15x too small for
+ * the other, and the reskin moved neither number enough to relocate it: +4.3%
+ * on the realistic fixture, and on the synthetic one it moved *toward* this
+ * value rather than away.
+ *
+ * Raising it was measured too, not assumed. One capacity-sized floor-rail jump
+ * into unmeasured rows, sampling scrollTop every frame (travelled/net = how
+ * much the view chases its own target before settling):
+ *
+ *   estimate   long-rich chase   long-rich settle   long-plain settle
+ *   320        2.05x             2617ms             1366ms
+ *   500        1.61x             2550ms             ~1680ms (interpolated)
+ *   800        1.33x             2516ms             2200ms
+ *
+ * Every step toward the rich corpus buys less chase there and pays for it in
+ * plain-chat jump latency, because the smooth scroll has to animate across the
+ * estimated distance. There is no value in range that is simply better, which
+ * is the real finding: one constant cannot serve rows spanning 130px..16000px.
+ * The principled fix is an estimate that learns from what has been measured,
+ * i.e. a change to the virtualizer's own configuration — out of scope for a
+ * reskin, and deliberately left as the next question rather than papered over
+ * by nudging this number.
+ */
 const VIRTUAL_MESSAGE_ESTIMATE_PX = 320;
 const VIRTUAL_MESSAGE_OVERSCAN = 5;
 
@@ -102,9 +141,17 @@ function ChatuiApp(): ComponentChild {
     const sidebarBasics = useSidebarBasics();
     const chatHeader = sidebarBasics.header;
     const isTempChatActive = useIsTempChatActive();
+    const { hasCurrentChat: canRenameTopbarTitle, target: topbarChatTarget } = useTopbarChatTarget();
     const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
     const initializedVirtualChatKeyRef = useRef<string | null>(null);
     const [editingMessage, setEditingMessage] = useState<EditingMessageTarget | null>(null);
+    // Which chat the topbar's in-place rename input is open for, and its
+    // draft text kept in a separate state (not nested inside the target) so
+    // typing a keystroke doesn't also re-run the stale-target effect below.
+    // Lifted here, not owned by TopbarTitle, because TopbarMenu's own
+    // 「重命名对话」row (design §7) must be able to start this exact edit.
+    const [topbarRenameTarget, setTopbarRenameTarget] = useState<TopbarChatTarget | null>(null);
+    const [topbarRenameDraft, setTopbarRenameDraft] = useState('');
     const headerMode: MessageHeaderMode = state.chat.isGroup ? config.headerGroup : config.headerSolo;
     const [isSidebarMobileOpen, setIsSidebarMobileOpen] = useState(false);
     const { settingsOpen } = useSettings();
@@ -183,7 +230,21 @@ function ChatuiApp(): ComponentChild {
         setIsSidebarMobileOpen(false);
     }, [settingsOpen, state.chat.chatKey]);
 
-    const { atBottom, scrollToBottom } = useAutoScroll(listNode, messageIds, state.chat.isGenerating, state.chat.chatKey);
+    // The reader switching chats (spine, playbill, temp-chat navigation — any
+    // of them) while the topbar rename input is still open must not leave a
+    // stale rename box floating over the *new* chat's title, and must never
+    // let a later Enter rename the chat that is no longer on screen.
+    useEffect(() => {
+        if (!topbarRenameTarget) return;
+        const stillLive = !!topbarChatTarget
+            && topbarChatTarget.avatar === topbarRenameTarget.avatar
+            && topbarChatTarget.fileName === topbarRenameTarget.fileName;
+        if (stillLive) return;
+        setTopbarRenameTarget(null);
+        setTopbarRenameDraft('');
+    }, [topbarChatTarget, topbarRenameTarget]);
+
+    const { awayFromLatest, scrollToBottom } = useAutoScroll(listNode, messageIds, state.chat.isGenerating, state.chat.chatKey);
     useEscapeToStopGeneration(state.chat.isGenerating);
 
     const summonSidebar = () => setIsSidebarMobileOpen(true);
@@ -193,18 +254,52 @@ function ChatuiApp(): ComponentChild {
         if (lastMessageId === undefined || state.chat.isGenerating) return;
         setEditingMessage({ chatKey: state.chat.chatKey, id: lastMessageId });
     }, [messageIds, state.chat.isGenerating, state.chat.chatKey]);
+    const startTopbarRename = useCallback((target: TopbarChatTarget) => {
+        setTopbarRenameTarget(target);
+        setTopbarRenameDraft(target.displayName);
+    }, []);
+    const cancelTopbarRename = useCallback(() => {
+        setTopbarRenameTarget(null);
+        setTopbarRenameDraft('');
+    }, []);
+    const commitTopbarRename = useCallback(() => {
+        const target = topbarRenameTarget;
+        const draft = topbarRenameDraft;
+        setTopbarRenameTarget(null);
+        setTopbarRenameDraft('');
+        if (!target) return;
+        const outcome = resolveTopbarRenameCommit(target, draft, topbarChatTarget);
+        if (outcome) void renameChatuiChat(outcome.avatar, outcome.fileName, outcome.nextName);
+    }, [topbarRenameTarget, topbarRenameDraft, topbarChatTarget]);
 
     return (
         <>
-            {settingsOpen
-                ? <SettingsNav />
-                : <Sidebar
-                      mobileOpen={isSidebarMobileOpen}
-                      onClose={() => setIsSidebarMobileOpen(false)}
-                      onNavigate={dismissSidebarNavigation}
-                      isTempChatActive={isTempChatActive}
-                  />
-            }
+            {/* The rails: spine + one of (playbill | settings nav). Desktop keeps
+                both columns in flow; mobile slides the pair in as one drawer, so
+                the spine is never a permanent 58px bite out of a phone screen
+                (DESIGN §3). The backdrop is a sibling, not a child — it must not
+                ride the wrapper's own translate. */}
+            {isSidebarMobileOpen && !settingsOpen && (
+                <button
+                    className="cui-root-sidebar-backdrop"
+                    type="button"
+                    aria-label="收起侧栏"
+                    onClick={() => setIsSidebarMobileOpen(false)}
+                />
+            )}
+            <div
+                className={`cui-root-rails${isSidebarMobileOpen && !settingsOpen ? ' is-mobile-open' : ''}${settingsOpen ? ' is-settings' : ''}`}
+            >
+                <Spine onNavigate={dismissSidebarNavigation} />
+                {settingsOpen
+                    ? <SettingsNav />
+                    : <Sidebar
+                          onClose={() => setIsSidebarMobileOpen(false)}
+                          onNavigate={dismissSidebarNavigation}
+                          isTempChatActive={isTempChatActive}
+                      />
+                }
+            </div>
             {settingsOpen
                 ? <SettingsContent />
                 : <section className="cui-root-app" aria-label="ChatUI message root">
@@ -212,19 +307,28 @@ function ChatuiApp(): ComponentChild {
                           <button
                               className="cui-root-shell-toggle cui-root-shell-hamburger"
                               type="button"
-                              aria-label="Open navigation"
-                              title="Open navigation"
+                              aria-label="打开侧栏"
+                              title="打开侧栏"
                               onClick={summonSidebar}
                           >
                               <i className="fa-solid fa-bars" />
                           </button>
-                          <div className="cui-root-topbar-heading">
-                              <span className="cui-root-topbar-eyebrow">{conversationEyebrow}</span>
-                              <h1 className="cui-root-topbar-title">{conversationTitle}</h1>
-                          </div>
+                          <TopbarTitle
+                              title={conversationTitle}
+                              eyebrow={conversationEyebrow}
+                              canRename={canRenameTopbarTitle}
+                              isRenaming={topbarRenameTarget !== null}
+                              draft={topbarRenameDraft}
+                              onStartRename={() => {
+                                  if (topbarChatTarget) startTopbarRename(topbarChatTarget);
+                              }}
+                              onDraftChange={setTopbarRenameDraft}
+                              onCommit={commitTopbarRename}
+                              onCancel={cancelTopbarRename}
+                          />
                           <div className="cui-root-topbar-tools">
                               <SelectorChips kinds={['persona']} />
-                              <TopbarMenu />
+                              <TopbarMenu onStartRename={startTopbarRename} />
                           </div>
                       </header>
                       <div className="cui-root-message-stage">
@@ -272,20 +376,24 @@ function ChatuiApp(): ComponentChild {
                                       );
                                   })}
                               </div>
-                              {state.chat.isGenerating && <GeneratingIndicator />}
+                              {state.chat.isGenerating && (
+                                  <GeneratingIndicator name={chatHeader.characterName} />
+                              )}
                           </div>
                           <div className="cui-root-empty" hidden={messageIds.length > 0}>
-                              No messages
+                              <span className="cui-root-empty-title">台上还空着</span>
+                              <span className="cui-root-empty-note">写下第一楼，这一场就开了。</span>
                           </div>
+                          {/* The label is the accessible name: no aria-label, so the
+                              two can never drift apart. */}
                           <button
                               className="cui-root-scroll-bottom"
                               type="button"
-                              hidden={atBottom}
-                              aria-label="回到底部"
-                              title="回到底部"
+                              hidden={!awayFromLatest}
                               onClick={scrollToBottom}
                           >
-                              <i className="fa-solid fa-arrow-down" />
+                              <i className="fa-solid fa-angles-down" aria-hidden="true" />
+                              回到最新
                           </button>
                       </div>
                       {state.chat.lastMessageNeedsGenerate && !state.chat.isGenerating && (

@@ -18,6 +18,7 @@ import { initChatuiStore, teardownChatuiStore } from './store/chat-store.js';
 import { getConfig, initConfigStore } from './store/config-store.js';
 import { initTempChatStore } from './store/temp-chat-store.js';
 import { enqueueHostTask, sealHostOperationQueueForReload } from './store/host-operation-queue.js';
+import { finalizeChatuiDraftQuarantine } from './store/sidebar-actions.js';
 import { initStDomShield, teardownStDomShield } from './shield/st-dom-shield.js';
 import { initChatuiRoot, teardownChatuiRoot } from './ui/root.js';
 import { finalizePendingCharacterChatDeletion } from './adapter/chats.js';
@@ -344,13 +345,47 @@ function init() {
     initTempChatStore();
     injectSettingsUI();
     window.addEventListener(CHATUI_DISABLE_EVENT, disableFromUi);
+    // Second handoff of the reload a current-chat delete forces: if that delete
+    // emptied the character's whole history, ST's boot is materializing a
+    // fallback file this session (not settings.enabled) needs to fold into the
+    // draft quarantine regardless of whether the ChatUI UI is currently on.
+    // Deliberately not "has materialized": that file lands *after* APP_READY on
+    // a chain this event does not wait for, so the call below arms and watches
+    // rather than checks — see sidebar-actions.ts's
+    // finalizeChatuiDraftQuarantine doc comment.
+    //
+    // Ahead of the mount on purpose. Its synchronous half decides the fate of
+    // the `sessionStorage` credential — claim it for this page, or expire one a
+    // previous page already claimed — and the spine reads that same credential
+    // during render as one of its membership sources (ui/spine-cast.ts). A
+    // `sessionStorage` record notifies nobody, so a first render that observed
+    // an expired credential would seat a character with nothing to its name for
+    // the rest of the session: the memo has no reason to run again, because the
+    // expiry touches neither the cast nor the lease store. Settling it first
+    // makes the reactivity argument in useSpineCharacters true rather than
+    // nearly true — after this line the only thing that can still clear the
+    // credential is the commit that puts a lease in its place, and that does
+    // notify. The landing it may start is async and does not delay the mount.
+    //
+    // That landing is the one part of the handoff bootstrap mode must not do.
+    // Everything else here is session hygiene the reader benefits from with
+    // ChatUI off — the credential still expires on schedule, and a fallback
+    // file ST does write is still folded into the (persisted) quarantine
+    // rather than becoming permanent history. But selecting a character is a
+    // move on ST's own interface, the only interface on screen right now, and
+    // an extension the reader has switched off must not be making it. With no
+    // ChatUI UI there is nothing to strand either: the empty stage ST chose is
+    // simply ST's own behaviour, unaltered.
+    finalizeChatuiDraftQuarantine({ completeLanding: settings.enabled });
     if (settings.enabled) {
         const enabledCb = document.getElementById('chatui_enabled') as HTMLInputElement | null;
         setupOrDisable(enabledCb);
     }
     // A current-chat delete reloads before emitting CHAT_DELETED so arbitrary
     // third-party listeners can never observe/save the stale deleted runtime.
-    // APP_READY guarantees the replacement chat is now reconstructed.
+    // APP_READY guarantees the replacement chat is now reconstructed. Kept
+    // after the mount: this one emits into ST's event bus for *listeners*, and
+    // ChatUI's own UI is one of them.
     void finalizePendingCharacterChatDeletion();
 }
 

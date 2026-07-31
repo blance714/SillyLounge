@@ -26,6 +26,7 @@ export {
     subscribeChatuiQuickReplies,
     subscribeChatuiSelectorSync,
     swipeChatuiMessage,
+    swipeChatuiMessageToIndex,
     triggerChatuiMessageAction,
     triggerChatuiQuickReply,
     triggerChatuiWandItem,
@@ -40,6 +41,7 @@ export {
 export {
     deleteChatuiChat,
     getChatuiCurrentChatHeader,
+    getChatuiPendingDraftQuarantineCharacter,
     listChatuiCharacters,
     listChatuiChatsForCharacterAvatar,
     listChatuiRecentCharacterChatRows,
@@ -64,6 +66,11 @@ export {
 export {
     clearToasts as clearChatuiToasts,
 } from '../store/toast-store.js';
+
+export {
+    getLastVanishedChat as getLastVanishedChatuiChat,
+    subscribeVanishedChats as subscribeVanishedChatuiChats,
+} from '../store/vanished-chat-store.js';
 
 export {
     resolveChatuiConfirm,

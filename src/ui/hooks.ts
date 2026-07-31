@@ -14,6 +14,7 @@ import { getUiState, subscribeUiStore } from '../store/ui-store.js';
 import {
     getChatuiCurrentChatHeader,
     getChatuiComposerDraftStoreSnapshot,
+    getChatuiPendingDraftQuarantineCharacter,
     getTempChat,
     getTempChats,
     getTempChatDraft,
@@ -26,6 +27,8 @@ import {
     subscribeTempChatStore,
 } from './actions.js';
 import { renderCardEmbeds } from './card-embed.js';
+import { readFollowGates } from './follow-scroll-math.js';
+import { orderSpineCast } from './spine-cast.js';
 import {
     SIDEBAR_BACKFILL_CONCURRENCY,
     SIDEBAR_INITIAL_VISIBLE,
@@ -167,6 +170,106 @@ export function useSidebarBasics(): {
     };
 }
 
+/**
+ * The chat the topbar's rename/delete affordances point at: the currently
+ * open chat, but never a group (DESIGN §4.1 — a group has no single chat file
+ * to rename or delete; §7's「从末楼开新分支」has no such requirement and does
+ * not use this — see TopbarMenu.tsx). This is the one definition of "which
+ * chat these controls act on", shared by the title's in-place rename
+ * (app.tsx) and the ⋯ menu's rename/delete rows (TopbarMenu.tsx) — previously
+ * this existed only inside TopbarMenu and had no way to seed a rename UI
+ * living outside its own dropdown.
+ */
+export function useTopbarChatTarget(): {
+    hasCurrentChat: boolean;
+    isGroup: boolean;
+    target: { avatar: string; fileName: string; displayName: string } | null;
+} {
+    const identity = useCurrentChatIdentity();
+    const { header } = useSidebarBasics();
+    const hasCurrentChat = !!identity && !header.isGroup;
+    const target = hasCurrentChat && identity
+        ? { avatar: identity.avatar, fileName: identity.fileName, displayName: identity.fileName }
+        : null;
+    return { hasCurrentChat, isGroup: header.isGroup, target };
+}
+
+/**
+ * Put the caret in a field the moment it replaces the thing it edits.
+ *
+ * The `autoFocus` prop cannot do this and never could: Preact has no React-style
+ * shim for it (10.29's diff treats it as the ordinary `autofocus` DOM property),
+ * and the platform only flushes autofocus candidates while the document is
+ * still being parsed. An input mounted long after load therefore gets the
+ * attribute and no focus at all — measured on the pinned host: clicking the
+ * topbar pencil left `document.activeElement` on `<body>`, and clicking a
+ * playbill card's pencil left it on the pencil button itself. Both inputs then
+ * silently disowned their own contract: the「Enter 保存 · Esc 取消」hint named
+ * two keys that reached the document instead of the field, and the `onBlur`
+ * cancel could not fire because nothing had focus to lose.
+ *
+ * So the in-project precedent is the rule, not the prop — `MessageEditor.tsx`
+ * has always focused its textarea from an effect. This is that effect, named
+ * once and shared, because every in-place edit surface (topbar title,
+ * playbill card) owes the reader the same thing. Caret goes to the end, as it
+ * does in the message editor: the field opens on a name that already exists,
+ * and selecting it whole would make one stray keystroke erase it.
+ *
+ * @param {boolean} isActive Whether the field is mounted right now.
+ * @returns {{ current: T | null }} Ref to attach to the field.
+ */
+export function useCaretOnMount<T extends HTMLInputElement | HTMLTextAreaElement>(
+    isActive: boolean,
+): { current: T | null } {
+    const ref = useRef<T>(null);
+    useEffect(() => {
+        const field = ref.current;
+        if (!isActive || !field) return;
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+    }, [isActive]);
+    return ref;
+}
+
+/**
+ * Spine feed. Deliberately built on useSidebarBasics rather than
+ * useSidebarData: the spine needs the cast and nothing else, and
+ * useSidebarData fans out one per-character chat query per entry — work the
+ * playbill already pays for and the book spine has no use for.
+ *
+ * The membership rule itself lives in ui/spine-cast.ts (pure, unit-tested);
+ * everything here is the wiring that hands it the three things ChatUI knows
+ * and ST's boot-time `chat_size` snapshot does not. Two of the three are
+ * reactive stores, so the rail follows them: the on-stage avatar arrives
+ * through `useSidebarBasics`'s `isCurrent` (which already honours the group
+ * case), and the leases through `useTempChats`. The third — the pending
+ * draft-quarantine credential — is a `sessionStorage` record with no change
+ * notification, and needs none, but only because of where the boot settles it:
+ * `finalizeChatuiDraftQuarantine()` runs before this tree mounts (index.ts), so
+ * by the first render the credential has already been either claimed for this
+ * page or expired. After that the only thing that ever clears it is the commit
+ * that puts a lease in its place, so the lease store's own update is exactly
+ * when this is re-read. Read it any earlier than that boot step and an expired
+ * credential would seat a character for the rest of the session, since nothing
+ * would ever invalidate this memo again.
+ *
+ * `isGroupActive` is the whole of ChatUI's group knowledge today: the header
+ * says whether the open chat is a group, and there is no adapter query that
+ * enumerates groups. So the spine can honestly show that a group holds the
+ * stage; it cannot yet offer to switch to one (DESIGN §4.2 defers full group
+ * support to its own project).
+ */
+export function useSpineCharacters(): { characters: CharacterSummary[]; isGroupActive: boolean } {
+    const { characters, header } = useSidebarBasics();
+    const tempChats = useTempChats();
+    const cast = useMemo(() => orderSpineCast(characters, {
+        onStageAvatar: characters.find((character: CharacterSummary) => character.isCurrent)?.avatar ?? null,
+        leasedAvatars: tempChats.map(pointer => pointer.avatar),
+        pendingDraftAvatar: getChatuiPendingDraftQuarantineCharacter(),
+    }), [characters, tempChats]);
+    return { characters: cast, isGroupActive: header.isGroup };
+}
+
 export function useSidebarData(): ChatuiSidebarState {
     const queryClient = useQueryClient();
     const currentChat = useCurrentChatIdentity();
@@ -184,7 +287,6 @@ export function useSidebarData(): ChatuiSidebarState {
         ...sidebarQueryOptions.recents(SIDEBAR_RECENTS_MAX),
         placeholderData: [],
     });
-    const recentsReady = recentsQuery.isSuccess && !recentsQuery.isPlaceholderData;
     const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
     const [pendingBackfillAvatars, setPendingBackfillAvatars] = useState<Set<string>>(() => new Set());
     const [pendingMoreAvatars, setPendingMoreAvatars] = useState<Set<string>>(() => new Set());
@@ -197,10 +299,21 @@ export function useSidebarData(): ChatuiSidebarState {
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
 
-    const groupHeaders = useMemo<CharacterSummary[]>(() => characters
-        .filter((character: CharacterSummary) => character.avatar && character.name && finiteNumber(character.chatSize) > 0)
-        .slice()
-        .sort((a: CharacterSummary, b: CharacterSummary) => finiteNumber(b.dateLastChatTs) - finiteNumber(a.dateLastChatTs)), [characters]);
+    // The playbill lists exactly one character (DESIGN §4.2), so this fan-out
+    // is one entry wide. It used to be the whole cast, back when the column
+    // was a whole-cast accordion; leaving it that wide now would keep firing a
+    // /api/chats/search backfill per character to fill groups nothing renders.
+    // Everything downstream is per-group and unchanged — 更多 paging, retry and
+    // the temp-chat hiding all still work, they just work on the one group.
+    //
+    // Note this selects the current character *directly* rather than by
+    // filtering the spine's cast: the playbill is one character's programme,
+    // and a character whose boot-time `chatSize` snapshot has not caught up
+    // must never end up with an open conversation and no column to list it in.
+    const groupHeaders = useMemo<CharacterSummary[]>(
+        () => characters.filter((character: CharacterSummary) => character.isCurrent),
+        [characters],
+    );
 
     const groupAvatarKey = useMemo(() => groupHeaders.map((group: CharacterSummary) => group.avatar).join('\u0001'), [groupHeaders]);
 
@@ -244,14 +357,21 @@ export function useSidebarData(): ChatuiSidebarState {
         return map;
     }, [recentsQuery.data]);
 
+    // Every character in the feed — which is now just the one the playbill is
+    // showing — gets its full listing fetched, not only the ones missing from
+    // the recents page. Back when this fanned out over the whole cast, "only
+    // if recents told us nothing" was the rule that kept a large cast from
+    // firing one request per character; one column of one character costs one
+    // request, and without it the recents page (capped at five rows per
+    // character) is all the column ever has: no honest 「的对话 · N」, no way
+    // past the fifth conversation, and a draft snapshot that has to declare
+    // itself incomplete.
     const backfillNeededAvatarKey = useMemo(() => groupHeaders
-        .filter((group: CharacterSummary) => (recentsByAvatar.get(group.avatar) ?? []).length === 0)
         .map((group: CharacterSummary) => group.avatar)
         .sort()
-        .join('\u0001'), [groupHeaders, recentsByAvatar]);
+        .join('\u0001'), [groupHeaders]);
 
     useEffect(() => {
-        if (!recentsReady) return;
         const avatars = (backfillNeededAvatarKey ? backfillNeededAvatarKey.split('\u0001') : [])
             .filter(avatar => {
                 if (requestedBackfillRef.current.has(avatar)) return false;
@@ -288,7 +408,7 @@ export function useSidebarData(): ChatuiSidebarState {
         ));
 
         return () => { cancelled = true; };
-    }, [backfillNeededAvatarKey, queryClient, recentsReady]);
+    }, [backfillNeededAvatarKey, queryClient]);
 
     const shouldHideChat = useCallback((avatar: string, chat: ChatListItem): boolean => {
         if (tempChats.some(pointer => (
@@ -346,9 +466,35 @@ export function useSidebarData(): ChatuiSidebarState {
         const sourceChats = (draftActive && tempDraft && !tempDraft.complete)
             ? recentChats
             : (full?.chats ?? recentChats);
-        const totalCount = full?.totalCount ?? Math.max(finiteNumber(group.chatSize), sourceChats.length);
-        const visibleSourceChats = dedupeSortChats(sourceChats)
+        // Raw listing size, drafts included — only ever compared against the
+        // source list to decide whether more pages exist. The count the header
+        // prints is the ordinary-conversation one further down.
+        const sourceTotalCount = full?.totalCount ?? Math.max(finiteNumber(group.chatSize), sourceChats.length);
+        const dedupedSourceChats = dedupeSortChats(sourceChats);
+        const visibleSourceChats = dedupedSourceChats
             .filter(chat => !shouldHideChat(group.avatar, chat));
+        // Draft cards are driven by the lease set, not by the chat listing:
+        // the quarantine is what makes a file a draft, and it is authoritative
+        // even when the listing has not caught up. The listing only decorates
+        // (title/preview/time); an undecorated draft still gets a card, which
+        // is why the fallback below is a bare pointer rather than a skip.
+        const draftChats = tempChats
+            .filter(pointer => pointer.avatar === group.avatar && !(
+                currentChat?.avatar === pointer.avatar && currentChat.fileName === pointer.fileName
+            ))
+            .map(pointer => dedupedSourceChats.find(
+                chat => normalizeFileName(chat.fileName) === pointer.fileName,
+            ) ?? {
+                fileName: pointer.fileName,
+                displayName: pointer.fileName,
+                messageCount: 0,
+                preview: '',
+                fileSize: '',
+                lastMesTs: 0,
+                lastMesLabel: '',
+                isCurrent: false,
+            })
+            .sort((a, b) => chatRecencyTs(b) - chatRecencyTs(a));
         const displayChats = visibleSourceChats
             .slice(0, full ? visibleCount : INITIAL_VISIBLE_COUNT)
             .map(chat => ({
@@ -378,11 +524,17 @@ export function useSidebarData(): ChatuiSidebarState {
             dateLastChatTs: finiteNumber(group.dateLastChatTs),
             chatSize: finiteNumber(group.chatSize),
             chats: displayChats,
+            draftChats,
+            // Honest only once the full per-character listing has landed: until
+            // then `sourceChats` is the recents page, capped at five, and
+            // `chatSize` is a byte count. Null means "unknown", and the header
+            // prints nothing rather than a number it cannot stand behind.
+            totalCount: full ? visibleSourceChats.length : null,
             visibleCount: full ? visibleCount : displayChats.length,
             chatsLoaded: sourceChats.length > 0 || !!full,
             fullyLoaded: full
                 ? visibleCount >= visibleSourceChats.length
-                : totalCount <= sourceChats.length && displayChats.length >= visibleSourceChats.length,
+                : sourceTotalCount <= sourceChats.length && displayChats.length >= visibleSourceChats.length,
             pending,
         };
     }), [
@@ -394,6 +546,7 @@ export function useSidebarData(): ChatuiSidebarState {
         pendingMoreAvatars,
         recentsByAvatar,
         shouldHideChat,
+        tempChats,
         tempDraft,
         visibleCounts,
     ]);
@@ -408,7 +561,13 @@ export function useSidebarData(): ChatuiSidebarState {
         error: headerQuery.isError || charactersQuery.isError || recentsQuery.isError ? 'load-failed' : null,
         charGroups,
         charGroupsLoading: charactersQuery.isLoading || recentsQuery.isLoading,
-        charGroupsError: charactersQuery.isError || recentsQuery.isError ? 'load-failed' : null,
+        // Only a failed *character* list is a column-wide failure. The recents
+        // page is a first-paint shortcut the playbill can do without now that
+        // it fetches the current character's own listing unconditionally, and
+        // a failure of that listing is reported inside the column with a retry
+        // (group.pending === 'error') — which is both more accurate and more
+        // actionable than painting 「加载失败」 over a list that loaded.
+        charGroupsError: charactersQuery.isError ? 'load-failed' : null,
         loadMoreCharacterChats,
         retryCharacterChats,
     };
@@ -516,22 +675,26 @@ export function useCardEmbedRendering(
     }, [root, messages, isGenerating]);
 }
 
-/** Distance (px) from the bottom within which we treat the view as "pinned". */
-const AT_BOTTOM_THRESHOLD = 80;
-
 /**
  * Auto-scroll that respects the reader. New messages/tokens only pull the view
  * to the bottom when the user is already near the bottom; if they have scrolled
- * up to read history, their position is left alone and `atBottom` flips false so
- * the caller can show a "back to bottom" affordance.
+ * up to read history, their position is left alone and `awayFromLatest` flips
+ * true once the end is genuinely off screen, so the caller can float the
+ * 「回到最新」 capsule.
+ *
+ * The two gates are read from follow-scroll-math.ts, which documents why they
+ * are separate numbers; everything here is wiring. Only `awayFromLatest` is
+ * state, because it is the only one anything renders — whether the view is
+ * pinned is a scroll-behaviour fact, and lives in a ref so reading it never
+ * costs a render.
  */
 export function useAutoScroll(
     root: HTMLElement | null,
     messageIds: readonly number[],
     isGenerating: boolean,
     chatKey: string,
-): { atBottom: boolean; scrollToBottom: () => void } {
-    const [atBottom, setAtBottom] = useState(true);
+): { awayFromLatest: boolean; scrollToBottom: () => void } {
+    const [awayFromLatest, setAwayFromLatest] = useState(false);
     // Authoritative "was the user pinned to the bottom" flag, updated on scroll.
     // A ref (not state) so the content effect below reads the value from BEFORE
     // the new content grew scrollHeight.
@@ -540,23 +703,41 @@ export function useAutoScroll(
     const chatKeyRef = useRef<string | null>(null);
     const contentFrameRef = useRef(0);
 
+    /** Re-read both gates off the live container. Costs one layout read. */
+    const syncFollowGates = useCallback(() => {
+        if (!root) return;
+        const { pinned, awayFromLatest: away } = readFollowGates(root);
+        wasAtBottomRef.current = pinned;
+        setAwayFromLatest(prev => (prev === away ? prev : away));
+    }, [root]);
+
     const followContent = useCallback(() => {
         if (!root || !wasAtBottomRef.current) return;
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
-        setAtBottom(true);
+        setAwayFromLatest(false);
     }, [root]);
 
     useEffect(() => {
         if (!root) return;
         return subscribeChatuiMessageChanges(() => {
-            if (!wasAtBottomRef.current || contentFrameRef.current) return;
+            if (contentFrameRef.current) return;
             contentFrameRef.current = requestAnimationFrame(() => {
                 contentFrameRef.current = 0;
-                followContent();
+                // Pinned: pull the view down with the new content. Not pinned:
+                // nothing moves, but the growing content just pushed the end
+                // further away without emitting a scroll event — appending below
+                // the viewport never does. The capsule's gate sits above the
+                // follow gate, so it can now be crossed by content alone, and a
+                // reader who paused 100px up during a long generation would
+                // otherwise never be offered the way back. Re-reading here is
+                // what keeps the gate honest; it is one layout read per frame,
+                // the same one the pinned branch already pays.
+                if (wasAtBottomRef.current) followContent();
+                else syncFollowGates();
             });
         });
-    }, [followContent, root]);
+    }, [followContent, root, syncFollowGates]);
 
     useEffect(() => () => {
         if (contentFrameRef.current) cancelAnimationFrame(contentFrameRef.current);
@@ -566,17 +747,10 @@ export function useAutoScroll(
     useEffect(() => {
         if (!root) return;
 
-        const onScroll = () => {
-            const distance = root.scrollHeight - root.scrollTop - root.clientHeight;
-            const pinned = distance < AT_BOTTOM_THRESHOLD;
-            wasAtBottomRef.current = pinned;
-            setAtBottom(prev => (prev === pinned ? prev : pinned));
-        };
-
-        root.addEventListener('scroll', onScroll, { passive: true });
-        onScroll();
-        return () => root.removeEventListener('scroll', onScroll);
-    }, [root]);
+        root.addEventListener('scroll', syncFollowGates, { passive: true });
+        syncFollowGates();
+        return () => root.removeEventListener('scroll', syncFollowGates);
+    }, [root, syncFollowGates]);
 
     useEffect(() => {
         if (!root) return;
@@ -591,17 +765,19 @@ export function useAutoScroll(
         if (!switched && !wasAtBottomRef.current) return;
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
-        setAtBottom(true);
+        // Design §47: the capsule never survives a chat switch. It cannot — the
+        // new chat lands at its own latest message, and this is that landing.
+        setAwayFromLatest(false);
     }, [root, messageIds, isGenerating, chatKey]);
 
     const scrollToBottom = useCallback(() => {
         if (!root) return;
         root.scrollTop = root.scrollHeight;
         wasAtBottomRef.current = true;
-        setAtBottom(true);
+        setAwayFromLatest(false);
     }, [root]);
 
-    return { atBottom, scrollToBottom };
+    return { awayFromLatest, scrollToBottom };
 }
 
 /**

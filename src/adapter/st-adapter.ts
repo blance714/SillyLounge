@@ -29,11 +29,13 @@ import {
     openMessageMedia,
 } from './media.js';
 import {
+    copyMessageAsPlainText,
     deleteMessageWithIntent,
     getConfirmMessageDeleteSetting,
     getDeleteEligibility,
     saveMessageEditById,
     swipeMessageById,
+    swipeMessageToIndexById,
     triggerMessageActionById,
 } from './messages.js';
 import {
@@ -59,6 +61,10 @@ import {
 import {
     deleteCharacterChat,
     queueCurrentCharacterChatDeletionFinalization,
+    queueCharacterChatDraftQuarantine,
+    armPendingCharacterChatDraftQuarantine,
+    peekPendingCharacterChatDraftQuarantine,
+    resolvePendingCharacterChatDraftQuarantine,
     getCurrentChatHeader,
     getCurrentChatIdentity,
     hasCharacterChatFile,
@@ -71,9 +77,11 @@ import {
     openCharacterChatByName,
     openChatForCharacter,
     renameCharacterChat,
+    selectCharacterIfNobodyIsOnStage,
     switchCharacter,
 } from './chats.js';
 import {
+    flushSettings,
     read,
     write,
 } from './config.js';
@@ -115,8 +123,10 @@ export const chatuiAdapter = Object.freeze({
         openMessageFile,
     }),
     messageActions: Object.freeze({
+        copyMessageAsPlainText,
         saveMessageEditById,
         swipeMessageById,
+        swipeMessageToIndexById,
         triggerMessageActionById,
         deleteMessageWithIntent,
         getConfirmMessageDeleteSetting,
@@ -145,6 +155,7 @@ export const chatuiAdapter = Object.freeze({
     sidebarActions: Object.freeze({
         listCharacters,
         switchCharacter,
+        selectCharacterIfNobodyIsOnStage,
         listCharacterChats,
         getCurrentChatHeader,
         getCurrentChatIdentity,
@@ -154,6 +165,10 @@ export const chatuiAdapter = Object.freeze({
         renameCharacterChat,
         deleteCharacterChat,
         queueCurrentCharacterChatDeletionFinalization,
+        queueCharacterChatDraftQuarantine,
+        armPendingCharacterChatDraftQuarantine,
+        peekPendingCharacterChatDraftQuarantine,
+        resolvePendingCharacterChatDraftQuarantine,
         listCharacterConversationHeaders,
         listRecentCharacterChatRows,
         listChatsForCharacterAvatar,
@@ -162,6 +177,7 @@ export const chatuiAdapter = Object.freeze({
     configActions: Object.freeze({
         read,
         write,
+        flushSettings,
     }),
     qrActions: Object.freeze({
         listQuickReplies,

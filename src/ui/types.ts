@@ -12,7 +12,25 @@ export type ChatuiState = ReturnType<typeof getChatuiState>;
 export type ChatuiMessage = NonNullable<ReturnType<typeof getMessageDtoById>>;
 export type ChatListItem = ChatListItemDto;
 export type CharacterSummary = CharacterSummaryDto;
-export type CharConversationGroup = CharConversationGroupDto;
+/**
+ * The playbill's view of one character's conversations. Two fields the adapter
+ * cannot produce are added on top of its DTO, because both are answers about
+ * ChatUI's own quarantine state rather than about what is on disk:
+ *
+ * - `totalCount` is how many *ordinary* conversations this character has, or
+ *   null while that is genuinely unknown (only the recents page has arrived,
+ *   which is capped). The playbill header prints「的对话 · N」from this, so a
+ *   guess would be a visible lie; `chatSize` is a byte count and answers a
+ *   different question entirely.
+ * - `draftChats` are the leased, quarantined new-chat files, kept apart from
+ *   `chats` rather than mixed into history (DESIGN §4.2). The lease set is the
+ *   authority on *which* files these are; the list metadata only decorates
+ *   them, so a draft whose row has not been fetched yet still appears.
+ */
+export type CharConversationGroup = CharConversationGroupDto & {
+    totalCount: number | null;
+    draftChats: ChatListItem[];
+};
 export type ChatuiSidebarState = {
     header: {
         sessionName: string;

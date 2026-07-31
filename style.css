@@ -43,6 +43,13 @@
     --cui-color-shadow: rgba(0, 0, 0, 0.55);
     --cui-color-user-mark: #96633f;
     --cui-color-user-mark-hover: #a8734c;
+    /* The reader's own warm tone — the one the design gives to whatever on the
+       page is *yours* rather than the character's: the user's speaker name in
+       the message header (§4) and the unfinished-draft tag on a playbill card
+       (§1). It sits between the gold accent and the rust user mark on purpose,
+       so a header row reads as two voices rather than one color and its
+       shadow. Not derivable from either neighbour, so it is declared. */
+    --cui-color-user-voice: #c08a6a;
 
     /* Two structural darks the layout regions need, and neither is consumed
        yet: the spine ground waits on the character rail that arrives with the
@@ -154,6 +161,21 @@
        aesthetic identity. */
     --cui-color-danger: #d47a6a;
     --cui-color-danger-hover: #a04a38;
+    /* The saturated cinnabar this palette dropped when the solid confirm
+       button went away. It comes back for the one job it has no contrast
+       problem doing: a wash *under* an icon, never a label color on top of
+       one. Kept separate from --cui-color-danger so nobody can reach for it
+       as ink by mistake. */
+    --cui-color-danger-wash: #d43a2f;
+
+    /* The two washes the design paints under a hovered icon button: warm for
+       the ordinary ones, cinnabar for the destructive one (§42, and again
+       under the playbill card's action dock §1). Whole colors rather than
+       members of the --cui-tint-* percentage scale below, because that scale
+       mixes toward the *text* color while these mix toward a specific ink —
+       the same reason the paper surface names its tints as colors. */
+    --cui-wash-accent: color-mix(in srgb, var(--cui-color-accent) 11%, transparent);
+    --cui-wash-danger: color-mix(in srgb, var(--cui-color-danger-wash) 16%, transparent);
     --cui-color-success: #3fa45b;
     --cui-color-info: var(--cui-color-accent, var(--cui-color-border));
 
@@ -179,10 +201,27 @@
        --cui-font-root, so the comment values are what renders by default. */
     --cui-font-2xs: calc(var(--cui-font-root) * 0.6);      /* 9px — dense meta, counts */
     --cui-font-xs: calc(var(--cui-font-root) * 0.667);     /* 10px — meta, eyebrows */
+    /* 10.5px — the playbill card's preview line (§1). Its own tier because a
+       card stacks three sizes that all have to stay distinguishable at a
+       glance: 13.5px title, this, and the 9px meta. Rounding it to -xs would
+       leave only half a pixel between preview and meta, and the preview would
+       stop reading as the sentence it is. */
+    --cui-font-preview: calc(var(--cui-font-root) * 0.7); /* 10.5px — card preview */
     --cui-font-sm: calc(var(--cui-font-root) * 0.733);     /* 11px — notes, action rows */
+    /* 11.5px — the design's inline-control tier: the 「回到最新」 capsule (§47),
+       the persona chip, inline links like 「从空白新建」. It reads as one step
+       quieter than a button without dropping to meta size. Half a pixel from
+       -sm is a real distinction here: -sm is text you skim past, this is text
+       you click. */
+    --cui-font-chip: calc(var(--cui-font-root) * 0.767);   /* 11.5px — chips, pills, inline links */
     --cui-font-tight: calc(var(--cui-font-root) * 0.8);    /* 12px — buttons */
     --cui-font-menu: calc(var(--cui-font-root) * 0.833);   /* 12.5px — menu items */
     --cui-font-card: calc(var(--cui-font-root) * 0.9);     /* 13.5px — card titles */
+    /* 14.5px — the composer textarea's own size (design §6), a half-step under
+       body prose. Deliberate, not a rounding of -base: the design sets message
+       body copy and the thing you're about to add to it at two different
+       sizes, so the two need distinct tokens rather than sharing -base. */
+    --cui-font-composer: calc(var(--cui-font-root) * 0.967);
     --cui-font-base: var(--cui-font-root);                 /* 15px — body copy */
     --cui-font-title: calc(var(--cui-font-root) * 1.333);  /* 20px — conversation title */
 
@@ -203,6 +242,11 @@
        an inscription rather than a word: speaker names (§4), the composer's
        preset chip (§6), the confirm dialog's escalate link (§9). */
     --cui-tracking-wide: 0.08em;
+    /* One step above -wide, spent only on labels that float free on a surface
+       of their own rather than sitting in a row of text: the 「回到最新」
+       capsule (§47) and the greeting picker's 「开场 N」 (§5, not built yet).
+       Detached type needs the extra air to hold together as an object. */
+    --cui-tracking-pill: 0.1em;
     --cui-tracking-btn: 0.12em;
     /* -label has no consumer yet, and that is a statement rather than an
        oversight: both places the design spends .16em on — the draft card's
@@ -250,19 +294,57 @@
     --cui-outline-faint: var(--interactable-outline-color-faint, var(--cui-rule-accent));
     --cui-motion-base: var(--animation-duration-2x, 0.2s);
 
+    /* The design reveals three things on hover — the message action bar (§42),
+       the card action dock (§1) and the title's rename pencil (§7) — and gives
+       all three the same .15s (§92). Deliberately not --cui-motion-base and
+       deliberately not the host's: this is something surfacing under the
+       cursor, which has to feel like it was already there. */
+    --cui-motion-reveal: 0.15s;
+
     /* Radius scale. The design corners much tighter than the old scale did:
        paper is nearly square, controls take a small round, and only the dark
        floating surfaces keep a visible radius. Fixed px rather than rem —
        a corner is a constant of the drawing, not of the type size. */
     --cui-radius-paper: 2px;
+    /* The playbill card's corner, named because DESIGN §4.2 names the value
+       («小圆角、3px 量级») rather than because a third small step was wanted.
+       The dock that floats over that card asks for 6px and its buttons for
+       4px; both are absorbed by -sm and this, so one component does not grow
+       the scale by two steps nobody else will reach for. */
+    --cui-radius-card: 3px;
     --cui-radius-sm: 5px;
     --cui-radius-md: 8px;
     --cui-radius-lg: 10px;
     --cui-radius-pill: 999px;
 
     /* A restrained reading column leaves a real manuscript gutter for the
-       desktop user-turn navigator instead of allowing it to overlap prose. */
-    --cui-content-max-width: 54rem;
+       desktop user-turn navigator instead of allowing it to overlap prose.
+
+       DESIGN §3.1: this number and the spine's width are one simultaneous
+       equation, not two settings. The floor rail only mounts when
+       `contentLeft - railLeft >= 42px` (30px rail + 12px prose clearance,
+       MessageFloorRail.tsx), and `railLeft` is the app column's own left edge
+       + 16px — so widening the left rails pushes the threshold *up* while the
+       reading column's centering margin is what pays for it. Solving both
+       sides at 1280px, with .cui-root-app's 24px side padding:
+
+         before  one 273px sidebar (272 + its rule), column 54rem/864px
+                 gutter = 7.5 + (W - 1185)/2  →  rail appears from W ≥ 1253px
+                 at 1280px: 55.5px — 13.5px of slack on a 1280 laptop
+
+         after   rails 58 + 252 = 310px, column 680px
+                 gutter = 8 + (W - 1038)/2   →  rail appears from W ≥ 1106px
+                 at 1280px: 129px
+
+       Both rows measured in Chromium against this stylesheet, not derived on
+       paper: the 273 is why the paper number was 272.
+
+       Keeping 54rem while adding the spine would have moved the threshold to
+       ~1310px and made the rail vanish on a 1280px laptop with nothing to
+       show for it — no error, no failing test. 680px is the design's own main
+       column, and px rather than rem because a reading measure is a constant
+       of the drawing, not of the host's <html> font-size (§2.5). */
+    --cui-content-max-width: 680px;
 
     /* Component-scoped "shape" tokens: for the handful of spots where a
        whole look (bubble vs. flat) hinges on 3-4 properties acting together
@@ -277,6 +359,13 @@
     --cui-message-user-radius: 0;
     --cui-message-user-bg: transparent;
     --cui-message-user-rule: 2px solid var(--cui-rule-accent);
+    /* The character half of the same shape. The design replaces bubbles with a
+       left rule (§4), and gives the two speakers rules of different colors —
+       so the character gets one too, pitched down to the faint structural ink.
+       Both variants then share one indent, which is what keeps the two speakers
+       reading as one continuous column rather than two staggered ones. */
+    --cui-message-char-padding: 0 0 0 1rem;
+    --cui-message-char-rule: 2px solid var(--cui-rule-faint);
 
     /* Plus-menu pinned tile vs. unpinned tool row: same button semantics,
        two hardcoded looks on the same DOM shape — the second of the 3
@@ -285,17 +374,22 @@
     --cui-plus-tile-radius: var(--cui-radius-paper);
     --cui-plus-tile-bg: var(--cui-paper-tint-rest);
 
-    /* Sidebar nested-row indent: derived from the same three tokens that
-       actually govern the char-group-header row it needs to line up under
-       (avatar width + row gap + the row's own horizontal padding), instead
-       of a hardcoded value kept in sync by a comment. Changing any of the
-       three below now keeps the nested rows aligned automatically. */
-    --cui-sidebar-row-padding-x: 1rem;
-    --cui-sidebar-avatar-size: 1.4rem;
-    --cui-sidebar-row-gap: 0.6rem;
-    --cui-sidebar-indent: calc(
-        var(--cui-sidebar-row-padding-x) + var(--cui-sidebar-avatar-size) + var(--cui-sidebar-row-gap)
-    );
+    /* Scoped 8px scrollbar (README "其他": 滚动条 8px 自定义 / 原型 L18). The
+       app has two surfaces, so the recipe has two thumbs: the dark stage's
+       thumb is read straight off the 原型's literal rgba(232,223,206,.14) —
+       232/223/206 is --cui-color-text's own channel triple, so this is that
+       same mark expressed as a token instead of a re-typed literal. Paper
+       popovers would render that pale mark invisible against their light
+       ground, so they reuse --cui-paper-rule — the ink already defined for
+       paper's own binding line and separators — rather than inventing a
+       second hand-tuned paper opacity. Both thumbs share one width and one
+       radius; only the color forks. Never promoted to a bare
+       `::-webkit-scrollbar` — every consumer stays scoped to its own .cui-*
+       container (see §9.1's ban on a global rule). */
+    --cui-scrollbar-size: 8px;
+    --cui-scrollbar-radius: 4px;
+    --cui-scrollbar-thumb: color-mix(in srgb, var(--cui-color-text) 14%, transparent);
+    --cui-scrollbar-thumb-paper: var(--cui-paper-rule);
 }
 
 /* ---------------------------------------------------------------------------
@@ -327,8 +421,10 @@ body.chatui-active.chatui-root-visible #chatui-root {
     font-size: var(--cui-font-base);
 }
 
-/* Desktop: two-column layout (persistent sidebar | main), and give #sheld room
-   to host both since it is only --sheldWidth (50vw) wide by default. */
+/* Desktop: three-column layout (spine | playbill | stage, DESIGN §3), and give
+   #sheld room to host all of it since it is only --sheldWidth (50vw) wide by
+   default. The first two columns are one flex child (.cui-root-rails) so the
+   pair can become a single drawer on mobile without restacking the row. */
 @media (min-width: 769px) {
     body.chatui-active.chatui-root-visible #chatui-root {
         flex-direction: row;
@@ -529,26 +625,54 @@ body.chatui-active .cui-root-app {
     font-family: var(--cui-font-family);
 }
 
+/* DESIGN §2.5: spacing/sizing converges from `rem` to `px` one reskinned
+   region at a time, so the rhythm stops drifting with the host's own
+   <html> font-size. Topbar and composer are this pass's region — every
+   length below (anything that is not a --cui-font-…, --cui-tracking-… or
+   --cui-radius-… token, all of which are already px-anchored via
+   --cui-font-root) is a literal px value rather than a bare rem multiplier.
+
+   Those ellipses used to be star-globs written as a slash-separated list,
+   and the first of them ended this comment forty characters early: a star
+   immediately followed by a slash is a comment terminator, and the parser
+   does not care that it is sitting in the middle of a sentence. Everything
+   after it became garbage that the parser swallowed as one invalid
+   selector, taking the whole `.cui-root-topbar` block with it — so since
+   that reskin the topbar has had no `display:flex`, no reading width, no
+   dashed rule and no padding, and nothing failed: a dropped rule is
+   invisible to typecheck, to the unit suites, and to e2e assertions written
+   against behaviour. Restored here as part of the reading-column
+   calibration below, since a topbar that never read
+   --cui-content-max-width could not have been recalibrated by changing it.
+
+   --cui-content-max-width is no longer rem (see its own comment): it is the
+   cross-region measure this file's spine/playbill/stage split pins down. */
 body.chatui-active .cui-root-topbar {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
-    gap: 0.7rem;
+    gap: 11.2px;
     width: min(100%, var(--cui-content-max-width));
     margin: 0 auto;
-    padding: 0.45rem 0 0.75rem;
+    padding: 7.2px 0 12px;
     border-bottom: 1px dashed var(--cui-rule-faint);
 }
 
+/* Design §7: the topbar's hamburger and ⋯ trigger are ~28-30px square with a
+   6px corner (原型 L131/L149) — one shared control shape rather than two, and
+   the sidebar's own drawer-close button (Sidebar.tsx) keeps the same shape
+   since it answers to the same hamburger it closes. -sm (5px) is the nearer
+   existing radius tier; a bespoke 6px token for one pixel of difference
+   wasn't worth adding. */
 body.chatui-active .cui-root-shell-toggle,
 body.chatui-active .cui-root-shell-close {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.15rem;
-    height: 2.15rem;
+    width: 28.8px;
+    height: 28.8px;
     border: 1px solid transparent;
-    border-radius: var(--cui-radius-md);
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
@@ -567,7 +691,7 @@ body.chatui-active .cui-root-topbar-heading {
     flex: 1 1 0;
     display: flex;
     flex-direction: column;
-    gap: 0.08rem;
+    gap: 1.28px;
     min-width: 0;
 }
 
@@ -581,7 +705,12 @@ body.chatui-active .cui-root-topbar-title {
 body.chatui-active .cui-root-topbar-eyebrow {
     color: var(--cui-color-accent);
     font-family: var(--cui-font-ui);
-    font-size: var(--cui-font-2xs);
+    /* README §7's topbar sub-line is 10px; DESIGN §4.1 repurposes the slot
+       (character name, above the title, rather than the 原型's session meta
+       below it) but doesn't pin its own size, so the literal value still
+       applies. Was -2xs (9px) — a plain size mismatch, not a deliberate
+       departure. */
+    font-size: var(--cui-font-xs);
     font-weight: 600;
     letter-spacing: var(--cui-tracking-btn);
     line-height: 1.2;
@@ -590,6 +719,12 @@ body.chatui-active .cui-root-topbar-eyebrow {
 }
 
 body.chatui-active .cui-root-topbar-title {
+    /* Shrink-to-fit, never grow: the pencil sits right after the title's last
+       glyph instead of being pushed to the row's far end (owner call,
+       2026-08-01). Long titles still ellipsize — min-width: 0 lets the flex
+       item shrink below its content. */
+    flex: 0 1 auto;
+    min-width: 0;
     margin: 0;
     font-family: var(--cui-font-display);
     font-size: var(--cui-font-title);
@@ -600,11 +735,76 @@ body.chatui-active .cui-root-topbar-title {
     line-height: 1.28;
 }
 
+/* README §7 / DESIGN §4.1: hover the title, a pencil fades in beside it and
+   swaps the title for an in-place rename input. The row is the hover/focus
+   surface — not the title itself — so the pencil's own hover state (its
+   background tint) never fights the title row's reveal state. */
+body.chatui-active .cui-root-topbar-title-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+}
+
+body.chatui-active .cui-root-topbar-rename-trigger {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 22.4px;
+    height: 22.4px;
+    border: none;
+    border-radius: var(--cui-radius-sm);
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
+    font-size: var(--cui-font-chip);
+    cursor: pointer;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--cui-motion-reveal) ease;
+}
+
+body.chatui-active .cui-root-topbar-title-row:hover .cui-root-topbar-rename-trigger,
+body.chatui-active .cui-root-topbar-title-row:focus-within .cui-root-topbar-rename-trigger {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+body.chatui-active .cui-root-topbar-rename-trigger:hover,
+body.chatui-active .cui-root-topbar-rename-trigger:focus-visible {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    color: var(--cui-color-text);
+    outline: none;
+}
+
+/* Touch has no hover (same reasoning as the playbill card dock, §4.2): a
+   pencil nobody can reveal is a pencil nobody has. */
+@media (max-width: 768px) {
+    body.chatui-active .cui-root-topbar-rename-trigger {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+body.chatui-active .cui-root-topbar-title-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+body.chatui-active .cui-root-topbar-rename-hint {
+    color: color-mix(in srgb, var(--cui-color-text) 50%, transparent);
+    font-family: var(--cui-font-ui);
+    /* README §7: the「Enter 保存 · Esc 取消」reminder line is 10px. */
+    font-size: var(--cui-font-xs);
+    letter-spacing: var(--cui-tracking-btn);
+}
+
 body.chatui-active .cui-root-topbar-tools {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 0.25rem;
+    gap: 4px;
     min-width: 0;
     margin-left: auto;
 }
@@ -618,14 +818,39 @@ body.chatui-active .cui-root-topbar .cui-root-selchips {
     flex-wrap: nowrap;
 }
 
+/* README §7's persona chip is a plain icon-button, not the underline-tabbed
+   look .cui-root-selchip-btn wears everywhere else (the same "SelectorChip
+   markup, per-container skin" split the composer's decoration row uses —
+   see its own chip rules). Only color tracks open/closed (原型 L146
+   personaColor); hover and open share one background tint. */
 body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
-    max-width: 9rem;
+    max-width: 144px;
+    min-height: 0;
+    padding: 4.8px 8.8px;
+    border-radius: var(--cui-radius-sm);
+    box-shadow: none;
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 70%, transparent);
+    font-family: var(--cui-font-ui);
+    font-size: var(--cui-font-chip);
+    opacity: 1;
+}
+
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn:hover,
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn:focus-visible,
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn[aria-expanded="true"] {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+}
+
+body.chatui-active .cui-root-topbar .cui-root-selchip-btn[aria-expanded="true"] {
+    box-shadow: none;
+    color: var(--cui-color-accent);
 }
 
 /* Composer selector menus open upward; the title-page selector lives at the
    top edge and must open into the page instead. */
 body.chatui-active .cui-root-topbar .cui-root-selchip-menu {
-    top: calc(100% + 0.35rem);
+    top: calc(100% + 5.6px);
     right: 0;
     bottom: auto;
     left: auto;
@@ -642,16 +867,17 @@ body.chatui-active .cui-root-topbar-menu {
 
 @media (max-width: 768px) {
     body.chatui-active .cui-root-topbar {
-        gap: 0.35rem;
-        padding: 0.25rem 0 0.6rem;
+        gap: 5.6px;
+        padding: 4px 0 9.6px;
     }
 
-    body.chatui-active .cui-root-topbar-title {
+    body.chatui-active .cui-root-topbar-title,
+    body.chatui-active .cui-root-topbar-rename {
         font-size: var(--cui-font-base);
     }
 
     body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
-        max-width: 5rem;
+        max-width: 80px;
     }
 }
 
@@ -663,29 +889,33 @@ body.chatui-active .cui-root-topbar-menu {
 
     body.chatui-active .cui-root-topbar .cui-root-selchip-btn {
         justify-content: center;
-        width: 2rem;
-        min-width: 2rem;
+        width: 32px;
+        min-width: 32px;
         padding-inline: 0;
-    }
-
-    body.chatui-active .cui-root-topbar-rename {
-        width: min(42vw, 12rem);
     }
 }
 
-/* Inline rename input shown in place of the ⋯ button */
+/* In-place title rename (README §7 / DESIGN §4.1): the title becomes an
+   input where it stands, at the title's own type, gaining only the rust
+   ("暖棕") outline the playbill card's own in-place rename uses
+   (.cui-root-nested-chat-row-rename, §4.2) — one rename affordance, one
+   border treatment, regardless of which surface it appears on. */
 body.chatui-active .cui-root-topbar-rename {
-    height: 2.15rem;
-    padding: 0 0.5rem;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-md);
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    margin: 0;
+    padding: 1px 6px;
+    border: 1px solid var(--cui-color-user-mark);
+    border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-card);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-title);
+    font-weight: 700;
+    letter-spacing: var(--cui-tracking-title);
     outline: none;
     min-width: 0;
-    width: min(60vw, 12rem);
 }
 
 /* The topbar menu dropdown opens below and to the right */
@@ -694,7 +924,12 @@ body.chatui-active .cui-root-topbar-menu-dropdown {
     left: auto;
 }
 
-/* ── Region 5 · sidebar (mobile slide-in overlay / desktop persistent column) ── */
+/* ── Region 5 · the two rails: 书脊 spine + 场刊 playbill (DESIGN §3/§4.2) ────
+   Desktop keeps both in flow at fixed widths; ≤768px the pair slides in as one
+   drawer, because a 58px spine permanently parked on a 390px phone would spend
+   15% of the screen answering a question the topbar already answers.
+   Lengths in this region are px, not rem (§2.5): these are drawing constants,
+   not multiples of whatever <html> font-size the host happens to run.        */
 
 /* height explicit everywhere below, not inferred from inset alone: ST's own
    `html { transform: translateZ(0); ... }` (unconditional, in ST's own
@@ -713,109 +948,294 @@ body.chatui-active .cui-root-sidebar-backdrop {
     cursor: default;
 }
 
-body.chatui-active .cui-root-sidebar {
+/* The drawer is the *pair*, not the playbill: the transform, the shadow and
+   the z-index live on this wrapper so spine and playbill arrive together and
+   the reader never sees half a navigation. */
+body.chatui-active .cui-root-rails {
     position: fixed;
     inset: 0 auto 0 0;
     height: 100vh;
     height: 100dvh;
     z-index: calc(var(--cui-sheet-z) + 11);
     display: flex;
-    flex-direction: column;
-    width: min(82vw, 18rem);
+    max-width: 100%;
+    min-height: 0;
+    /* Each rail owns its own scroll; the wrapper only clips. Safe for the
+       ConfirmDialog a playbill row can open — that one portals to
+       document.body precisely so no ancestor's transform/overflow reaches it. */
+    overflow: hidden;
     transform: translateX(-100%);
     transition: transform var(--cui-motion-base) ease;
-    border-right: 1px solid var(--cui-color-border);
-    background-color: var(--cui-color-surface);
     box-shadow: 6px 0 24px var(--cui-color-shadow);
-    color: var(--cui-color-text);
 }
 
-body.chatui-active .cui-root-sidebar.is-mobile-open {
+body.chatui-active .cui-root-rails.is-mobile-open {
     transform: translateX(0);
 }
 
-body.chatui-active .cui-root-sidebar-title {
-    flex: 1 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+body.chatui-active .cui-root-spine {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 58px;
+    min-height: 0;
+    box-sizing: border-box;
+    padding: 14px 0 12px;
+    border-right: 1px solid var(--cui-color-border);
+    background-color: var(--cui-color-spine);
+    color: var(--cui-color-text);
 }
 
-/* Desktop: persistent in-flow left column. */
+/* The cast scrolls; the shop sign and the gear do not. */
+body.chatui-active .cui-root-spine-list {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    /* The one scroll container in the app that hides its scrollbar rather than
+       joining the scoped 8px family below (§9.1 is about never going global,
+       and this stays scoped either way). An 8px track inside a 58px rail
+       shifts the 32px avatars 4px off the rail's optical centre the moment it
+       appears, and "which square is lit, centred in its rail" is the entire
+       signal this column carries. */
+    scrollbar-width: none;
+}
+
+body.chatui-active .cui-root-spine-list::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+}
+
+/* One shape for every seat on the spine: character, group, ＋. */
+body.chatui-active .cui-root-spine-slot {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    box-sizing: border-box;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--cui-radius-md);
+    background: none;
+    color: var(--cui-color-text);
+    cursor: pointer;
+    transition:
+        opacity var(--cui-motion-reveal) ease,
+        border-color var(--cui-motion-reveal) ease;
+}
+
+/* Avatars are locators, not portraits: off-duty ones dim, and the one on stage
+   is marked with a single rust hairline — no solid fill, no scaling up (§4.2,
+   and §2.4 on hover staying short and light; the 原型's scale(1.08) is exactly
+   the bounce that rule rules out). */
+body.chatui-active .cui-root-spine-char {
+    overflow: hidden;
+    opacity: 0.55;
+}
+
+body.chatui-active .cui-root-spine-char:hover,
+body.chatui-active .cui-root-spine-char:focus-visible {
+    opacity: 1;
+    outline: 1px solid var(--cui-outline-faint);
+}
+
+body.chatui-active .cui-root-spine-slot.is-current {
+    opacity: 1;
+    border-color: var(--cui-color-user-mark);
+}
+
+body.chatui-active .cui-root-spine-avatar {
+    display: block;
+    width: 100%;
+    height: 100%;
+    /* One px in from the slot's own corner so the rust ring reads as a ring
+       rather than as a seam against the image. */
+    border-radius: calc(var(--cui-radius-md) - 1px);
+    object-fit: cover;
+}
+
+/* No thumbnail: the initial on a dark gradient block, after the 原型's
+   per-character `grad`. One gradient for everyone rather than three — the
+   prototype's hues are literals outside this palette, and inventing a
+   per-character brown is exactly what §2.1 forbids. */
+body.chatui-active .cui-root-spine-avatar-fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-image: linear-gradient(
+        135deg,
+        var(--cui-color-border-strong),
+        var(--cui-color-surface)
+    );
+    color: var(--cui-color-accent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-card);
+    line-height: 1;
+}
+
+/* The group's own seat — a group mark, never a member's face standing in for
+   the room (§4.2). It is a marker rather than a button: ChatUI can see that a
+   group holds the stage but has no query that enumerates groups, so there is
+   nothing honest for a click to do yet. */
+body.chatui-active .cui-root-spine-group {
+    background-color: color-mix(in srgb, var(--cui-color-user-mark) 12%, transparent);
+    color: var(--cui-color-accent);
+    cursor: default;
+    font-size: var(--cui-font-menu);
+}
+
+body.chatui-active .cui-root-spine-add {
+    border: 1px dashed var(--cui-color-border-strong);
+    color: color-mix(in srgb, var(--cui-color-text) 40%, transparent);
+    font-size: var(--cui-font-tight);
+}
+
+body.chatui-active .cui-root-spine-add:hover,
+body.chatui-active .cui-root-spine-add:focus-visible {
+    border-color: var(--cui-color-user-mark);
+    color: var(--cui-color-accent);
+    outline: none;
+}
+
+/* 竖排店名: the rail's one piece of type, set as an inscription. */
+body.chatui-active .cui-root-spine-mark {
+    flex: 0 0 auto;
+    writing-mode: vertical-rl;
+    color: color-mix(in srgb, var(--cui-color-text) 30%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-xs);
+    letter-spacing: var(--cui-tracking-stamp);
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* ── 场刊 playbill ───────────────────────────────────────────────────────── */
+
+body.chatui-active .cui-root-sidebar {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    /* 252px on desktop; on a phone the drawer still has to leave the stage
+       visible behind it, so the pair (58 + this) tops out around 82vw. */
+    width: min(calc(82vw - 58px), 252px);
+    min-width: 0;
+    min-height: 0;
+    box-sizing: border-box;
+    overflow: hidden;
+    border-right: 1px solid var(--cui-color-border);
+    background-color: var(--cui-color-surface);
+    color: var(--cui-color-text);
+}
+
+/* Desktop: both rails are persistent in-flow columns. */
 @media (min-width: 769px) {
     body.chatui-active .cui-root-sidebar-backdrop {
         display: none;
     }
 
-    body.chatui-active .cui-root-sidebar {
+    /* Back into the row: no fixed positioning, so the rails stretch with their
+       actual flex container (#chatui-root), which can be shorter than the
+       viewport when ST's own chrome sits above it. Left at 100dvh they would
+       overflow their own container and get clipped by its overflow:hidden. */
+    body.chatui-active .cui-root-rails {
         position: relative;
         inset: auto;
         z-index: auto;
         flex: 0 0 auto;
-        /* Reset the mobile drawer's height:100dvh (needed there because the
-           sidebar is position:fixed against the viewport) back to stretching
-           with its actual flex-row container (#chatui-root), which can be
-           shorter than the viewport when ST's own chrome sits above it —
-           otherwise the sidebar silently overflows past its own container
-           and the footer (SettingsEntry) gets clipped by #chatui-root's
-           overflow:hidden. */
         height: auto;
         transform: none;
         box-shadow: none;
-        overflow: hidden;
-        transition: width var(--cui-motion-base) ease;
     }
 
-    /* Fixed sidebar width. */
     body.chatui-active .cui-root-sidebar {
-        width: clamp(13rem, 22vw, 17rem);
+        width: 252px;
     }
 
     body.chatui-active .cui-root-sidebar .cui-root-shell-close { display: none; }
 
-    /* Hide the topbar hamburger on desktop — sidebar is always visible. Scoped
-       to this specific class, not the shared .cui-root-shell-toggle, since the
-       topbar's "..." menu trigger also carries that shared class and must stay
-       visible on desktop. */
+    /* Hide the topbar hamburger on desktop — the rails are always visible.
+       Scoped to this specific class, not the shared .cui-root-shell-toggle,
+       since the topbar's "..." menu trigger also carries that shared class and
+       must stay visible on desktop. */
     body.chatui-active .cui-root-shell-hamburger {
         display: none;
     }
 }
 
+/* Playbill masthead: 角色名 +「的对话 · N」(README §1). Baseline-aligned so the
+   name and its meta read as one line of type; the drawer-close button is
+   centred against that line rather than sitting on its baseline. */
 body.chatui-active .cui-root-shell-header {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.8rem 1rem;
+    gap: 8px;
+    padding: 16px 18px 10px;
     border-bottom: 1px dashed var(--cui-rule-structure);
-    font-weight: 700;
 }
 
-body.chatui-active .cui-root-sidebar-title {
+body.chatui-active .cui-root-playbill-heading {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+body.chatui-active .cui-root-playbill-name {
+    flex: 0 1 auto;
+    overflow: hidden;
+    color: var(--cui-color-accent);
     font-family: var(--cui-font-display);
+    font-size: var(--cui-font-base);
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-playbill-count {
+    flex: 0 0 auto;
+    color: var(--cui-color-muted);
+    font-family: var(--cui-font-family);
+    font-size: var(--cui-font-xs);
+}
+
+/* The gear that now sits at the foot of the spine. Icon square like every
+   other seat on the rail, so it keeps none of the full-width row geometry it
+   shared with the settings nav items below. */
+body.chatui-active .cui-root-settings-entry {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    box-sizing: border-box;
+    padding: 0;
+    border: none;
+    border-radius: var(--cui-radius-md);
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 50%, transparent);
+    cursor: pointer;
     font-size: var(--cui-font-card);
-    letter-spacing: var(--cui-tracking-btn);
-    text-transform: uppercase;
 }
 
-/* ── Sidebar top section (NewChatButton wrapper) ─────────────────────────── */
-
-body.chatui-active .cui-root-sidebar-top {
-    flex: 0 0 auto;
-    padding: 0.45rem 0.45rem 0;
+body.chatui-active .cui-root-settings-entry:hover,
+body.chatui-active .cui-root-settings-entry:focus-visible {
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    color: var(--cui-color-text);
+    outline: none;
 }
 
-/* ── Sidebar footer (SettingsEntry) ─────────────────────────────────────── */
-
-body.chatui-active .cui-root-sidebar-footer {
-    flex: 0 0 auto;
-    margin-top: auto;
-    padding: 0.35rem 0.45rem 0.45rem;
-    border-top: 1px dashed var(--cui-rule-structure);
-}
-
-body.chatui-active .cui-root-settings-entry,
 body.chatui-active .cui-settings-nav-back,
 body.chatui-active .cui-settings-nav-item,
 body.chatui-active .cui-settings-nav-disable {
@@ -831,15 +1251,6 @@ body.chatui-active .cui-settings-nav-disable {
     box-sizing: border-box;
 }
 
-body.chatui-active .cui-root-settings-entry {
-    gap: 0.7rem;
-    min-height: 2.35rem;
-    border-radius: var(--cui-radius-sm);
-    font-size: var(--cui-font-card);
-    padding: 0 0.65rem;
-}
-
-body.chatui-active .cui-root-settings-entry i,
 body.chatui-active .cui-settings-nav-item i,
 body.chatui-active .cui-settings-nav-disable i {
     width: 1.25rem;
@@ -847,12 +1258,6 @@ body.chatui-active .cui-settings-nav-disable i {
     flex: 0 0 auto;
 }
 
-body.chatui-active .cui-root-settings-entry i {
-    opacity: 0.78;
-}
-
-body.chatui-active .cui-root-settings-entry:hover,
-body.chatui-active .cui-root-settings-entry:focus-visible,
 body.chatui-active .cui-settings-nav-back:hover,
 body.chatui-active .cui-settings-nav-back:focus-visible,
 body.chatui-active .cui-settings-nav-item:hover,
@@ -941,189 +1346,421 @@ body.chatui-active .cui-root-pin-check {
     cursor: inherit;
 }
 
-/* ── Region 5 · conversation list (下段) ─────────────────────────────────────── */
+/* ── 场刊 card column ─────────────────────────────────────────────────────────
+   The playbill's middle band, and the only part of the column that scrolls.
+   It is also the one surface in the app allowed to use cards: the stage
+   organizes by typography, the index may bind leaves (DESIGN §1 / §4.2).
+   ─────────────────────────────────────────────────────────────────────────── */
 
 body.chatui-active .cui-root-convlist {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    gap: 0.2rem;
     min-height: 0;
-    padding: 0.45rem 0;
-    border-top: 1px dashed var(--cui-rule-faint);
 }
 
-/* Only the chat list scrolls; the switcher + 新对话 stay pinned, and the
-   switcher dropdown is no longer clipped by an overflow ancestor. */
+/* Only the cards scroll; masthead and ＋新对话 stay put (DESIGN §4.2). */
 body.chatui-active .cui-root-convlist-scroll {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
-    gap: 0.1rem;
     min-height: 0;
     overflow-y: auto;
+    padding: 4px 12px 10px;
 }
 
-body.chatui-active .cui-root-newchat {
+body.chatui-active .cui-root-playbill-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin: 0;
+    padding: 6px 0 0;
+    list-style: none;
+}
+
+/* The card. Its resting fill is a surface rather than an interaction state,
+   so it is a low mix of its own instead of a step on the --cui-tint-* scale;
+   hover and "this is the night you are reading" are the states, and those do
+   read the scale and the accent rule. */
+body.chatui-active .cui-root-playbill-card {
+    position: relative;
+    box-sizing: border-box;
+    border: 1px solid var(--cui-color-border);
+    border-radius: var(--cui-radius-card);
+    background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
+    padding: 11px 13px 9px;
+    cursor: pointer;
+    opacity: 0.85;
+    transition:
+        opacity var(--cui-motion-reveal) ease,
+        border-color var(--cui-motion-reveal) ease,
+        background-color var(--cui-motion-reveal) ease;
+}
+
+body.chatui-active .cui-root-playbill-card:hover,
+body.chatui-active .cui-root-playbill-card:focus-visible,
+body.chatui-active .cui-root-playbill-card:focus-within {
+    border-color: var(--cui-color-border-strong);
+    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    opacity: 1;
+    outline: none;
+}
+
+/* The 14px binding gutter and its dashed spine edge: the motif that makes an
+   index entry read as a bound leaf rather than a list row. */
+body.chatui-active .cui-root-playbill-card-binding {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 14px;
+    /* border-strong, not rule-faint: the dashes are the card's defining motif
+       and were nearly invisible on the surface ground at the faint mix (owner
+       call, 2026-08-01). The current card still outranks this via the accent
+       override below. */
+    border-right: 1px dashed var(--cui-color-border-strong);
+    pointer-events: none;
+}
+
+/* The 52px on the right is the action dock's reserved footprint, held on every
+   viewport rather than only on touch. The prototype floats the dock over the
+   card because its titles are short names like 「初雪之夜」, which it can never
+   reach; ST's real filenames are 「角色名 - 时间戳」, and the tail the dock
+   covers is exactly the part that tells two nights apart. Reserving the space
+   costs one line-break position and keeps the title readable while the dock is
+   up; dimming the dock instead would have kept the collision and made the
+   actions harder to read on the way. Reserved on the whole body, not just the
+   title, because the dock's width depends on how many actions a card has (two
+   on a conversation, one on a draft) and a per-variant reserve would be two
+   numbers to keep in sync with the same dock. */
+body.chatui-active .cui-root-playbill-card-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    margin-left: 16px;
+    padding-right: 52px;
+}
+
+body.chatui-active .cui-root-playbill-card-meta {
+    margin-top: 7px;
+    overflow: hidden;
+    color: color-mix(in srgb, var(--cui-color-text) 35%, transparent);
+    font-family: var(--cui-font-family);
+    font-size: var(--cui-font-2xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── Conversation card ───────────────────────────────────────────────────── */
+
+/* Previews clamp at two lines; the title is a single ellipsized line (owner
+   call, 2026-08-01, overriding README §1's two-line clamp — one line reads
+   cleaner in the column, and the meta row still carries the timestamp that
+   tells two nights apart). */
+body.chatui-active .cui-root-nested-chat-row-preview,
+body.chatui-active .cui-root-draft-card-preview {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+body.chatui-active .cui-root-nested-chat-row-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: color-mix(in srgb, var(--cui-color-text) 85%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-card);
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+body.chatui-active .cui-root-nested-chat-row-preview {
+    margin-top: 4px;
+    color: color-mix(in srgb, var(--cui-color-text) 42%, transparent);
+    font-family: var(--cui-font-family);
+    font-size: var(--cui-font-preview);
+    line-height: 1.6;
+}
+
+/* The current conversation is marked by rust rules on both of the card's own
+   edges — its border and its binding dashes — never by a solid high-contrast
+   selected block that would out-shout the stage (DESIGN §4.2; §2.2 assigns
+   「当前对话」 to the accent rule, which is why this is that token rather than
+   the 原型's bare #96633f). */
+body.chatui-active .cui-root-nested-chat-row.is-current {
+    border-color: var(--cui-rule-accent);
+    background-color: color-mix(in srgb, var(--cui-color-user-mark) 12%, transparent);
+    opacity: 1;
+}
+
+body.chatui-active .cui-root-nested-chat-row.is-current:hover,
+body.chatui-active .cui-root-nested-chat-row.is-current:focus-visible,
+body.chatui-active .cui-root-nested-chat-row.is-current:focus-within {
+    border-color: var(--cui-rule-accent-hover);
+}
+
+body.chatui-active .cui-root-nested-chat-row.is-current .cui-root-playbill-card-binding {
+    border-right-color: var(--cui-rule-accent);
+}
+
+body.chatui-active .cui-root-nested-chat-row.is-current .cui-root-nested-chat-row-name {
+    color: var(--cui-color-accent-hover);
+}
+
+body.chatui-active .cui-root-nested-chat-row.is-current .cui-root-playbill-card-meta {
+    color: color-mix(in srgb, var(--cui-color-accent) 70%, transparent);
+}
+
+/* In-place rename (DESIGN §4.2): the title becomes an input where it stands,
+   so it keeps the title's own type and only gains the rust outline that says
+   it is now being written in. */
+body.chatui-active .cui-root-nested-chat-row-rename {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--cui-color-user-mark);
+    border-radius: var(--cui-radius-card);
+    background-color: color-mix(in srgb, var(--cui-color-text) 7%, transparent);
+    color: var(--cui-color-text);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-card);
+    padding: 2px 6px;
+    outline: none;
+}
+
+/* ── Draft card ──────────────────────────────────────────────────────────── */
+
+/* A quarantined new chat is the same leaf drawn in an unfinished hand: dashed
+   all the way round, so it never passes for ordinary history at a glance. */
+body.chatui-active .cui-root-draft-card {
+    border: 1px dashed color-mix(in srgb, var(--cui-color-user-mark) 55%, transparent);
+    background-color: color-mix(in srgb, var(--cui-color-user-mark) 5%, transparent);
+}
+
+body.chatui-active .cui-root-draft-card:hover,
+body.chatui-active .cui-root-draft-card:focus-visible,
+body.chatui-active .cui-root-draft-card:focus-within {
+    border-color: var(--cui-color-user-mark);
+    background-color: color-mix(in srgb, var(--cui-color-user-mark) 12%, transparent);
+}
+
+body.chatui-active .cui-root-draft-card .cui-root-playbill-card-binding {
+    border-right-color: color-mix(in srgb, var(--cui-color-user-mark) 40%, transparent);
+}
+
+body.chatui-active .cui-root-draft-card-tag {
+    color: var(--cui-color-user-voice);
+    font-family: var(--cui-font-family);
+    font-size: var(--cui-font-2xs);
+    letter-spacing: var(--cui-tracking-label);
+}
+
+body.chatui-active .cui-root-draft-card-name {
+    margin-top: 4px;
+    overflow: hidden;
+    color: color-mix(in srgb, var(--cui-color-text) 72%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-menu);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.chatui-active .cui-root-draft-card-preview {
+    margin-top: 5px;
+    color: color-mix(in srgb, var(--cui-color-text) 65%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-tight);
+    font-style: italic;
+    line-height: 1.7;
+}
+
+/* ── Card action dock ────────────────────────────────────────────────────── */
+
+/* Opacity rather than display:none, so the dock can be revealed by keyboard
+   focus as well as by the cursor — a display swap cannot be focused into. */
+body.chatui-active .cui-root-playbill-card-dock {
+    position: absolute;
+    right: 6px;
+    top: 6px;
+    z-index: 2;
+    display: flex;
+    gap: 2px;
+    border: 1px solid color-mix(in srgb, var(--cui-color-text) 10%, transparent);
+    border-radius: var(--cui-radius-sm);
+    background-color: color-mix(in srgb, var(--cui-color-surface) 92%, transparent);
+    box-shadow: 0 4px 12px var(--cui-color-shadow);
+    padding: 2px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--cui-motion-reveal) ease;
+}
+
+body.chatui-active .cui-root-playbill-card:hover .cui-root-playbill-card-dock,
+body.chatui-active .cui-root-playbill-card:focus-within .cui-root-playbill-card-dock {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+body.chatui-active .cui-root-playbill-card-act {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    width: calc(100% + 0.9rem);
-    min-height: 2.2rem;
-    margin: 0 -0.45rem 0.25rem;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
     border: none;
-    border-left: 2px solid transparent;
-    border-radius: 0;
+    border-radius: var(--cui-radius-card);
     background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 65%, transparent);
+    cursor: pointer;
+    font-size: var(--cui-font-chip);
+}
+
+body.chatui-active .cui-root-playbill-card-act:hover,
+body.chatui-active .cui-root-playbill-card-act:focus-visible {
+    background-color: var(--cui-wash-accent);
+    color: var(--cui-color-text);
+    outline: none;
+}
+
+body.chatui-active .cui-root-playbill-card-act-danger:hover,
+body.chatui-active .cui-root-playbill-card-act-danger:focus-visible {
+    background-color: var(--cui-wash-danger);
+    color: var(--cui-color-danger);
+}
+
+/* Touch has no hover, and a dock nobody can reveal is a dock nobody has — so
+   on a phone it is simply always there. Its footprint is already reserved on
+   every viewport (see .cui-root-playbill-card-body above), so nothing else
+   changes here. */
+@media (max-width: 768px) {
+    body.chatui-active .cui-root-playbill-card-dock {
+        opacity: 1;
+        pointer-events: auto;
+    }
+}
+
+/* ── List notes and paging ───────────────────────────────────────────────── */
+
+body.chatui-active .cui-root-convlist-note {
+    padding: 14px 4px;
+    color: color-mix(in srgb, var(--cui-color-text) 45%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-menu);
+    line-height: 1.9;
+    text-align: center;
+}
+
+body.chatui-active .cui-root-convlist-status {
+    padding: 6px 4px;
+    color: color-mix(in srgb, var(--cui-color-text) 55%, transparent);
+    font-family: var(--cui-font-family);
+    font-size: var(--cui-font-sm);
+}
+
+body.chatui-active .cui-root-convlist-status.is-error {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: color-mix(in srgb, var(--cui-color-danger) 74%, var(--cui-color-text));
+}
+
+body.chatui-active .cui-root-convlist-retry,
+body.chatui-active .cui-root-convlist-more {
+    border: none;
+    border-radius: var(--cui-radius-card);
+    background-color: color-mix(in srgb, var(--cui-color-text) 8%, transparent);
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
-    font-size: var(--cui-font-card);
-    padding: 0 1.1rem 0 calc(0.65rem + 0.45rem - 2px);
+    font-size: var(--cui-font-sm);
+    padding: 3px 8px;
+}
+
+body.chatui-active .cui-root-convlist-more {
+    width: 100%;
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 62%, transparent);
+    font-size: var(--cui-font-tight);
+    padding: 5px 8px;
+}
+
+body.chatui-active .cui-root-convlist-retry:hover,
+body.chatui-active .cui-root-convlist-retry:focus-visible,
+body.chatui-active .cui-root-convlist-more:hover,
+body.chatui-active .cui-root-convlist-more:focus-visible {
+    background-color: color-mix(in srgb, var(--cui-color-text) 14%, transparent);
+    color: var(--cui-color-text);
+    outline: none;
+}
+
+body.chatui-active .cui-root-convlist-retry:disabled,
+body.chatui-active .cui-root-convlist-more:disabled {
+    cursor: default;
+    opacity: 0.45;
+}
+
+/* ── ＋新对话 footer ─────────────────────────────────────────────────────── */
+
+body.chatui-active .cui-root-playbill-footer {
+    flex: 0 0 auto;
+    border-top: 1px solid var(--cui-color-border);
+    padding: 10px 14px 12px;
+}
+
+/* A dashed outline reads as an empty slot waiting to be filled — the same
+   grammar as the spine's dashed ＋, one column over. */
+body.chatui-active .cui-root-newchat {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px dashed var(--cui-color-border-strong);
+    border-radius: var(--cui-radius-card);
+    background: none;
+    color: color-mix(in srgb, var(--cui-color-text) 70%, transparent);
+    cursor: pointer;
+    font-family: var(--cui-font-family);
+    font-size: var(--cui-font-tight);
+    padding: 8px 10px;
+    transition:
+        border-color var(--cui-motion-reveal) ease,
+        color var(--cui-motion-reveal) ease,
+        background-color var(--cui-motion-reveal) ease;
+}
+
+body.chatui-active .cui-root-newchat > i {
+    font-size: var(--cui-font-xs);
+    opacity: 0.8;
 }
 
 body.chatui-active .cui-root-newchat:hover:not(:disabled),
 body.chatui-active .cui-root-newchat:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 9%, transparent);
+    border-color: var(--cui-color-user-mark);
+    background-color: color-mix(in srgb, var(--cui-color-user-mark) 8%, transparent);
+    color: var(--cui-color-accent);
     outline: none;
 }
 
+/* A leased draft is this slot's own state, not a row somewhere else: the
+   outline stops being a dashed placeholder and becomes the rust rule. */
 body.chatui-active .cui-root-newchat.is-active {
-    border-left-color: var(--cui-rule-accent);
-    background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
+    border-style: solid;
+    border-color: var(--cui-rule-accent);
+    background-color: color-mix(in srgb, var(--cui-color-user-mark) 12%, transparent);
+    color: var(--cui-color-accent);
 }
 
 body.chatui-active .cui-root-newchat.is-active:hover:not(:disabled),
 body.chatui-active .cui-root-newchat.is-active:focus-visible {
-    border-left-color: var(--cui-rule-accent-hover);
+    border-color: var(--cui-rule-accent-hover);
 }
 
 body.chatui-active .cui-root-newchat:disabled {
     opacity: 0.45;
     cursor: default;
-}
-
-body.chatui-active .cui-root-draft-shelf {
-    margin: -0.05rem 0 0.35rem;
-    border-top: 1px dashed var(--cui-rule-faint);
-    border-bottom: 1px dashed var(--cui-rule-faint);
-}
-
-body.chatui-active .cui-root-draft-shelf-toggle,
-body.chatui-active .cui-root-draft-shelf-row {
-    display: flex;
-    align-items: center;
-    width: 100%;
-    border: none;
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
-    text-align: left;
-}
-
-body.chatui-active .cui-root-draft-shelf-toggle {
-    gap: 0.42rem;
-    min-height: 1.9rem;
-    padding: 0.15rem 0.65rem;
-    opacity: 0.62;
-    font-size: var(--cui-font-xs);
-    letter-spacing: var(--cui-tracking-caption);
-}
-
-body.chatui-active .cui-root-draft-shelf-toggle:hover,
-body.chatui-active .cui-root-draft-shelf-toggle:focus-visible,
-body.chatui-active .cui-root-draft-shelf-row:hover,
-body.chatui-active .cui-root-draft-shelf-row:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 6%, transparent);
-    outline: none;
-}
-
-body.chatui-active .cui-root-draft-shelf-count {
-    min-width: 1.25rem;
-    border: 1px solid var(--cui-rule-structure);
-    border-radius: var(--cui-radius-pill);
-    padding: 0 0.35rem;
-    text-align: center;
-}
-
-body.chatui-active .cui-root-draft-shelf-toggle > i {
-    margin-left: auto;
-    font-size: 0.62em;
-}
-
-body.chatui-active .cui-root-draft-shelf-list {
-    max-height: min(14rem, 35vh);
-    overflow-y: auto;
-    padding: 0.05rem 0 0.35rem;
-}
-
-body.chatui-active .cui-root-draft-shelf-row {
-    gap: 0.45rem;
-    min-height: 1.9rem;
-    padding: 0.2rem 0.65rem 0.2rem 0.85rem;
-    font-size: var(--cui-font-sm);
-}
-
-body.chatui-active .cui-root-draft-shelf-row > i {
-    color: var(--cui-rule-accent);
-    opacity: 0.75;
-}
-
-body.chatui-active .cui-root-draft-shelf-main {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    min-width: 0;
-}
-
-body.chatui-active .cui-root-draft-shelf-name,
-body.chatui-active .cui-root-draft-shelf-file {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-body.chatui-active .cui-root-draft-shelf-file {
-    opacity: 0.45;
-    font-size: var(--cui-font-xs);
-}
-
-body.chatui-active .cui-root-draft-shelf-action {
-    margin-left: auto;
-    opacity: 0.48;
-    font-size: var(--cui-font-xs);
-}
-
-body.chatui-active .cui-root-draft-shelf-note {
-    margin: 0.12rem 0.65rem 0;
-    opacity: 0.42;
-    font-size: var(--cui-font-2xs);
-    line-height: 1.35;
-}
-
-body.chatui-active .cui-root-chat-row-act {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.7rem;
-    height: 1.7rem;
-    border: none;
-    border-radius: var(--cui-radius-sm);
-    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
-    color: var(--cui-color-text);
-    cursor: pointer;
-    opacity: 0.85;
-    font-size: var(--cui-font-xs);
-}
-
-body.chatui-active .cui-root-chat-row-act:hover {
-    opacity: 1;
-    background-color: color-mix(in srgb, var(--cui-color-text) 20%, transparent);
-}
-
-body.chatui-active .cui-root-chat-row-act-danger:hover {
-    color: var(--cui-color-danger-hover);
 }
 
 /* ── ChatUI-owned confirm dialog ─────────────────────────────────────────────── */
@@ -1293,251 +1930,11 @@ body.chatui-active .cui-root-dialog-escalate:hover {
     color: var(--cui-paper-danger-strong);
 }
 
-body.chatui-active .cui-root-convlist-note {
-    padding: 0.6rem;
-    opacity: 0.6;
-    font-size: var(--cui-font-sm);
-    text-align: center;
-}
-
-/* ── Character-grouped conversation list (S4) ─────────────────────────────────── */
-
-body.chatui-active .cui-root-chargroups {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-}
-
-body.chatui-active .cui-root-char-group {
-    display: flex;
-    flex-direction: column;
-}
-
-body.chatui-active .cui-root-char-group-header {
-    display: flex;
-    align-items: center;
-    gap: var(--cui-sidebar-row-gap);
-    width: 100%;
-    min-height: 2.35rem;
-    border: none;
-    border-radius: 0;
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-card);
-    font-weight: 500;
-    letter-spacing: 0.025em;
-    padding: 0.3rem var(--cui-sidebar-row-padding-x);
-    text-align: left;
-}
-
-body.chatui-active .cui-root-char-group-header:hover,
-body.chatui-active .cui-root-char-group-header:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 9%, transparent);
-    outline: none;
-}
-
-body.chatui-active .cui-root-char-group-avatar {
-    width: var(--cui-sidebar-avatar-size);
-    height: var(--cui-sidebar-avatar-size);
-    border-radius: var(--cui-radius-paper);
-    object-fit: cover;
-    opacity: 0.78;
-    flex: 0 0 auto;
-}
-
-body.chatui-active .cui-root-char-group-avatar-fallback {
-    width: var(--cui-sidebar-avatar-size);
-    text-align: center;
-    opacity: 0.6;
-    flex: 0 0 auto;
-}
-
-body.chatui-active .cui-root-char-group-name {
-    flex: 1 1 auto;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--cui-font-display);
-}
-
-body.chatui-active .cui-root-char-group-chats {
-    display: flex;
-    flex-direction: column;
-    gap: 0.05rem;
-    margin: 0;
-    padding: 0 0 0.15rem 0;
-    list-style: none;
-}
-
-body.chatui-active .cui-root-char-group-note {
-    padding: 0.25rem var(--cui-sidebar-row-padding-x) 0.3rem var(--cui-sidebar-indent);
-    color: color-mix(in srgb, var(--cui-color-text) 62%, transparent);
-    font-size: var(--cui-font-tight);
-}
-
-body.chatui-active .cui-root-char-group-note.is-error {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    color: color-mix(in srgb, var(--cui-color-danger) 74%, var(--cui-color-text));
-}
-
-body.chatui-active .cui-root-char-group-retry {
-    min-height: 1.45rem;
-    border: none;
-    border-radius: var(--cui-radius-sm);
-    background: color-mix(in srgb, var(--cui-color-text) 8%, transparent);
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-sm);
-    padding: 0.05rem 0.42rem;
-}
-
-body.chatui-active .cui-root-char-group-retry:hover,
-body.chatui-active .cui-root-char-group-retry:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 14%, transparent);
-    outline: none;
-}
-
-body.chatui-active .cui-root-char-group-retry:disabled {
-    cursor: default;
-    opacity: 0.45;
-}
-
-body.chatui-active .cui-root-char-group-more {
-    align-self: flex-start;
-    min-height: 1.65rem;
-    margin: 0 0 0.2rem var(--cui-sidebar-indent);
-    border: none;
-    border-radius: var(--cui-radius-sm);
-    background: none;
-    color: color-mix(in srgb, var(--cui-color-text) 72%, transparent);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-menu);
-    padding: 0.12rem 0.45rem;
-}
-
-body.chatui-active .cui-root-char-group-more:hover,
-body.chatui-active .cui-root-char-group-more:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 7%, transparent);
-    color: var(--cui-color-text);
-    outline: none;
-}
-
-body.chatui-active .cui-root-char-group-more:disabled {
-    cursor: default;
-    opacity: 0.45;
-}
-
-/* Nested chat row: indented child under a character header */
-body.chatui-active .cui-root-nested-chat-row {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: var(--cui-sidebar-row-gap);
-    width: 100%;
-    min-height: 2.1rem;
-    border-left: 2px solid transparent;
-    border-radius: 0;
-    padding: 0.25rem var(--cui-sidebar-row-padding-x) 0.25rem calc(var(--cui-sidebar-indent) - 2px);
-    cursor: pointer;
-    font-size: var(--cui-font-card);
-}
-
-body.chatui-active .cui-root-nested-chat-row:hover,
-body.chatui-active .cui-root-nested-chat-row:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 7%, transparent);
-    outline: none;
-}
-
-body.chatui-active .cui-root-nested-chat-row.is-current {
-    border-left-color: var(--cui-rule-accent);
-    background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
-}
-
-body.chatui-active .cui-root-nested-chat-row.is-current:hover,
-body.chatui-active .cui-root-nested-chat-row.is-current:focus-visible {
-    border-left-color: var(--cui-rule-accent-hover);
-}
-
-body.chatui-active .cui-root-nested-chat-row-icon {
-    display: none;
-}
-
-body.chatui-active .cui-root-nested-chat-row-main {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1 1 auto;
-}
-
-body.chatui-active .cui-root-nested-chat-row-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--cui-font-display);
-}
-
-body.chatui-active .cui-root-nested-chat-row-preview {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    opacity: 0.55;
-    font-size: var(--cui-font-sm);
-}
-
-body.chatui-active .cui-root-nested-chat-row-time {
-    flex: 0 0 auto;
-    opacity: 0.5;
-    font-size: var(--cui-font-2xs);
-}
-
-body.chatui-active .cui-root-nested-chat-row-check {
-    flex: 0 0 auto;
-    opacity: 0.8;
-    font-size: var(--cui-font-tight);
-}
-
-body.chatui-active .cui-root-nested-chat-row-actions {
-    position: absolute;
-    right: 0.4rem;
-    top: 50%;
-    transform: translateY(-50%);
-    display: none;
-    align-items: center;
-}
-
-body.chatui-active .cui-root-nested-chat-row:hover .cui-root-nested-chat-row-actions,
-body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-row-actions {
-    display: flex;
-}
-
-body.chatui-active .cui-root-nested-chat-row:hover .cui-root-nested-chat-row-time,
-body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-row-time,
-body.chatui-active .cui-root-nested-chat-row:hover .cui-root-nested-chat-row-check,
-body.chatui-active .cui-root-nested-chat-row:focus-within .cui-root-nested-chat-row-check {
-    visibility: hidden;
-}
-
-/* Touch has no hover — keep the delete/rename actions reachable on mobile
-   without requiring :focus-within (matches the old flat ChatRow's mobile
-   override, which this nested row lost when it replaced it). */
-@media (max-width: 768px) {
-    body.chatui-active .cui-root-nested-chat-row-actions {
-        display: flex;
-    }
-
-    body.chatui-active .cui-root-nested-chat-row-time,
-    body.chatui-active .cui-root-nested-chat-row-check {
-        visibility: hidden;
-    }
-}
-
-/* collapsed forms: hide the grouped list body just like the old convlist */
+/* The stage's warm wash (design 布局总览 §3): a low ellipse of lamplight over
+   the top of the reading column, as if the scene were lit from the proscenium.
+   It belongs here rather than on <main> because the floor rail is an absolutely
+   positioned overlay outside the layout flow — this is the element that
+   actually spans the lit area. */
 body.chatui-active .cui-root-message-stage {
     position: relative;
     display: flex;
@@ -1545,6 +1942,32 @@ body.chatui-active .cui-root-message-stage {
     flex-direction: column;
     width: 100%;
     min-height: 0;
+    background-image: radial-gradient(
+        ellipse 70% 45% at 50% 0%,
+        color-mix(in srgb, var(--cui-color-user-mark) 7%, transparent),
+        transparent 65%
+    );
+}
+
+/* Design §6 pt.4: a 30px fade mask over the seam where the message stream
+   meets the composer. It is a pseudo-element of the stage rather than of the
+   composer (where the 原型 anchors it, `top:-30px` on the composer's own
+   wrapper): our composer sits a real 0.75rem below the stage's bottom edge
+   (.cui-root-app's gap plus the composer's own margin-top — see the
+   .cui-root-scroll-bottom offset comment) rather than flush against it, so
+   only a mask anchored to the stage's own bottom edge actually overlaps the
+   scrolling content it is meant to fade. z-index sits below the floor rail
+   (6) and the scroll-bottom capsule (7) so it never dims either of those. */
+body.chatui-active .cui-root-message-stage::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 30px;
+    z-index: 4;
+    background: linear-gradient(to bottom, transparent, var(--cui-color-ground));
+    pointer-events: none;
 }
 
 /* Desktop-only user-turn navigator. A compact, vertically centered tick window
@@ -1769,6 +2192,13 @@ body.chatui-active .cui-root-floor-popover-number {
     }
 }
 
+/* `gap` is forbidden on this container, and the 0 is load-bearing rather than a
+   default left lying around: it has two flex children with different meanings —
+   the virtualized message space, and the generating indicator that mounts
+   beside it while a reply is being written. Any gap here is therefore spacing
+   that only exists during generation, i.e. a stream that visibly jumps when
+   generation starts and stops. Inter-message spacing lives on
+   .cui-root-virtual-message-row's padding-bottom instead. */
 body.chatui-active .cui-root-message-list {
     display: flex;
     flex-direction: column;
@@ -1799,15 +2229,51 @@ body.chatui-active .cui-root-virtual-message-row {
     width: 100%;
     box-sizing: border-box;
     flex-direction: column;
-    padding-bottom: 1.3rem;
+    /* Design §4 asks for 26px between messages. It has to be the row's own
+       padding: `gap` on .cui-root-message-list would also land between the last
+       row and the generating indicator, which is that container's second flex
+       child — so the stream would gain 26px of empty space the moment
+       generation starts and lose it again when it ends. See the note on
+       .cui-root-message-list. */
+    padding-bottom: 1.625rem;
 }
 
 body.chatui-active .cui-root-message {
     display: flex;
     flex-direction: column;
-    gap: 0.38rem;
+    /* Design §4 sets every part of a message 10px below the one above it —
+       header to thinking block to body to action row. One gap, not four
+       margins. */
+    gap: 0.62rem;
     max-width: min(100%, 52rem);
     box-sizing: border-box;
+}
+
+/* Entrance, whole-block (design 汇总: `fade-in`). Deliberately *not* per
+   character: the body arrives as one formatted HTML string through
+   dangerouslySetInnerHTML, so there is no per-token node to stagger, and
+   inventing one would mean hand-tokenizing the host formatter's output.
+   Deliberately *not* on every message either: rows here are virtualized, so a
+   blanket entrance would replay itself every time an old message scrolled back
+   into the mounted window. Only the newest message can actually be new, so it
+   is the only one that animates. */
+body.chatui-active .cui-root-message.is-latest {
+    animation: cui-fade-in 0.3s ease both;
+}
+
+/* The design's one general entrance (汇总: `fade-in`), so it is named for the
+   motion rather than for its first caller — the newest message, the generating
+   indicator and the 「回到最新」 capsule all arrive the same way, and a
+   message-specific name would have made the third one look like a borrow. */
+@keyframes cui-fade-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
 }
 
 body.chatui-active .cui-root-message-user {
@@ -1825,6 +2291,12 @@ body.chatui-active .cui-root-message-system {
     align-self: stretch;
 }
 
+body.chatui-active .cui-root-message-character {
+    padding: var(--cui-message-char-padding);
+    border-left: var(--cui-message-char-rule);
+}
+
+/* A system notice is not a voice on stage, so it takes no rule and no indent. */
 body.chatui-active .cui-root-message-system {
     align-items: center;
     opacity: 0.75;
@@ -1833,10 +2305,13 @@ body.chatui-active .cui-root-message-system {
 body.chatui-active .cui-root-message-meta {
     display: flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.62rem;
     min-width: 0;
-    font-size: var(--cui-font-xs);
-    opacity: 0.72;
+    /* Design §4 sets the header row at 11px and dims it as a whole with color,
+       not opacity: the speaker name carries its own hue and an opacity on the
+       row would wash that hue out along with everything else. */
+    font-size: var(--cui-font-sm);
+    color: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
 }
 
 body.chatui-active .cui-root-avatar {
@@ -1861,20 +2336,26 @@ body.chatui-active .cui-root-avatar img {
     object-fit: cover;
 }
 
+/* The speaker name takes the header row's own 11px (design §4 gives it a face,
+   a weight and a tracking, but no size of its own — it *is* the row). It used
+   to be lifted to 13.5px, which was compensation for a row that had been set at
+   10px instead of 11px; the row is right now, so the compensation goes. */
 body.chatui-active .cui-root-message-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    /* The meta row is now the design's 10px, which is a size for the floor
-       number and timestamp beside it — not for the speaker. The name had no
-       size of its own and rode on the row, so it needs one to stay the
-       heading it is. */
-    font-size: var(--cui-font-card);
     font-weight: 600;
     font-family: var(--cui-font-display);
-    text-transform: uppercase;
     /* Design §4 puts the speaker name on the mid tracking tier. */
     letter-spacing: var(--cui-tracking-wide);
+    /* The character's gold is the default so anything that borrows this header
+       treatment — the generating indicator — gets the character's voice
+       without restating it; the user's own tone overrides below. */
+    color: var(--cui-color-accent);
+}
+
+body.chatui-active .cui-root-message-user .cui-root-message-name {
+    color: var(--cui-color-user-voice);
 }
 
 body.chatui-active .cui-root-message-connector {
@@ -1883,18 +2364,67 @@ body.chatui-active .cui-root-message-connector {
     background: linear-gradient(to right, var(--cui-rule-structure), var(--cui-rule-faint));
 }
 
+/* The user's connector is drawn in the same rust as the user's own rule, so a
+   glance down the column tells the two speakers apart even before the names. */
+body.chatui-active .cui-root-message-user .cui-root-message-connector {
+    background: linear-gradient(
+        to right,
+        color-mix(in srgb, var(--cui-color-user-mark) 26%, transparent),
+        color-mix(in srgb, var(--cui-color-user-mark) 16%, transparent)
+    );
+}
+
+/* The header's third part: one stamp, set tight, so 「第 N 楼 · 时间」 reads as
+   a single phrase instead of inheriting the header row's wide gap between its
+   own pieces. The separator belongs between the two spans rather than inside
+   either, so it is drawn rather than typed. */
+body.chatui-active .cui-root-message-stamp {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 0.3em;
+    flex-shrink: 0;
+}
+
+body.chatui-active .cui-root-message-floor,
 body.chatui-active .cui-root-message-time,
 body.chatui-active .cui-root-message-swipe {
     flex-shrink: 0;
-    font-size: var(--cui-font-2xs);
-    opacity: 0.75;
+    /* Design §4: the stamp is 10px, one step under the row it sits in, and one
+       step quieter again. */
+    font-size: var(--cui-font-xs);
+    opacity: 0.7;
 }
 
+body.chatui-active .cui-root-message-floor + .cui-root-message-time::before {
+    content: "·";
+    margin-right: 0.3em;
+}
+
+/* Design §4's prose setting: 15px serif, 1.9 leading, pre-wrap. The size is
+   stated rather than inherited because it is a decision of the design, not a
+   consequence of wherever this block happens to be mounted. */
 body.chatui-active .cui-root-message-body {
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-    line-height: 1.82;
+    font-size: var(--cui-font-base);
+    line-height: 1.9;
     font-family: var(--cui-font-body);
+}
+
+/* Quotation and emphasis inside a message body belong to ChatUI, not to the
+   host: .mes_text is on this element so ST's own theme would otherwise color
+   spoken lines with whatever palette the user's SillyTavern theme carries, and
+   the one thing on this stage that must stay on-palette is the dialogue. Gold
+   for what is said aloud, a step down from the prose for what is merely
+   stressed. */
+body.chatui-active .cui-root-message-body.mes_text q,
+body.chatui-active .cui-root-reasoning-body.mes_text q {
+    color: var(--cui-color-accent-hover);
+}
+
+body.chatui-active .cui-root-message-body.mes_text em,
+body.chatui-active .cui-root-reasoning-body.mes_text em {
+    color: color-mix(in srgb, var(--cui-color-text) 72%, transparent);
 }
 
 body.chatui-active .cui-root-message-body q::before,
@@ -1942,23 +2472,32 @@ body.chatui-active .cui-embed-frame {
 body.chatui-active .cui-root-edit {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    /* Design §4.4's own rhythm for this block: header-to-textarea is the
+       message's usual 10px (inherited for free from .cui-root-message's own
+       gap, since .cui-root-edit sits where the reasoning/body/actions stack
+       normally would); textarea-to-actions is a tighter 8px local to the
+       editor itself. */
+    gap: 0.5rem;
     width: 100%;
 }
 
+/* README §44: a soft ink-wash box, no border — the textarea reads as paper
+   set into the page rather than a form control bolted onto it. The
+   background is a one-off literal because it names its own value (README's
+   `rgba(35,32,26,.65)`) rather than a fraction of an existing surface token. */
 body.chatui-active .cui-root-edit-textarea {
     width: 100%;
-    min-height: 8rem;
+    min-height: 5.625rem;
     box-sizing: border-box;
     resize: vertical;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-md);
-    background-color: color-mix(in srgb, var(--cui-color-surface) 80%, transparent);
+    border: none;
+    border-radius: 4px;
+    background-color: rgba(35, 32, 26, 0.65);
     color: var(--cui-color-text);
     font-family: var(--cui-font-body);
     font-size: var(--cui-font-base);
-    line-height: 1.45;
-    padding: 0.65rem 0.75rem;
+    line-height: 1.9;
+    padding: 0.625rem 0.75rem;
 }
 
 body.chatui-active .cui-root-edit-textarea:focus {
@@ -1968,28 +2507,42 @@ body.chatui-active .cui-root-edit-textarea:focus {
 body.chatui-active .cui-root-edit-actions {
     display: flex;
     align-items: center;
-    justify-content: flex-end;
-    gap: 0.35rem;
+    gap: 0.5rem;
 }
 
+/* The ⌘Enter/Esc reminder sits at the row's leading edge; the two buttons
+   ride the trailing edge via the first button's auto margin (README §44
+   shows hint-left, buttons-right, not a three-way space-between). */
+body.chatui-active .cui-root-edit-hint {
+    font-size: var(--cui-font-xs);
+    color: color-mix(in srgb, var(--cui-color-text) 35%, transparent);
+}
+
+/* Both buttons are ink on paper, not chrome: no fill, no border box — a
+   dashed underline is the only affordance, same family as the topbar's
+   rename-confirm and the generate bar's brass. */
 body.chatui-active .cui-root-edit-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    min-height: 1.85rem;
-    border: 1px solid var(--cui-color-border);
-    border-radius: var(--cui-radius-sm);
+    margin-left: auto;
+    border: none;
+    border-bottom: 1px dashed transparent;
     background: none;
-    color: var(--cui-color-text);
+    padding: 0.25rem 0.5rem;
     cursor: pointer;
-    font-family: var(--cui-font-family);
+    font-family: var(--cui-font-body);
     font-size: var(--cui-font-tight);
-    padding: 0 0.6rem;
+    letter-spacing: var(--cui-tracking-btn);
+    color: color-mix(in srgb, var(--cui-color-text) 55%, transparent);
+}
+
+/* Only the row's first button (Cancel) needs to reach across the free space;
+   its neighbor (Save) just rides the row's own 8px gap after it. */
+body.chatui-active .cui-root-edit-btn + .cui-root-edit-btn {
+    margin-left: 0;
 }
 
 body.chatui-active .cui-root-edit-btn:hover,
 body.chatui-active .cui-root-edit-btn:focus-visible {
-    background-color: color-mix(in srgb, var(--cui-color-text) 10%, transparent);
+    color: color-mix(in srgb, var(--cui-color-text) 85%, transparent);
 }
 
 body.chatui-active .cui-root-edit-btn:disabled {
@@ -1997,8 +2550,19 @@ body.chatui-active .cui-root-edit-btn:disabled {
     opacity: 0.55;
 }
 
+/* Save is the only committing action in this row, so it is the only one
+   written in the accent hand — same gold ink as the composer's own "next
+   line" cues, dashed underline at rest, solid gold underline on hover. */
 body.chatui-active .cui-root-edit-save {
-    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
+    color: var(--cui-color-accent);
+    font-weight: 600;
+    border-bottom-color: color-mix(in srgb, var(--cui-color-user-mark) 55%, transparent);
+}
+
+body.chatui-active .cui-root-edit-save:hover,
+body.chatui-active .cui-root-edit-save:focus-visible {
+    color: var(--cui-color-accent-hover);
+    border-bottom-color: var(--cui-color-accent);
 }
 
 body.chatui-active .cui-root-code-copy {
@@ -2040,32 +2604,63 @@ body.chatui-active .cui-root-code-lang {
     pointer-events: none;
 }
 
+/* Design §4's thinking block: a dashed rule to the left of an aside the reader
+   may or may not open. Colors are stated per part rather than dimmed as a whole
+   with opacity, so the trigger can brighten on hover without the container
+   having to. */
 body.chatui-active .cui-root-reasoning {
     width: 100%;
-    margin: 0.15rem 0 0.25rem;
-    border-left: 1px dashed var(--cui-rule-faint);
-    padding-left: 0.65rem;
-    opacity: 0.82;
+    margin: 0;
+    border-left: 1px dashed var(--cui-rule-structure);
+    padding-left: 0.875rem;
 }
 
 body.chatui-active .cui-root-reasoning-summary {
     cursor: pointer;
     font-size: var(--cui-font-sm);
-    font-weight: 600;
-    opacity: 0.78;
+    color: color-mix(in srgb, var(--cui-color-text) 50%, transparent);
+    transition: color var(--cui-motion-base);
+    /* The native disclosure triangle is the one glyph on this stage nobody
+       drew; the design ends the trigger line with a small caret instead. */
+    list-style: none;
 }
 
-body.chatui-active .cui-root-reasoning-duration {
-    margin-left: 0.45rem;
-    font-weight: 400;
-    opacity: 0.65;
+body.chatui-active .cui-root-reasoning-summary::-webkit-details-marker {
+    display: none;
+}
+
+body.chatui-active .cui-root-reasoning-summary::after {
+    content: "▾";
+    display: inline-block;
+    margin-left: 0.35rem;
+    font-size: var(--cui-font-2xs);
+    opacity: 0.6;
+    transform: rotate(-90deg);
+    transition: transform var(--cui-motion-base);
+}
+
+body.chatui-active .cui-root-reasoning[open] > .cui-root-reasoning-summary::after {
+    transform: none;
+}
+
+body.chatui-active .cui-root-reasoning-summary:hover,
+body.chatui-active .cui-root-reasoning-summary:focus-visible {
+    color: color-mix(in srgb, var(--cui-color-text) 80%, transparent);
+}
+
+body.chatui-active .cui-root-reasoning-icon {
+    margin-right: 0.35rem;
+    font-size: var(--cui-font-xs);
+    opacity: 0.8;
 }
 
 body.chatui-active .cui-root-reasoning-body {
-    margin-top: 0.45rem;
+    margin-top: 0.5rem;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
-    line-height: 1.62;
+    font-size: var(--cui-font-menu);
+    line-height: 1.75;
+    color: color-mix(in srgb, var(--cui-color-text) 52%, transparent);
     font-family: var(--cui-font-body);
     font-style: italic;
 }
@@ -2172,13 +2767,17 @@ body.chatui-active .cui-root-file-open {
     font-size: var(--cui-font-tight);
 }
 
+/* Design §42. The bar is a fixed 24px band of 24x24 icon buttons that only
+   exists while you are reading this message — it fades in rather than shifting
+   anything, so the column never reflows under the cursor. */
 body.chatui-active .cui-root-message-actions {
     display: flex;
     align-items: center;
     gap: 0.25rem;
+    height: 24px;
     margin-top: 0.2rem;
     opacity: 0;
-    transition: opacity var(--cui-motion-base);
+    transition: opacity var(--cui-motion-reveal);
 }
 
 body.chatui-active .cui-root-message:hover .cui-root-message-actions,
@@ -2186,32 +2785,126 @@ body.chatui-active .cui-root-message:focus-within .cui-root-message-actions {
     opacity: 1;
 }
 
+/* A button at rest is drawn in thinned ink rather than dimmed as a whole: the
+   design's own `rgba(232,223,206,.6)`, which is the text color at 60%. Opacity
+   would take the hover wash down with it once one is painted underneath. */
 body.chatui-active .cui-root-action-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 1.8rem;
-    height: 1.65rem;
-    border: 1px solid transparent;
+    box-sizing: border-box;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
     border-radius: var(--cui-radius-sm);
     background: none;
-    color: var(--cui-color-text);
+    color: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
     cursor: pointer;
-    opacity: 0.68;
-    padding: 0 0.45rem;
-    font-size: var(--cui-font-menu);
+    font-size: var(--cui-font-sm);
     line-height: 1;
+}
+
+/* The ⋯ glyph is drawn one step larger than the rest so three dots read as
+   heavy as a single icon. */
+body.chatui-active .cui-root-menu-trigger {
+    font-size: var(--cui-font-tight);
 }
 
 body.chatui-active .cui-root-action-btn:hover,
 body.chatui-active .cui-root-action-btn:focus-visible {
-    opacity: 1;
-    border-color: var(--cui-color-border);
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
+    background-color: var(--cui-wash-accent);
+    color: var(--cui-color-text);
+}
+
+/* Delete is the one tile that answers in red — same wash/ink pair the design
+   gives every destructive icon button. */
+body.chatui-active .cui-root-action-btn.is-danger:hover,
+body.chatui-active .cui-root-action-btn.is-danger:focus-visible {
+    background-color: var(--cui-wash-danger);
+    color: var(--cui-color-danger);
 }
 
 body.chatui-active .cui-root-action-btn:focus-visible {
     outline: 1px solid var(--cui-outline-faint);
+}
+
+/* Design §43: a thin seam between "what you do to this turn" (重写/编辑/删除/⋯)
+   and "which candidate reply you're looking at" (the swipe group). Only ever
+   rendered alongside the swipe group, so it needs no hover/rest state of its
+   own. */
+body.chatui-active .cui-root-action-divider {
+    width: 1px;
+    height: 14px;
+    flex-shrink: 0;
+    margin: 0 0.2rem;
+    background: var(--cui-rule-faint);
+}
+
+/* The swipe tick row (design §43). Ticks stay 2px tall — the row reads as a
+   thin stitched line, not another row of icon buttons — so each button's own
+   painted box is exactly that small mark; ::after inflates only the *hit*
+   area (well past the 24px action-bar row) without inflating what's drawn,
+   the same invisible-overlay trick the design reference itself uses. */
+body.chatui-active .cui-root-swipe-segments {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+body.chatui-active .cui-root-swipe-segment {
+    position: relative;
+    display: inline-block;
+    box-sizing: border-box;
+    width: 12px;
+    height: 2px;
+    padding: 0;
+    border: none;
+    border-radius: var(--cui-radius-pill);
+    background: color-mix(in srgb, var(--cui-color-text) 24%, transparent);
+    cursor: pointer;
+    appearance: none;
+    transition: width 0.12s ease, background-color 0.12s ease;
+}
+
+body.chatui-active .cui-root-swipe-segment::after {
+    content: "";
+    position: absolute;
+    inset: -11px -4px;
+}
+
+body.chatui-active .cui-root-swipe-segment.is-current {
+    width: 20px;
+    background: var(--cui-color-accent);
+}
+
+body.chatui-active .cui-root-swipe-segment:hover {
+    background: color-mix(in srgb, var(--cui-color-text) 60%, transparent);
+}
+
+body.chatui-active .cui-root-swipe-segment.is-current:hover {
+    background: var(--cui-color-accent-hover);
+}
+
+body.chatui-active .cui-root-swipe-segment:focus-visible {
+    outline: 1px solid var(--cui-outline-faint);
+    outline-offset: 3px;
+}
+
+/* Only mounted once the tick row can no longer stand for every version
+   (>5 swipes) — same "current/total" string as the header stamp's
+   .cui-root-message-swipe (message.swipe.label), set in the action row's
+   own scale instead of inheriting that badge's rules verbatim. */
+body.chatui-active .cui-root-swipe-count {
+    flex-shrink: 0;
+    margin: 0 2px;
+    color: color-mix(in srgb, var(--cui-color-text) 42%, transparent);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-xs);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: var(--cui-tracking-wide);
 }
 
 body.chatui-active .cui-root-action-menu {
@@ -2271,22 +2964,64 @@ body.chatui-active .cui-root-menu {
     }
 }
 
+/* An empty stage, set the way the design sets its other empty states (§2): a
+   quiet serif line, not a system message. `display` is restated for [hidden]
+   because a flex box would otherwise out-rank the attribute's own display:none.
+ */
 body.chatui-active .cui-root-empty {
-    padding: 1rem 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 2rem 1rem;
     text-align: center;
-    opacity: 0.6;
+    font-family: var(--cui-font-body);
 }
 
+body.chatui-active .cui-root-empty[hidden] {
+    display: none;
+}
+
+body.chatui-active .cui-root-empty-title {
+    font-size: var(--cui-font-card);
+    font-weight: 600;
+    letter-spacing: var(--cui-tracking-wide);
+    color: color-mix(in srgb, var(--cui-color-text) 55%, transparent);
+}
+
+body.chatui-active .cui-root-empty-note {
+    font-size: var(--cui-font-sm);
+    line-height: 1.9;
+    color: color-mix(in srgb, var(--cui-color-text) 38%, transparent);
+}
+
+/* Stands where the reply will stand: same column, same indent, same header
+   treatment as a character message — but a transparent rule, because nothing
+   has been said yet. Borrowing .cui-root-message-char-* keeps the two boxes
+   identical by construction rather than by two numbers kept in sync. */
 body.chatui-active .cui-root-generating {
+    display: flex;
+    flex-direction: column;
+    gap: 0.62rem;
+    align-self: stretch;
+    width: 100%;
+    max-width: min(100%, 52rem);
+    box-sizing: border-box;
+    margin: 0.05rem 0 0.25rem;
+    padding: var(--cui-message-char-padding);
+    border-left: 2px solid transparent;
+    color: color-mix(in srgb, var(--cui-color-seal) 74%, var(--cui-color-text));
+    font-family: var(--cui-font-body);
+    animation: cui-fade-in 0.3s ease both;
+}
+
+body.chatui-active .cui-root-generating-line {
     display: inline-flex;
     align-items: center;
     gap: 0.55rem;
-    align-self: flex-start;
-    margin: 0.05rem 0 0.25rem;
-    padding: 0 0.15rem;
-    color: color-mix(in srgb, var(--cui-color-seal) 74%, var(--cui-color-text));
-    font-family: var(--cui-font-body);
-    font-size: var(--cui-font-xs);
+    /* Design §4: 11px, one step above the header's stamp — this is the line the
+       reader is actually waiting on. */
+    font-size: var(--cui-font-sm);
 }
 
 body.chatui-active .cui-root-generating-seal {
@@ -2327,29 +3062,68 @@ body.chatui-active .cui-root-generating-label {
     }
 }
 
+/* 「回到最新」 (design §47). Not a round icon button but a labelled capsule
+   floating over the composer: it appears while the reader is deliberately
+   somewhere else in the conversation, so it has to say what it does in words
+   rather than ask them to decode an arrow. It stays a child of the stage — the
+   stage is what scrolls, and what the capsule offers is a scroll position.
+
+   Centered with auto margins rather than translateX(-50%): the entrance below
+   animates `transform`, and a centering transform would be overwritten by it
+   (and, under `both`, left overwritten after it ended). Two jobs, one property
+   — so the layout job moves off the property the animation owns. */
 body.chatui-active .cui-root-scroll-bottom {
     position: absolute;
-    left: 50%;
-    bottom: 0.85rem;
+    left: 0;
+    right: 0;
+    /* Design: ~23px of air between the capsule and the composer's own top
+       edge (原型's capsule sits at `top:-52px` inside a composer wrapper
+       whose own height puts that ~24px below the capsule's bottom). 12px of
+       that is already paid by the frame — .cui-root-app's 0.5rem column gap
+       plus the composer's own 0.25rem top margin — so this offset is the
+       remainder, not the whole distance. Verified unaffected by the
+       decoration row landing inside the composer (pr4 baton 3): that row's
+       own rule line sits well inside the composer's padding, but this
+       capsule was always measured to the composer's outer box, not to
+       whatever draws at its top edge — real Chromium measurement after
+       the row landed still reads ~23px, unchanged. */
+    bottom: 0.7rem;
     z-index: 7;
-    transform: translateX(-50%);
+    width: fit-content;
+    margin-inline: auto;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    width: 2.4rem;
-    height: 2.4rem;
-    border: 1px solid var(--cui-color-border);
+    gap: 0.44rem;
+    padding: 0.31rem 0.88rem;
+    border: 1px solid color-mix(in srgb, var(--cui-color-user-mark) 50%, transparent);
     border-radius: var(--cui-radius-pill);
-    background-color: var(--cui-color-surface);
-    color: var(--cui-color-text);
+    background-color: color-mix(in srgb, var(--cui-color-surface) 92%, transparent);
+    color: color-mix(in srgb, var(--cui-color-text) 75%, transparent);
+    font-family: var(--cui-font-display);
+    font-size: var(--cui-font-chip);
+    letter-spacing: var(--cui-tracking-pill);
+    white-space: nowrap;
     cursor: pointer;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-    opacity: 0.92;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    transition: color var(--cui-motion-base) ease, border-color var(--cui-motion-base) ease;
+    animation: cui-fade-in 0.2s ease both;
+}
+
+/* The design's chevron is a gold a shade deeper than the accent — the same
+   in-between warm the accent rule is already mixed to, so it is read from
+   there instead of minting a fourth gold. */
+body.chatui-active .cui-root-scroll-bottom i {
+    font-size: var(--cui-font-xs);
+    color: var(--cui-rule-accent);
 }
 
 body.chatui-active .cui-root-scroll-bottom:hover,
 body.chatui-active .cui-root-scroll-bottom:focus-visible {
-    opacity: 1;
+    border-color: var(--cui-color-user-mark);
+    color: var(--cui-color-text);
+}
+
+body.chatui-active .cui-root-scroll-bottom:focus-visible {
     outline: 1px solid var(--cui-outline-faint);
 }
 
@@ -2364,61 +3138,143 @@ body.chatui-active .cui-root-generate-bar {
     padding: 0.35rem 0.75rem 0;
 }
 
+/* Reskinned onto the same dark-floating-surface recipe the toast already
+   uses (surface ground + --cui-color-shadow elevation) rather than a plain
+   bordered pill with its own one-off shadow literal — this bar is asking the
+   reader to do something, the same job the toast and the 回到最新 capsule
+   do, so it borrows their weight instead of inventing a third. Border and
+   icon take the accent gold rather than the neutral --cui-color-border:
+   DESIGN §2.1 reserves that gold for focus, and this is the one control in
+   the reading column that summons the character's next line. */
 body.chatui-active .cui-root-generate-btn {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
     min-height: 2rem;
     padding: 0 0.95rem;
-    border: 1px solid var(--cui-color-border);
+    border: 1px solid color-mix(in srgb, var(--cui-color-accent) 40%, transparent);
     border-radius: var(--cui-radius-pill);
     background-color: var(--cui-color-surface);
     color: var(--cui-color-text);
     cursor: pointer;
     font-family: var(--cui-font-family);
     font-size: var(--cui-font-tight);
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 6px 22px var(--cui-color-shadow);
+    transition: border-color var(--cui-motion-base) ease;
+}
+
+body.chatui-active .cui-root-generate-btn i {
+    color: var(--cui-color-accent);
 }
 
 body.chatui-active .cui-root-generate-btn:hover,
 body.chatui-active .cui-root-generate-btn:focus-visible {
+    border-color: var(--cui-color-accent-hover);
     outline: 1px solid var(--cui-outline-faint);
 }
 
+/* DESIGN §2.5: this composer's lengths are px, not rem, for the same reason
+   the topbar block above them is — see that comment. */
 body.chatui-active .cui-root-composer {
     position: relative;
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 5.6px;
     width: min(100%, var(--cui-content-max-width));
-    margin: 0.25rem auto 0;
-    padding: 0.65rem 0 0.15rem;
-    border-top: 1px dashed var(--cui-rule-structure);
+    margin: 4px auto 0;
+    padding: 6.4px 0 2.4px;
     background: none;
     box-sizing: border-box;
 }
 
-body.chatui-active .cui-root-composer::before {
-    content: "";
-    position: absolute;
-    top: -1px;
-    left: 0;
-    width: 2.75rem;
-    height: 1px;
-    background-color: var(--cui-rule-accent);
-    transition: width var(--cui-motion-base) ease, background-color var(--cui-motion-base) ease;
+/* The ledger's own rule line (design §6; DESIGN §4.4's "始终有结构横线"): a
+   fixed-width left segment, the preset/model chips, and a hairline that fills
+   the rest of the row out to the trailing edge. This replaces the previous
+   placeholder — a dashed border-top plus a width-animating ::before accent —
+   with the design's actual construction: one broken rule, colored rather than
+   resized on focus. */
+body.chatui-active .cui-root-composer-deco {
+    display: flex;
+    align-items: center;
+    gap: 10px;
 }
 
-body.chatui-active .cui-root-composer:focus-within::before {
-    width: 4.5rem;
-    background-color: var(--cui-color-seal);
+body.chatui-active .cui-root-composer-rule {
+    height: 1px;
+    background-color: var(--cui-color-user-mark);
+    transition: background-color var(--cui-motion-base) ease;
+}
+
+body.chatui-active .cui-root-composer-rule-left {
+    flex: 0 0 32px;
+}
+
+/* The hairline reads far fainter than the left segment at rest — the design's
+   own composerRuleC/composerHairC pair (原型 L288/L313) are not one color at
+   two strengths, so -right starts from the general text tint rather than the
+   accent the left segment and its own focus state use. */
+body.chatui-active .cui-root-composer-rule-right {
+    flex: 1 1 auto;
+    background-color: color-mix(in srgb, var(--cui-color-text) 13%, transparent);
+}
+
+body.chatui-active .cui-root-composer:focus-within .cui-root-composer-rule-left {
+    background-color: var(--cui-color-accent);
+}
+
+body.chatui-active .cui-root-composer:focus-within .cui-root-composer-rule-right {
+    background-color: color-mix(in srgb, var(--cui-color-accent) 40%, transparent);
+}
+
+/* Composer-deco chips get a compact, monospace-pill skin (design §6) — a
+   different look than the same SelectorChip renders in the topbar (§7) or a
+   paper menu, entirely from CSS scoped to this container. The component's
+   markup (icon + label + caret) never changes between the three; see the
+   relocation note at this row's JSX call site. The caret is hidden here: the
+   design's preset/model marks in this row carry no chevron at all (原型
+   L289/L302), and the pill reads better as a settled label than a control
+   with an affordance it does not also give the topbar chip. */
+body.chatui-active .cui-root-composer-deco .cui-root-selchips {
+    width: auto;
+    flex-wrap: nowrap;
+    gap: 5.6px;
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn {
+    min-height: 0;
+    max-width: 128px;
+    padding: 2px 8.8px;
+    border-radius: var(--cui-radius-pill);
+    box-shadow: none;
+    background-color: color-mix(in srgb, var(--cui-color-accent) 8%, transparent);
+    color: color-mix(in srgb, var(--cui-color-accent) 85%, transparent);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-2xs);
+    letter-spacing: var(--cui-tracking-wide);
+    opacity: 1;
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn:hover,
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn:focus-visible {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--cui-color-accent) 14%, transparent);
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-btn[aria-expanded="true"] {
+    box-shadow: none;
+    color: var(--cui-color-accent);
+    background-color: color-mix(in srgb, var(--cui-color-accent) 14%, transparent);
+}
+
+body.chatui-active .cui-root-composer-deco .cui-root-selchip-caret {
+    display: none;
 }
 
 body.chatui-active .cui-root-composer-row {
     display: flex;
     align-items: flex-end;
-    gap: 0.45rem;
+    gap: 7.2px;
     width: 100%;
     padding-bottom: 0;
 }
@@ -2426,7 +3282,7 @@ body.chatui-active .cui-root-composer-row {
 body.chatui-active .cui-root-composer-input {
     flex: 1 1 auto;
     min-width: 0;
-    max-height: 12rem;
+    max-height: 140px;
     box-sizing: border-box;
     resize: none;
     overflow-y: auto;
@@ -2434,9 +3290,9 @@ body.chatui-active .cui-root-composer-input {
     background: none;
     color: var(--cui-color-text);
     font-family: var(--cui-font-body);
-    font-size: var(--cui-font-base);
-    line-height: 1.65;
-    padding: 0.42rem 0.45rem 0.52rem;
+    font-size: var(--cui-font-composer);
+    line-height: 1.7;
+    padding: 6px 4px;
     outline: none;
 }
 
@@ -2445,38 +3301,19 @@ body.chatui-active .cui-root-composer-input::placeholder {
     font-style: italic;
 }
 
-/* Selector B relocated into the ＋ menu top when single-line. */
-body.chatui-active .cui-root-plus-topslot {
-    padding: 0.15rem 0.5rem 0.5rem;
-    margin-bottom: 0.15rem;
-    border-bottom: 1px dashed var(--cui-paper-rule);
-}
-
-body.chatui-active .cui-root-plus-topslot .cui-root-selchips {
-    flex-wrap: wrap;
-    width: 100%;
-}
-
-/* Inside the ＋ menu the chip dropdown must open DOWNWARD: the menu is a
-   scroll/overflow container, so an upward-opening popup would be clipped. */
-body.chatui-active .cui-root-plus-topslot .cui-root-selchip-menu {
-    top: calc(100% + 0.35rem);
-    bottom: auto;
-}
-
 body.chatui-active .cui-root-composer-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.45rem;
-    height: 2.45rem;
+    width: 26px;
+    height: 26px;
     flex: 0 0 auto;
     border: 1px solid transparent;
     border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
-    font-size: var(--cui-font-card);
+    font-size: var(--cui-font-menu);
 }
 
 body.chatui-active .cui-root-composer-btn:hover {
@@ -2493,16 +3330,40 @@ body.chatui-active .cui-root-composer-btn:disabled {
     opacity: 0.55;
 }
 
+/* DESIGN §4.4: "发送使用轻薄箭头，不使用高饱和实心按钮". The old rule filled
+   this button's own background on generate — exactly the saturated-solid
+   look that line rules out. The design's stop state (原型 L795,
+   generating→'#d4936a') only ever recolors the glyph, so this does too. */
 body.chatui-active .cui-root-composer-stop {
-    background-color: color-mix(in srgb, var(--cui-color-danger) 22%, transparent);
+    color: var(--cui-color-danger);
 }
 
 body.chatui-active .cui-root-send-glyph {
-    color: var(--cui-color-seal);
+    color: color-mix(in srgb, var(--cui-color-accent) 60%, transparent);
     font-family: var(--cui-font-display);
-    font-size: var(--cui-font-title);
+    font-size: var(--cui-font-card);
     line-height: 1;
     transform: translateY(-0.04em);
+    transition: color var(--cui-motion-base) ease;
+}
+
+/* Draft text present = the arrow is "armed" and takes the full accent
+   (原型 L795 sendColor); an empty draft keeps the muted resting tone above. */
+body.chatui-active .cui-root-send-glyph.is-armed {
+    color: var(--cui-color-accent);
+}
+
+/* Design §6's bottom-right caption. Its rgba(.25) contrast sits under AA on
+   purpose — see the accept-note at this row's JSX call site (evaluation
+   report §6 D2) — so the token reference stays true to that value rather
+   than getting brightened into a functional label. */
+body.chatui-active .cui-root-composer-hint {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4.8px 4px 0;
+    color: color-mix(in srgb, var(--cui-color-text) 25%, transparent);
+    font-family: var(--cui-font-mono);
+    font-size: var(--cui-font-2xs);
 }
 
 /* ---------------------------------------------------------------------------
@@ -2519,14 +3380,14 @@ body.chatui-active .cui-root-plus-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2.45rem;
-    height: 2.45rem;
+    width: 26px;
+    height: 26px;
     border: 1px solid transparent;
     border-radius: var(--cui-radius-sm);
     background: none;
     color: var(--cui-color-text);
     cursor: pointer;
-    font-size: var(--cui-font-base);
+    font-size: var(--cui-font-menu);
 }
 
 body.chatui-active .cui-root-plus-btn:hover {
@@ -2536,6 +3397,18 @@ body.chatui-active .cui-root-plus-btn:hover {
 body.chatui-active .cui-root-plus-btn:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
     outline: 1px solid var(--cui-outline-faint);
+}
+
+/* Design §6: the trigger rotates open rather than swapping glyph — the icon
+   is the thing that turns, not the button around it, so the transform lives
+   on <i> and the button keeps its own hover/focus box untouched. */
+body.chatui-active .cui-root-plus-btn i {
+    display: inline-block;
+    transition: transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+body.chatui-active .cui-root-plus-btn.is-open i {
+    transform: rotate(45deg);
 }
 
 /* height explicit: same <html>-becomes-containing-block quirk as the
@@ -3131,9 +4004,15 @@ body.chatui-active .cui-root-qrbar-label {
    Settings mode — embedded ST drawer host + layout
    --------------------------------------------------------------------------- */
 
-/* SettingsNav left column (mirrors .cui-root-sidebar desktop width) */
+/* SettingsNav takes over the playbill's slot inside .cui-root-rails while the
+   spine stays put (DESIGN §3: settings is a mode swap over two of the three
+   columns, not a fourth column). Same 252px, because it is literally standing
+   where the playbill stood. */
 body.chatui-active .cui-settings-nav {
-    flex: 0 0 clamp(13rem, 22vw, 17rem);
+    /* 300px, not the playbill's 252px: nav rows carry icon + Chinese label and
+       read cramped at playbill width (owner call, 2026-08-01). Settings mode
+       has no reading column to protect, so the extra 48px is free. */
+    flex: 0 0 300px;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -3145,12 +4024,16 @@ body.chatui-active .cui-settings-nav {
     box-sizing: border-box;
 }
 
-/* ←返回 button — full-width, distinct from nav items */
+/* ←返回 button — full-width, distinct from nav items. Display serif + the
+   corridor's dashed rule below, so the nav opens like a chapter head instead
+   of a toolbar (light corridor pass, 2026-08-01; the full layer-7 dialect
+   remains backlog). */
 body.chatui-active .cui-settings-nav-back {
-    gap: 0.65rem;
-    min-height: 2.5rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px dashed var(--cui-color-border);
+    gap: 10px;
+    min-height: 44px;
+    padding: 10px 14px;
+    border-bottom: 1px dashed var(--cui-color-border-strong);
+    font-family: var(--cui-font-display);
     font-size: var(--cui-font-card);
     font-weight: 600;
 }
@@ -3159,14 +4042,19 @@ body.chatui-active .cui-settings-nav-back {
 body.chatui-active .cui-settings-nav-section {
     display: flex;
     flex-direction: column;
-    padding: 0.35rem 0.35rem 0.5rem;
+    gap: 2px;
+    padding: 12px 8px 14px;
+}
+
+body.chatui-active .cui-settings-nav-section .cui-root-section-label {
+    padding: 0 8px 6px;
 }
 
 /* Nav item buttons */
 body.chatui-active .cui-settings-nav-item {
-    gap: 0.65rem;
-    min-height: 2.3rem;
-    padding: 0 0.6rem;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 10px;
     border-radius: var(--cui-radius-sm);
     font-size: var(--cui-font-tight);
 }
@@ -3184,20 +4072,21 @@ body.chatui-active .cui-settings-nav-item.is-active i {
     opacity: 1;
 }
 
-/* Bottom-pinned "关闭 ChatUI" — mirrors .cui-root-sidebar-footer's
-   margin-top:auto pattern so it stays at the bottom of the nav column
-   regardless of how many ST/ChatUI entries are listed above it. */
+/* Bottom-pinned "关闭 ChatUI" — margin-top:auto so it stays at the bottom of
+   the nav column regardless of how many ST/ChatUI entries are listed above
+   it. (The playbill used to end in the same pattern for its settings row;
+   that row is the spine's gear now, pinned by the spine's own flex column.) */
 body.chatui-active .cui-settings-nav-footer {
     flex: 0 0 auto;
     margin-top: auto;
-    padding: 0.35rem 0.35rem 0.45rem;
-    border-top: 1px dashed var(--cui-color-border);
+    padding: 8px 8px 10px;
+    border-top: 1px dashed var(--cui-color-border-strong);
 }
 
 body.chatui-active .cui-settings-nav-disable {
-    gap: 0.65rem;
-    min-height: 2.3rem;
-    padding: 0 0.6rem;
+    gap: 10px;
+    min-height: 36px;
+    padding: 0 10px;
     border-radius: var(--cui-radius-sm);
     font-size: var(--cui-font-tight);
     opacity: 0.75;
@@ -3296,10 +4185,30 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
     height: auto !important;
 }
 
-/* Mobile: stack vertically. */
+/* Mobile: stack vertically.
+
+   The rails wrapper is a drawer only in chat mode. Settings on a phone is
+   already a full-screen takeover with its own 返回对话, so there is no drawer
+   for the spine to live in and no hamburger to open one — it drops out and
+   the nav gets the full width back, which is exactly the layout this branch
+   had before the spine existed. */
 @media (max-width: 768px) {
-    body.chatui-active .cui-settings-nav {
+    body.chatui-active .cui-root-rails.is-settings {
+        position: static;
         flex: 0 0 auto;
+        width: 100%;
+        height: auto;
+        max-height: 40vh;
+        transform: none;
+        box-shadow: none;
+    }
+
+    body.chatui-active .cui-root-rails.is-settings .cui-root-spine {
+        display: none;
+    }
+
+    body.chatui-active .cui-settings-nav {
+        flex: 1 1 auto;
         width: 100%;
         max-height: 40vh;
         border-right: none;
@@ -3309,6 +4218,76 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
     body.chatui-active .cui-settings-content {
         flex: 1 1 auto;
     }
+}
+
+/* ---------------------------------------------------------------------------
+   Scoped scrollbars  (README "其他": 滚动条 8px 自定义 / 原型 L18)
+
+   §9.1 bans a global `::-webkit-scrollbar` — it would restyle every native
+   ST scrollbar sharing the page, not just this app's own surfaces — so each
+   scrollable region below opts in by its own .cui-* class instead. One
+   recipe, two thumbs (see the --cui-scrollbar-* tokens at :root for why):
+   dark-stage containers read the pale parchment mark, paper popovers read
+   their own binding-line ink so the thumb stays visible on the light ground.
+   Firefox gets the same two thumbs through `scrollbar-color`.
+
+   Six containers, matching README's named list (消息流/侧栏/编辑
+   textarea/＋菜单/设置导航) plus the selector-chip menu (preset/model/persona
+   — the same cui-paper popover shape as the ＋ menu, so it owes it the same
+   visible thumb rather than inheriting whatever the platform default happens
+   to be against parchment). The sidebar used to have a second scroll region,
+   the draft shelf; drafts are cards in the playbill's own column now, so the
+   column scrolls once.
+
+   The spine's cast list is the deliberate eighth that opts *out*: it hides
+   its scrollbar instead (still scoped, still not global — see the rule at
+   .cui-root-spine-list for why 8px of track cannot be spent inside a 58px
+   rail without knocking the avatars off centre).
+   --------------------------------------------------------------------------- */
+body.chatui-active .cui-root-message-list,
+body.chatui-active .cui-root-convlist-scroll,
+body.chatui-active .cui-root-edit-textarea,
+body.chatui-active .cui-settings-nav {
+    scrollbar-width: thin;
+    scrollbar-color: var(--cui-scrollbar-thumb) transparent;
+}
+
+body.chatui-active .cui-root-plus-menu,
+body.chatui-active .cui-root-selchip-menu {
+    scrollbar-width: thin;
+    scrollbar-color: var(--cui-scrollbar-thumb-paper) transparent;
+}
+
+body.chatui-active .cui-root-message-list::-webkit-scrollbar,
+body.chatui-active .cui-root-convlist-scroll::-webkit-scrollbar,
+body.chatui-active .cui-root-edit-textarea::-webkit-scrollbar,
+body.chatui-active .cui-settings-nav::-webkit-scrollbar,
+body.chatui-active .cui-root-plus-menu::-webkit-scrollbar,
+body.chatui-active .cui-root-selchip-menu::-webkit-scrollbar {
+    width: var(--cui-scrollbar-size);
+}
+
+body.chatui-active .cui-root-message-list::-webkit-scrollbar-track,
+body.chatui-active .cui-root-convlist-scroll::-webkit-scrollbar-track,
+body.chatui-active .cui-root-edit-textarea::-webkit-scrollbar-track,
+body.chatui-active .cui-settings-nav::-webkit-scrollbar-track,
+body.chatui-active .cui-root-plus-menu::-webkit-scrollbar-track,
+body.chatui-active .cui-root-selchip-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+body.chatui-active .cui-root-message-list::-webkit-scrollbar-thumb,
+body.chatui-active .cui-root-convlist-scroll::-webkit-scrollbar-thumb,
+body.chatui-active .cui-root-edit-textarea::-webkit-scrollbar-thumb,
+body.chatui-active .cui-settings-nav::-webkit-scrollbar-thumb {
+    background-color: var(--cui-scrollbar-thumb);
+    border-radius: var(--cui-scrollbar-radius);
+}
+
+body.chatui-active .cui-root-plus-menu::-webkit-scrollbar-thumb,
+body.chatui-active .cui-root-selchip-menu::-webkit-scrollbar-thumb {
+    background-color: var(--cui-scrollbar-thumb-paper);
+    border-radius: var(--cui-scrollbar-radius);
 }
 
 /* ---------------------------------------------------------------------------
@@ -3344,12 +4323,25 @@ body.chatui-active .cui-settings-host .fillLeft.openDrawer {
     body.chatui-active .cui-root-plus-menu,
     body.chatui-active .cui-root-toast,
     body.chatui-active .cui-root-dialog-overlay,
-    body.chatui-active .cui-root-dialog {
+    body.chatui-active .cui-root-dialog,
+    body.chatui-active .cui-root-message.is-latest,
+    body.chatui-active .cui-root-generating,
+    body.chatui-active .cui-root-scroll-bottom {
         animation: none;
     }
 
     body.chatui-active .cui-root-floor-tick,
-    body.chatui-active .cui-root-floor-range-label {
+    body.chatui-active .cui-root-floor-range-label,
+    body.chatui-active .cui-root-reasoning-summary::after,
+    /* The mobile drawer's translateX slide (§3/§6, pr9): the pair still opens
+       and closes, it just stops sliding to get there. Every other rails/spine/
+       playbill transition (hover opacity, border-color, background-color on
+       .cui-root-spine-slot/.cui-root-playbill-card/-card-dock/.cui-root-newchat)
+       is a colour/opacity fade rather than motion — the same category as the
+       paper-menu hover washes nobody opts out above — so this is the one rule
+       this region owes the query, not a blanket cui-root-rails/-spine/-sidebar
+       selector. */
+    body.chatui-active .cui-root-rails {
         transition: none;
     }
 }

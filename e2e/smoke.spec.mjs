@@ -97,7 +97,7 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
 
     await expect(root.locator('.cui-root-topbar-eyebrow')).toHaveText('Lounge Test Character');
     await expect(root.locator('.cui-root-topbar-title')).toHaveText('smoke');
-    await expect(root.getByRole('form', { name: 'ChatUI composer' })).toBeVisible();
+    await expect(root.getByRole('form', { name: 'ChatUI 输入区' })).toBeVisible();
 
     const messages = root.locator('.cui-root-message-list article.cui-root-message');
     await expect(messages).toHaveCount(EXPECTED_MESSAGES.length);
@@ -132,11 +132,11 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
     const editedText = '第二条测试消息（已编辑）。';
     const editableMessage = root.locator('[data-cui-message-id="2"]');
     await editableMessage.hover();
-    await editableMessage.getByRole('button', { name: 'Edit' }).click();
+    await editableMessage.getByRole('button', { name: '编辑' }).click();
     const editor = editableMessage.locator('.cui-root-edit-textarea');
     await expect(editor).toHaveValue('第二条测试消息。');
     await editor.fill(editedText);
-    await editableMessage.getByRole('button', { name: 'Save edit' }).click();
+    await editableMessage.getByRole('button', { name: '落笔' }).click();
     await expect(editableMessage.locator('.cui-root-edit-textarea')).toHaveCount(0);
     await expect(editableMessage.locator('.cui-root-message-body')).toHaveText(editedText);
     await expect.poll(() => page.evaluate(() => (
