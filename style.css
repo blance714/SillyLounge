@@ -51,6 +51,18 @@
        shadow. Not derivable from either neighbour, so it is declared. */
     --cui-color-user-voice: #c08a6a;
 
+    /* The floating-card ground, one step up from --cui-color-surface: what the
+       stage lays *on top of* itself, rather than what its own panels are made
+       of. The drawing spends this exact pair in two places — the toast (§10)
+       and the floor rail's hover preview bubble (§3, not built yet) — so it is
+       a named recipe instead of a literal typed twice.
+       Its rule is the text color at 15%, from the same channel triple the
+       scrollbar thumb reads at 14% (rgba(232,223,206,…)): a card that sits
+       above the stage needs an edge lit from the same side as its ground, and
+       a --cui-color-border hairline would simply vanish on it. */
+    --cui-color-raised: #2a251e;
+    --cui-rule-raised: color-mix(in srgb, var(--cui-color-text) 15%, transparent);
+
     /* Two structural darks the layout regions need, and neither is consumed
        yet: the spine ground waits on the character rail that arrives with the
        sidebar split, the heavier border on the framed surfaces that use it
@@ -298,7 +310,11 @@
        the card action dock (§1) and the title's rename pencil (§7) — and gives
        all three the same .15s (§92). Deliberately not --cui-motion-base and
        deliberately not the host's: this is something surfacing under the
-       cursor, which has to feel like it was already there. */
+       cursor, which has to feel like it was already there.
+       The toast's own `fade-in .15s` (§10) is the same beat spent on the same
+       kind of event — something appearing that the reader did not navigate to
+       — so it reads this rather than restating the number. The name is about
+       the beat, not about the cursor. */
     --cui-motion-reveal: 0.15s;
 
     /* Radius scale. The design corners much tighter than the old scale did:
@@ -971,6 +987,46 @@ body.chatui-active .cui-root-rails {
 
 body.chatui-active .cui-root-rails.is-mobile-open {
     transform: translateX(0);
+}
+
+/* Sliding out of sight is not leaving. `transform` moves the closed drawer off
+   the left edge but every button inside it stays focusable, so on a phone the
+   first Tab presses walk into a drawer nobody can see: measured, the playbill
+   card's 重命名/删除 buttons sit at left −73…−13px with their focus ring drawn
+   off-screen, and the reader gets eight presses of nothing before focus
+   reappears in the topbar.
+
+   `visibility: hidden` is the declaration that actually takes a subtree out of
+   the tab order and the accessibility tree, and it inherits, so one line
+   covers spine + playbill together. No JS is involved on purpose: the app has
+   no isMobile signal (no matchMedia anywhere in ui/), and `inert` keyed off
+   `!isSidebarMobileOpen` alone would black-hole the permanently-open desktop
+   rails. The breakpoint is the condition, so the breakpoint is where it goes.
+
+   The delay is the whole trick. On the way out visibility flips only after the
+   slide has finished, so the drawer stays painted while it travels; on the way
+   in the open-state rule's `transition-delay: 0s` is what the browser reads
+   for that direction, so the drawer is visible from the first frame. Under
+   prefers-reduced-motion the coda's `transition: none` drops both halves at
+   once, which is the right answer there: nothing slides, nothing lingers.
+
+   .is-settings is listed with .is-mobile-open because on a phone that class is
+   *not* a drawer at all (see the settings block near the end of this file): it
+   is the full-width settings nav, in flow, transform cleared — visible without
+   ever being "open". */
+@media (max-width: 768px) {
+    body.chatui-active .cui-root-rails {
+        visibility: hidden;
+        transition:
+            transform var(--cui-motion-base) ease,
+            visibility 0s linear var(--cui-motion-base);
+    }
+
+    body.chatui-active .cui-root-rails.is-mobile-open,
+    body.chatui-active .cui-root-rails.is-settings {
+        visibility: visible;
+        transition-delay: 0s;
+    }
 }
 
 body.chatui-active .cui-root-spine {
@@ -1949,15 +2005,17 @@ body.chatui-active .cui-root-message-stage {
     );
 }
 
-/* Design §6 pt.4: a 30px fade mask over the seam where the message stream
-   meets the composer. It is a pseudo-element of the stage rather than of the
-   composer (where the 原型 anchors it, `top:-30px` on the composer's own
-   wrapper): our composer sits a real 0.75rem below the stage's bottom edge
-   (.cui-root-app's gap plus the composer's own margin-top — see the
-   .cui-root-scroll-bottom offset comment) rather than flush against it, so
-   only a mask anchored to the stage's own bottom edge actually overlaps the
-   scrolling content it is meant to fade. z-index sits below the floor rail
-   (6) and the scroll-bottom capsule (7) so it never dims either of those. */
+/* Design §6 pt.4: a 30px fade mask over the seam where the message stream stops
+   and the fixed bottom dock begins. It is a pseudo-element of the stage rather
+   than of the composer (where the 原型 anchors it, `top:-30px` on the composer's
+   own wrapper): our composer is never flush against the stage — at minimum
+   .cui-root-app's gap plus the composer's own margin-top separate them, and the
+   generate bar / QR strip / new-chat picker widen that distance whenever they
+   are on — so only a mask anchored to the stage's own bottom edge actually
+   overlaps the scrolling content it is meant to fade. The 回到最新 capsule is
+   anchored to that same edge for the same reason (see its offset comment).
+   z-index sits below the floor rail (6) and the scroll-bottom capsule (7) so it
+   never dims either of those. */
 body.chatui-active .cui-root-message-stage::after {
     content: "";
     position: absolute;
@@ -2907,21 +2965,21 @@ body.chatui-active .cui-root-swipe-count {
     letter-spacing: var(--cui-tracking-wide);
 }
 
+/* The containing block for whichever menu hangs off a ⋯ trigger. The topbar's
+   menu is a child of this box; the message list's is portaled to <body> and
+   positioned fixed, so it only borrows the class for the trigger's own layout.
+   No `> summary` rules any more: the topbar ⋯ stopped being a native
+   `<details>` when the menus became one state machine (store/menu-store.ts) —
+   a disclosure the app cannot close on Escape or on an outside click is not a
+   disclosure this design can use. */
 body.chatui-active .cui-root-action-menu {
     position: relative;
 }
 
-body.chatui-active .cui-root-action-menu > summary {
-    list-style: none;
-}
-
-body.chatui-active .cui-root-action-menu > summary::-webkit-details-marker {
-    display: none;
-}
-
-/* Portaled to document.body alongside the message actions' floating menu
-   (see MessageActions.tsx) — same invisible full-viewport click-outside
-   pattern as .cui-root-selchip-backdrop. */
+/* The invisible full-viewport click-outside layer both ⋯ menus use — the same
+   pattern as .cui-root-selchip-backdrop. Portaled to document.body under the
+   message list's menu (MessageMenuHost.tsx), an ordinary child under the
+   topbar's (TopbarMenu.tsx); `position: fixed` makes those the same box. */
 body.chatui-active .cui-root-menu-backdrop {
     position: fixed;
     inset: 0;
@@ -3076,17 +3134,35 @@ body.chatui-active .cui-root-scroll-bottom {
     position: absolute;
     left: 0;
     right: 0;
-    /* Design: ~23px of air between the capsule and the composer's own top
-       edge (原型's capsule sits at `top:-52px` inside a composer wrapper
-       whose own height puts that ~24px below the capsule's bottom). 12px of
-       that is already paid by the frame — .cui-root-app's 0.5rem column gap
-       plus the composer's own 0.25rem top margin — so this offset is the
-       remainder, not the whole distance. Verified unaffected by the
-       decoration row landing inside the composer (pr4 baton 3): that row's
-       own rule line sits well inside the composer's padding, but this
-       capsule was always measured to the composer's outer box, not to
-       whatever draws at its top edge — real Chromium measurement after
-       the row landed still reads ~23px, unchanged. */
+    /* Welded to the seam — the edge where the scrolling stream stops and the
+       fixed bottom dock (generate bar / QR strip / new-chat picker / composer,
+       whichever of them exist) begins. That edge is this element's containing
+       block's own bottom edge, and it is the same edge ::after hangs its fade
+       mask on, so the capsule and the fade it sits in can never drift apart.
+
+       The number: the design wants ~23px of air over the composer's top edge
+       (原型's capsule is `top:-52px` inside a composer wrapper whose own height
+       puts that ~24px below the capsule's bottom). 12px of that is already paid
+       by the frame — .cui-root-app's 0.5rem column gap plus the composer's
+       0.25rem top margin — so this offset is the remainder. Measured 23.18px in
+       Chromium when the composer is the *only* thing in the dock.
+
+       That last clause is load-bearing and used to be missing. This comment
+       read 「this capsule was always measured to the composer's outer box」 as
+       an unconditional claim, and a visual-QA pass duly read it as the contract
+       and filed the QR-strip screenshots as a positioning bug. It is not the
+       contract, and it is not what the code does. Measured at 390px with a
+       three-button QR strip in the dock: the capsule keeps exactly its 11.18px
+       to the seam (unchanged from the no-QR case, at every scroll offset and
+       every viewport) while the composer's top edge is 67.18px away, because
+       the strip and its gap sit in between. Nothing moved; the composer did.
+
+       The seam is the referent, not the composer, and it has to be: welding the
+       capsule 23px above the composer's outer box instead would place it at
+       656.0–683.9 against a QR strip occupying 659.0–695.0 — 25 of the
+       capsule's 27.9px would be lying on top of the quick-reply buttons. A
+       control that offers a scroll position belongs to the thing that scrolls,
+       not to the furniture underneath it. */
     bottom: 0.7rem;
     z-index: 7;
     width: fit-content;
@@ -3697,6 +3773,26 @@ body.chatui-active .cui-root-selchip-backdrop {
     cursor: default;
 }
 
+/* `width: max-content` is not a preference here, it is the fix for a wrong
+   containing block. This menu is absolutely positioned inside .cui-root-selchip,
+   which is nothing but the chip button — ~90px. An absolutely positioned box
+   with no second inset resolves its width shrink-to-fit against *that* 90px,
+   not against its own content, so the menu came out at exactly `min-width` and
+   nothing wider than 176px could ever fit on one line: the title row wrapped
+   (it carries --cui-tracking-stamp's 0.3em and a 26px gutter indent, so it hits
+   the wall first) and so did ordinary rows like `Universal-Super-Creative`.
+   `max-width: 18rem` was unreachable. Sizing to max-content asks the content
+   instead, and the cap goes back to being the cap.
+
+   The narrow-screen case this has to survive: the topbar persona menu is
+   right-anchored (see .cui-root-topbar .cui-root-selchip-menu) against a chip
+   that collapses to a 32px icon at <=480px, so the menu grows leftwards from
+   the right edge of the frame. Measured in the pinned host with the width
+   pinned at the 288px cap — the worst case the cap allows — the menu's left
+   edge lands at 147px (480 wide) and 57px (390 wide), and
+   documentElement.scrollWidth still equals clientWidth at both. The cap has
+   room to spare because the frame's own side padding and the ⋯ trigger are
+   already inside those numbers. */
 body.chatui-active .cui-root-selchip-menu {
     position: absolute;
     z-index: var(--cui-popup-z);
@@ -3705,6 +3801,7 @@ body.chatui-active .cui-root-selchip-menu {
     margin: 0;
     padding: 0.25rem;
     list-style: none;
+    width: max-content;
     min-width: 11rem;
     max-width: 18rem;
     max-height: 50vh;
@@ -3732,9 +3829,16 @@ body.chatui-active .cui-root-selchip-empty {
 /* ---------------------------------------------------------------------------
    6. Toasts  (ChatUI-owned feedback)
    --------------------------------------------------------------------------- */
+/* Design §10 puts the toast at the *foot* of the stage, centred, 120px up.
+   It used to sit at top:1rem, where it covered the topbar every single time:
+   the eyebrow was cut mid-word and the conversation title was pushed out from
+   under it — the one surface whose job is to report what just happened was
+   hiding the thing it happened to. 120px is the design's own number and it
+   clears the composer; the width rules are unchanged, only the edge it hangs
+   from. */
 body.chatui-active .cui-root-toasts {
     position: fixed;
-    top: 1rem;
+    bottom: 120px;
     left: 50%;
     transform: translateX(-50%);
     z-index: calc(var(--cui-sheet-z) + 50);
@@ -3746,25 +3850,33 @@ body.chatui-active .cui-root-toasts {
     pointer-events: none;
 }
 
+/* The card itself is §10 verbatim: raised ground, one hairline rule all the
+   way round, 8px corner, 12px type. What it is *not* any more is a pill with a
+   3px colored spine down its left edge — that was the old dialect's way of
+   saying which kind of toast this is, and the design draws one uniform card.
+   Nothing is lost by dropping it: each kind already arrives with its own
+   glyph (circle-check / circle-exclamation / circle-info, Toaster.tsx) and
+   each of those glyphs is inked in its own status color below, so the spine
+   was the third copy of a distinction the icon already made twice.
+
+   The entrance is the shared cui-fade-in rather than a private keyframe:
+   §10 asks for the same fade the rest of the app uses, and rising 6px into
+   place is the right direction now that the toast lives at the bottom — the
+   old private keyframe dropped it *downward* from above, which only ever made
+   sense when it hung from the top edge. */
 body.chatui-active .cui-root-toast {
     display: flex;
     align-items: center;
     gap: 0.55rem;
     pointer-events: auto;
     padding: 0.5rem 0.6rem 0.5rem 0.75rem;
-    border: 1px solid var(--cui-color-border);
-    border-left-width: 3px;
+    border: 1px solid var(--cui-rule-raised);
     border-radius: var(--cui-radius-md);
-    background-color: var(--cui-color-surface);
+    background-color: var(--cui-color-raised);
     box-shadow: 0 6px 22px var(--cui-color-shadow);
     color: var(--cui-color-text);
     font-size: var(--cui-font-tight);
-    animation: cui-toast-in var(--cui-motion-base) ease forwards;
-}
-
-@keyframes cui-toast-in {
-    from { opacity: 0; transform: translateY(-0.4rem); }
-    to { opacity: 1; transform: translateY(0); }
+    animation: cui-fade-in var(--cui-motion-reveal) ease both;
 }
 
 body.chatui-active .cui-root-toast > i:first-child {
@@ -3772,24 +3884,19 @@ body.chatui-active .cui-root-toast > i:first-child {
     opacity: 0.9;
 }
 
-body.chatui-active .cui-root-toast-success {
-    border-left-color: var(--cui-color-success);
-}
-
 body.chatui-active .cui-root-toast-success > i:first-child {
     color: var(--cui-color-success);
-}
-
-body.chatui-active .cui-root-toast-error {
-    border-left-color: var(--cui-color-danger);
 }
 
 body.chatui-active .cui-root-toast-error > i:first-child {
     color: var(--cui-color-danger);
 }
 
-body.chatui-active .cui-root-toast-info {
-    border-left-color: var(--cui-color-info);
+/* The neutral kind keeps its gold too, moved from the left spine onto the
+   glyph the way the other two already had theirs — otherwise dropping the
+   spine would have left info as the only kind with no color at all. */
+body.chatui-active .cui-root-toast-info > i:first-child {
+    color: var(--cui-color-info);
 }
 
 body.chatui-active .cui-root-toast-text {

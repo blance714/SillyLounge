@@ -1,11 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
+    closeChatuiMenu,
+    closeChatuiMenuById,
     getChatuiSelectorOptions,
     notifyChatui,
     selectChatuiSelector,
     subscribeChatuiSelectorSync,
+    toggleChatuiMenu,
 } from '../actions.js';
+import { useActiveChatuiMenu } from '../hooks.js';
 
 export type SelectorKind = 'preset' | 'model' | 'persona';
 type SelectorOption = { value: string; label: string; selected: boolean };
@@ -31,10 +35,19 @@ const KIND_MENU_TITLE: Record<SelectorKind, string> = {
 };
 
 function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): ComponentChild {
-    const [isOpen, setIsOpen] = useState(false);
+    // One component, three instances (composer: 预设/模型, topbar: 人设), so the
+    // menu id has to carry the kind — the single open slot in
+    // store/menu-store.ts is what makes them mutually exclusive with each other
+    // and with every other menu.
+    const menuId = `selector:${kind}` as const;
+    const isOpen = useActiveChatuiMenu()?.id === menuId;
     const [options, setOptions] = useState<SelectorOption[]>([]);
     const mountedRef = useRef(false);
     const requestIdRef = useRef(0);
+
+    // A chip that leaves the tree (settings mode, or the composer's decoration
+    // row changing shape) takes its own menu with it and no one else's.
+    useEffect(() => () => closeChatuiMenuById(menuId), [menuId]);
 
     const refresh = useCallback(async () => {
         const requestId = ++requestIdRef.current;
@@ -64,7 +77,7 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
     const current = options.find(option => option.selected);
 
     const choose = async (value: string) => {
-        setIsOpen(false);
+        closeChatuiMenu();
         try {
             await selectChatuiSelector(kind, value);
         } catch (error) {
@@ -82,7 +95,7 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
                 aria-haspopup="listbox"
                 aria-expanded={isOpen}
                 title={`${KIND_LABEL[kind]}：${current?.label || '未选择'}`}
-                onClick={() => setIsOpen(open => !open)}
+                onClick={() => toggleChatuiMenu(menuId)}
             >
                 <i className={icon} />
                 <span className="cui-root-selchip-label">{current?.label || '—'}</span>
@@ -94,7 +107,7 @@ function SelectorChip({ kind, icon }: { kind: SelectorKind; icon: string }): Com
                         className="cui-root-selchip-backdrop"
                         type="button"
                         aria-label="关闭菜单"
-                        onClick={() => setIsOpen(false)}
+                        onClick={() => closeChatuiMenu()}
                     />
                     <ul className="cui-root-selchip-menu cui-paper" role="listbox">
                         <li className="cui-paper-title" role="presentation">{KIND_MENU_TITLE[kind]}</li>
