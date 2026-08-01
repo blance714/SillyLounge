@@ -129,19 +129,42 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
     await page.mouse.move(railBox.x + railBox.width + 80, railBox.y + railBox.height + 80);
     await expect(rail.locator('.cui-root-floor-popover')).toHaveCount(0);
 
+    // The edit round-trip, and then the same round-trip in reverse.
+    //
+    // This spec asserts a pristine fixture up at the hostState check, and it
+    // writes to the shared disposable host that playwright-global-setup.mjs
+    // boots once for the whole run. Those two facts only coexisted while the
+    // suite ran in exactly one browser: adding the Gecko project made the
+    // second engine open a chat the first engine had already rewritten, and
+    // the pristine-fixture assertion failed on text this very spec had
+    // persisted. Restoring the original text is what makes the spec
+    // idempotent, and idempotent is the house rule for anything touching the
+    // shared host (see confirm-dialog-keyboard.spec.mjs, which answers its
+    // dialog with cancel for the same reason).
+    const originalText = '第二条测试消息。';
     const editedText = '第二条测试消息（已编辑）。';
     const editableMessage = root.locator('[data-cui-message-id="2"]');
-    await editableMessage.hover();
-    await editableMessage.getByRole('button', { name: '编辑' }).click();
-    const editor = editableMessage.locator('.cui-root-edit-textarea');
-    await expect(editor).toHaveValue('第二条测试消息。');
-    await editor.fill(editedText);
-    await editableMessage.getByRole('button', { name: '落笔' }).click();
-    await expect(editableMessage.locator('.cui-root-edit-textarea')).toHaveCount(0);
-    await expect(editableMessage.locator('.cui-root-message-body')).toHaveText(editedText);
-    await expect.poll(() => page.evaluate(() => (
-        globalThis.SillyTavern?.getContext?.().chat?.[2]?.mes
-    ))).toBe(editedText);
+
+    /** One full edit: open, retype, 落笔, and read the result back off the host. */
+    async function rewriteSecondMessage(from, to) {
+        await editableMessage.hover();
+        await editableMessage.getByRole('button', { name: '编辑' }).click();
+        const editor = editableMessage.locator('.cui-root-edit-textarea');
+        await expect(editor).toHaveValue(from);
+        await editor.fill(to);
+        await editableMessage.getByRole('button', { name: '落笔' }).click();
+        await expect(editableMessage.locator('.cui-root-edit-textarea')).toHaveCount(0);
+        await expect(editableMessage.locator('.cui-root-message-body')).toHaveText(to);
+        await expect.poll(() => page.evaluate(() => (
+            globalThis.SillyTavern?.getContext?.().chat?.[2]?.mes
+        ))).toBe(to);
+    }
+
+    await rewriteSecondMessage(originalText, editedText);
+    // Back to the fixture. Not a teardown afterthought: the second pass
+    // re-exercises the same path from the edited state, so a save that only
+    // works on a virgin message would still fail here.
+    await rewriteSecondMessage(editedText, originalText);
 
     const screenshot = await page.screenshot({ fullPage: true });
     await testInfo.attach('sillylounge-smoke', { body: screenshot, contentType: 'image/png' });
