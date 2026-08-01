@@ -734,9 +734,17 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 | 固件守卫拒绝未签名或跨运行的数据根 | `test/e2e/st-process.test.mjs :: fixture guard rejects unsigned or out-of-run data roots` |
 | 服务器生命周期传递隔离路径、探测就绪并释放进程 | `test/e2e/st-process.test.mjs :: server lifecycle passes isolated paths, probes readiness, and releases the process` |
 
-## 13. 浏览器门禁（真实 Chromium + 一次性 SillyTavern 宿主）
+## 13. 浏览器门禁（真实 Chromium + 真实 Firefox + 一次性 SillyTavern 宿主）
 
-这些不是 `node --test` 单测，按门禁位置登记：
+这些不是 `node --test` 单测，按门禁位置登记。
+
+**引擎矩阵**：CI 在 Blink 与 Gecko 上各跑一遍全部 `e2e/*.spec.mjs`
+（`playwright.config.mjs` 两个 project）。这条是补上的欠账而非锦上添花：`.cui-root-rails`
+的宽度缺陷（55af8f1）在 Chromium 下完全看不见、在维护者的 Firefox 里肉眼可见，连过三波
+全绿的 QA——**只在一个引擎上跑的布局门禁不算门禁**。本地 `pnpm run test:e2e` 钉死
+`--project=chromium`，因为 Playwright 的 Firefox 在维护者的 Mac 上根本起不来
+（`RenderCompositorSWGL` 无法映射帧缓冲，无头有头皆然）；能起来的机器用
+`pnpm run test:e2e:gecko`。
 
 - **`e2e/smoke.spec.mjs`**（CI 门禁，dist 发布前必须通过）：真实 ST 服务器 + 真实
   Chromium 下，smoke 会话正确投影进 SillyLounge，含一次真实消息编辑往返（回读
@@ -754,6 +762,20 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   `repeat` 的 keydown**，否则「弹窗还在」可能是空过。最后用一次全新的 `Enter` 激活
   取消钮收场：既证明陷阱与守卫没有顺手弄坏弹窗正常的键盘回答，也让整条脚本对共享
   的一次性宿主**零改动**（全程不删任何消息）。
+- **`e2e/rails-geometry.spec.mjs`**（CI 门禁，两个引擎各跑一遍）：在维护者的真实窗宽
+  **889px** 上，聊天模式与设置模式各断言一次左侧骨架的**关系**而非像素——
+  `.cui-root-rails` 宽度恒等于 spine 宽 + 它当下所持轨宽（聊天是 playbill，设置是设置
+  导航）、该轨的右沿不越出 rails 自己的裁切边界、舞台列的左沿恰好落在 rails 的右沿。
+  这三条一起封死一整类缺陷：rails 带 `overflow: hidden`，一旦它的宽度算小，就会裁掉
+  自己存在的理由，同时让舞台钻到剩下的轨底下。**必须写成关系式**，因为原缺陷正是两个
+  引擎对同一份 CSS 算出不同像素（Gecko 58+133，Blink 58+300）——钉死像素只会把其中
+  一个引擎的答案固化成"正确答案"。
+- **`e2e/settings-embed-width.spec.mjs`**（CI 门禁，两个引擎各跑一遍）：在 **976px**
+  视口（ST 自己 `mobile-styles.css` 的 1000px 断点之下、而套件其余视口 1280/768/390
+  都不巡的走廊）打开设置 → AI 配置，断言嵌入的 ST 抽屉面板只填满内容列而非整个视口、
+  仍是 `position: static`、且穿的是 ST 桌面版皮肤（10px 圆角）而非移动抽屉皮肤。守的是
+  `.cui-settings-host` 整平选择器必须带 `#chatui-root` 祖先才压得过 ST 用 ID
+  加 `!important` 写的移动端规则（c745053）。
 - **`scripts/e2e/measure-chat-switch.mjs`**（CI 门禁，publish-dist 的显式步骤）：双
   400 楼会话经真实侧栏 A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表
   声明 800 条但只挂载有界窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、
