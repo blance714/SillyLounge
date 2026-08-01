@@ -4248,8 +4248,16 @@ body.chatui-active .cui-settings-chatui {
 }
 
 /* Flatten all ST positioning so .drawer-content fills its host naturally.
-   !important overrides ST's own stylesheet rules AND any movingUI inline styles. */
-body.chatui-active .cui-settings-host .drawer-content {
+   !important overrides ST's own stylesheet rules AND any movingUI inline styles.
+
+   The `#chatui-root` ancestor is load-bearing, not decoration: below 1000px
+   ST's mobile-styles.css targets the very same panels BY ID with !important
+   (`#left-nav-panel { min-width: 100dvw !important; left: 0 !important; … }`),
+   and an id (1,0,0) outranks any pile of classes. Every selector in this
+   flatten must therefore carry the root id (1,2,1) or the embedded panel
+   snaps to viewport width in 769–1000px windows — the exact corridor of
+   window sizes no e2e viewport (1280/768/390) ever visits. */
+body.chatui-active #chatui-root .cui-settings-host .drawer-content {
     position: static !important;
     inset: auto !important;
     top: auto !important;
@@ -4259,6 +4267,7 @@ body.chatui-active .cui-settings-host .drawer-content {
     width: 100% !important;
     height: auto !important;
     max-height: none !important;
+    max-width: none !important;
     min-width: 0 !important;
     display: block !important;
     overflow-y: auto !important;
@@ -4270,8 +4279,8 @@ body.chatui-active .cui-settings-host .drawer-content {
    ST's .fillRight { position:fixed; right:0; z-index:3000; height:0 } must be fully overridden
    or the panel escapes its host and appears outside the layout.
    Source: SillyTavern/public/style.css lines 5605–5656. */
-body.chatui-active .cui-settings-host .fillRight,
-body.chatui-active .cui-settings-host .fillLeft {
+body.chatui-active #chatui-root .cui-settings-host .fillRight,
+body.chatui-active #chatui-root .cui-settings-host .fillLeft {
     position: static !important;
     right: auto !important;
     left: auto !important;
@@ -4279,6 +4288,7 @@ body.chatui-active .cui-settings-host .fillLeft {
     z-index: auto !important;
     height: auto !important;
     max-height: none !important;
+    max-width: none !important;
     width: 100% !important;
     min-width: 0 !important;
     box-shadow: none !important;
@@ -4286,10 +4296,26 @@ body.chatui-active .cui-settings-host .fillLeft {
 }
 
 /* fillRight.openDrawer sets display:flex and height:100% — re-flatten. */
-body.chatui-active .cui-settings-host .fillRight.openDrawer,
-body.chatui-active .cui-settings-host .fillLeft.openDrawer {
+body.chatui-active #chatui-root .cui-settings-host .fillRight.openDrawer,
+body.chatui-active #chatui-root .cui-settings-host .fillLeft.openDrawer {
     display: block !important;
     height: auto !important;
+}
+
+/* Below ST's 1000px mobile breakpoint, mobile-styles.css also reskins the
+   drawer panels (side borders, 0 0 20px 20px radius, doubled backdrop blur)
+   via the same id selectors. Those are cosmetics for a full-screen overlay
+   the panel no longer is; pin the desktop base values from ST's own
+   .drawer-content rule so the embedded panel looks identical at 950px and
+   1280px. No !important needed — the mobile declarations are non-important,
+   so (1,2,1) specificity alone wins. */
+@media (max-width: 1000px) {
+    body.chatui-active #chatui-root .cui-settings-host .drawer-content {
+        border: 1px solid var(--SmartThemeBorderColor);
+        border-radius: 10px;
+        backdrop-filter: blur(calc(var(--SmartThemeBlurStrength)));
+        -webkit-backdrop-filter: blur(calc(var(--SmartThemeBlurStrength)));
+    }
 }
 
 /* Mobile: stack vertically.
