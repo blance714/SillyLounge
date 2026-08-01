@@ -249,6 +249,12 @@ Last updated: 2026-07-31
 注释),所以这张卡要么复用同一个入口(那主按钮文案就不能叫「浏览文件」),要么先
 补一个真的导入路径。**决定「叫什么」之前不要先画卡。**
 
+**验证注意事项(方法学)**:真机验收这一格时,零角色空态**无法从 fixture 生成器
+直接开局复现**——`scripts/e2e/generate-data-root.mjs` 的 `generateStDataRoot()`
+只认单个 `fixture.character` 字段,写不出一个角色都没有的 dataRoot。要拿到真正的
+零角色画面,得先用现有 fixture 正常起一次 ST,再在跑起来的实例里把那一个角色真
+删掉,之后才能截图验收;改生成器参数指望它一开局就是零角色,这条路走不通。
+
 **A3 ⋯ 菜单还差两行。**
 设计稿 §7 给了五行,pr7 落了「从末楼开新分支」「角色卡设定……」「删除对话……」并把
 「重命名对话」接到标题铅笔的同一份状态上;缺的是**让模型重拟题名**与**导出为纯
@@ -263,6 +269,35 @@ adapter 今天只能回答「现在是不是群聊」,画一个永远不可点�
 而不是空白」这后半条**今天无法触发**。落点:`adapter/chats` 补「列群聊 / 切群聊」
 导出,再让 `spine-cast.ts` 把群聊当成一类座位。这是长尾里「群聊对话列表」那条的
 前置。
+
+**A5 persona 菜单缺头像与「管理身份……」(README §7)。**
+README §7:「身份(persona)chip……弹 200px 宣纸菜单『以谁的身份落笔』,列表项带
+20px 圆形渐变头像 + ✓ 选中标;底部『管理身份……』。」现状是 `SelectorChip.tsx` 的
+`SelectorOption` 只有 `value`/`label`/`selected`,preset/model/persona 三种 kind
+共用同一份纯文字列表项,没有头像位,也没有底部管理行。这是两件独立的事:
+
+- **头像**:`adapter/selectors.ts` 的 `_personaOptions()` 已经把 ST 的 avatar
+  文件名当 `value` 用,但没转成图片 URL——ST 自己的 `getUserAvatar(avatarImg)`
+  (`@st/personas`,与已经在导入的 `getUserAvatars`/`setUserAvatar`/`user_avatar`
+  同一模块)就是那个转换函数。落点:只给 persona 这一支的选项加一个
+  `kind === 'persona'` 才有的 `avatarUrl` 字段,不污染 preset/model 共用的
+  `SelectorOption` 形状,`SelectorChip.tsx` 按 kind 决定要不要画头像。**几何要
+  重测**:第 2 棒的 480px 验收把 persona 菜单钉在 `max-content` 上限、390px 档
+  最坏情况左沿只剩 57px 余量(`t3-480-topbar-persona-menu.png`),20px 圆头像会
+  吃掉其中一部分,不能假定那次测量在加了头像之后还成立。
+- **管理身份**:落点是 `openChatuiSettings('st:PersonaManagement')`——这个具名
+  设置入口本来就在(`adapter/settings.ts:202`,标签正好叫「人设」),和
+  `Spine.tsx` 的「＋」调 `openChatuiSettings('st:right-nav-panel')` 打开角色
+  管理面板是同一个模式,不用新开一条路。这半条挂的是跟 **A2 同一枚决策**:
+  「ChatUI 没有的管理面,是直接开 ST 原生面板,还是自己另起一个」——A2 那边悬而
+  未决,是因为设计稿按钮文案「浏览文件」暗示一次真正的文件选择,复用面板会文不
+  对题;这边不撞这个坑,设计稿文案本来就叫「管理身份……」,跟面板的实际标签语义
+  对得上,可以直接照抄 `Spine.tsx` 的先例——但落笔顺序仍然是 A2 那条决策先拍板,
+  这里跟着用同一个答案,不单独抢跑。
+
+`DESIGN.md` 目前也没收编这半张菜单:§4.1 只写了 persona chip 折叠成图标按钮的
+换皮,没提列表项该长什么样;§6「确认与浮层」的菜单互斥契约同样没提到头像或管理
+行。要做**先更新契约**,再动 `SelectorChip.tsx`。
 
 ### B · 场刊/卡片的产品缺口
 
@@ -280,11 +315,15 @@ adapter 今天只能回答「现在是不是群聊」,画一个永远不可点�
 栏这条路径连那份缓存都没有。可行方案是一个只认 markdown 标记的纯函数,和
 `spine-cast.ts` 同一档:无依赖、可单测。
 
-**B3 草稿卡标题的截断方式与普通卡不一致。**
-`.cui-root-nested-chat-row-name` 是两行 clamp(style.css 里写了理由:会话题名是散
-文,单行省略号恰好扔掉区分两个夜晚的那一半),而 `.cui-root-draft-card-name` 仍是
-`white-space: nowrap` + 尾部省略。落点:把它并进同一组 clamp 规则。**纯 CSS 一
-行**,只是要跟着重跑一次几何门。
+**~~B3 草稿卡标题的截断方式与普通卡不一致~~ 已被反向解决(`df83b22`)。**
+本条原本的落点是把草稿卡并进普通卡的两行 clamp。owner review 第一轮反馈
+(`df83b22`,先于本 backlog 落 pr7 之前)走的是相反方向:把
+`.cui-root-nested-chat-row-name` 从两行 clamp 改成了跟 `.cui-root-draft-card-name`
+一样的 `white-space: nowrap` + 尾部省略(预览行不动,仍是两行 clamp;两行 clamp 本身
+的取舍理由——会话题名是散文,单行省略号恰好扔掉区分两个夜晚的那一半——只是被
+owner 就单行更适合这一列这一点明确推翻)。两个类名现在都是
+`overflow:hidden; text-overflow:ellipsis; white-space:nowrap`,截断方式已经一致。
+**照本条原落点再把它们并回两行 clamp,会推翻这次 owner 决定,不要重做。**
 
 **B4「复制」与「复制原文」的语义待 owner 拍板。**
 pr5 把一个动作拆成两个:「复制」= 这一行真正渲染出来的文本(对已缓存 HTML 做归
@@ -494,8 +533,10 @@ SillyTavern Chromium 门禁与可安装树检查，并自动更新默认的 `dis
 character `⋯ → Edit` 已进入真实 Chromium 门禁。剩余模拟点击写路径已降级为普通架构债。
 
 **下一阶段重心**:先合并长廊剧场分支栈(合并时连「完整度快照」那张表一起重画),
-再按上面的「长廊剧场收官 backlog」排期——其中 C 组(死字段/查询清理)与 B3、F1 是
-低风险的碎片收尾,D2(焦点陷阱)是剩下的那笔可访问性欠账(D1 菜单状态机已于
-2026-08-01 落地),A 组是真正的
-产品缺口且都卡在 adapter 导出上。原有的长期项(手机回归覆盖与适配、删除确认等产品
+再按上面的「长廊剧场收官 backlog」排期——C 组(死字段/查询清理)是低风险的碎片
+收尾,F1 只剩设置页/代码块/QR bar 三处未覆盖(toast 已于 2026-08-01 落地),B3 已
+被 owner 第一轮反馈(`df83b22`)反向解决,不再是待办;D2(焦点陷阱)是剩下的那笔
+可访问性欠账(D1 菜单状态机已于 2026-08-01 落地),A 组(含新增的 A5)是真正的
+产品缺口,多数卡在 adapter 导出上——A5 的「管理身份」半条是例外,复用的设置入口
+已经现成。原有的长期项(手机回归覆盖与适配、删除确认等产品
 行为的浏览器脚本、§7 深化、搜索、群聊列表与 Mode B)不变,其中群聊列表以 A4 为前置。
