@@ -4,7 +4,9 @@ import test from 'node:test';
 import {
     CHATUI_CONFIRM_KEY_GUARD_MS,
     cancelChatuiConfirm,
+    decideConfirmKeyAction,
     getChatuiConfirmRequest,
+    nextConfirmFocusIndex,
     requestChatuiConfirm,
     resetChatuiConfirmStore,
     resolveChatuiConfirm,
@@ -230,4 +232,209 @@ test('shouldAcceptConfirmKey is pure: it reads nothing from the store, so an ope
         false,
         'and the refusing answer is equally independent of store state',
     );
+});
+
+// --- The whole keyboard model ------------------------------------------------
+// decideConfirmKeyAction() is the dialog's keyboard matrix as one pure
+// function, so every cell of it — which key, from which focus, how long after
+// the dialog opened, held or freshly pressed — is pinned here rather than
+// living only in a component that needs a browser to observe.
+
+const FOCUS_ZONES = ['inside', 'outside', 'none'];
+const ACTIVATION_KEYS = ['Enter', ' '];
+/** Comfortably past the guard window, so a cell only refuses for its own reason. */
+const PAST_GUARD = OPENED_AT + 5_000;
+/** Inside it, by the last millisecond that still counts as inside. */
+const INSIDE_GUARD = OPENED_AT + CHATUI_CONFIRM_KEY_GUARD_MS - 1;
+
+function decide(overrides) {
+    return decideConfirmKeyAction({
+        key: 'Enter',
+        repeat: false,
+        shiftKey: false,
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        focus: 'inside',
+        openedAtMs: OPENED_AT,
+        nowMs: PAST_GUARD,
+        ...overrides,
+    });
+}
+
+test('decideConfirmKeyAction cancels on Escape from every cell of the matrix — inside the guard window, from any focus, and while a held Escape auto-repeats', () => {
+    for (const focus of FOCUS_ZONES) {
+        for (const nowMs of [OPENED_AT, INSIDE_GUARD, PAST_GUARD]) {
+            for (const repeat of [false, true]) {
+                assert.equal(
+                    decide({ key: 'Escape', focus, nowMs, repeat }),
+                    'cancel',
+                    `Escape / ${focus} / +${nowMs - OPENED_AT}ms / repeat=${repeat}`,
+                );
+            }
+        }
+    }
+    // The guard exists to stop an accidental *confirmation*; delaying the way
+    // out of a dialog would make it a hazard rather than a safety.
+    assert.equal(decide({ key: 'Escape', nowMs: OPENED_AT }), 'cancel', 'even in the dialog\'s very first instant');
+    // A modified Escape aimed at a modal still means "get me out".
+    assert.equal(decide({ key: 'Escape', shiftKey: true }), 'cancel');
+    assert.equal(decide({ key: 'Escape', ctrlKey: true }), 'cancel');
+});
+
+test('decideConfirmKeyAction keeps Tab and Shift+Tab on the dialog\'s own focus cycle whatever the guard window says, but leaves browser/OS-level modified Tab alone', () => {
+    for (const focus of FOCUS_ZONES) {
+        for (const nowMs of [OPENED_AT, INSIDE_GUARD, PAST_GUARD]) {
+            // Moving focus is not an answer to anything, so the time guard has
+            // no business refusing it — a dialog that cannot be tabbed for its
+            // first 300ms would just be a broken dialog.
+            assert.equal(decide({ key: 'Tab', focus, nowMs }), 'focus-next', `Tab / ${focus} / +${nowMs - OPENED_AT}ms`);
+            assert.equal(
+                decide({ key: 'Tab', shiftKey: true, focus, nowMs }),
+                'focus-previous',
+                `Shift+Tab / ${focus} / +${nowMs - OPENED_AT}ms`,
+            );
+        }
+    }
+    // Holding Tab to walk a dialog is ordinary keyboard use, so unlike an
+    // activation key, an auto-repeated Tab still navigates.
+    assert.equal(decide({ key: 'Tab', repeat: true }), 'focus-next');
+    assert.equal(decide({ key: 'Tab', repeat: true, shiftKey: true }), 'focus-previous');
+
+    // Ctrl/Alt/Meta+Tab belong to the browser or the window manager.
+    assert.equal(decide({ key: 'Tab', ctrlKey: true }), 'ignore');
+    assert.equal(decide({ key: 'Tab', altKey: true }), 'ignore');
+    assert.equal(decide({ key: 'Tab', metaKey: true }), 'ignore');
+    assert.equal(decide({ key: 'Tab', ctrlKey: true, shiftKey: true }), 'ignore');
+});
+
+test('decideConfirmKeyAction swallows an auto-repeated activation keystroke however long the dialog has been open — a held key is one physical press, not a stream of answers', () => {
+    for (const key of ACTIVATION_KEYS) {
+        for (const focus of FOCUS_ZONES) {
+            assert.equal(
+                decide({ key, focus, repeat: true, nowMs: PAST_GUARD }),
+                'swallow',
+                `held ${JSON.stringify(key)} / ${focus} / long past the guard window`,
+            );
+        }
+    }
+
+    // The contrast is the whole point: the *same* cells with repeat=false are
+    // not swallowed, so it is the auto-repeat doing the refusing and not the
+    // clock. Time alone cannot catch this case — hold Enter down and the 300ms
+    // window expires underneath the held key, which is exactly the accident
+    // the guard was written for ("a dialog appeared under hands already
+    // typing"), just spelled with one long keypress instead of two short ones.
+    assert.equal(decide({ key: 'Enter', focus: 'inside', repeat: false }), 'stand-down');
+    assert.equal(decide({ key: 'Enter', focus: 'none', repeat: false }), 'confirm');
+    assert.equal(decide({ key: ' ', focus: 'inside', repeat: false }), 'stand-down');
+});
+
+test('decideConfirmKeyAction swallows every activation keystroke inside the guard window, whoever it was aimed at', () => {
+    for (const key of ACTIVATION_KEYS) {
+        for (const focus of FOCUS_ZONES) {
+            for (const nowMs of [OPENED_AT, OPENED_AT + 1, INSIDE_GUARD]) {
+                assert.equal(
+                    decide({ key, focus, nowMs }),
+                    'swallow',
+                    `${JSON.stringify(key)} / ${focus} / +${nowMs - OPENED_AT}ms`,
+                );
+            }
+        }
+    }
+    // Swallowed, not ignored: the confirm button already has focus, so merely
+    // declining to act would still leave its native activation to run.
+    assert.equal(decide({ key: 'Enter', focus: 'inside', nowMs: OPENED_AT }), 'swallow');
+    // A bad clock refuses too, inheriting shouldAcceptConfirmKey's fail-closed
+    // reading rather than sailing past the comparison.
+    assert.equal(decide({ nowMs: Number.POSITIVE_INFINITY }), 'swallow');
+    assert.equal(decide({ nowMs: Number.NaN }), 'swallow');
+    assert.equal(decide({ nowMs: OPENED_AT - 60_000 }), 'swallow');
+});
+
+test('decideConfirmKeyAction past the guard stands down for a control inside the dialog and swallows one aimed outside it, so one keystroke is never two answers', () => {
+    for (const key of ACTIVATION_KEYS) {
+        // The focused button activates itself natively; answering here as well
+        // would fire the same answer twice.
+        assert.equal(decide({ key, focus: 'inside' }), 'stand-down', `${JSON.stringify(key)} inside`);
+        // Focus has left the modal (a body child that appeared after mount is
+        // not covered by the background isolation). A keystroke aimed at a
+        // control hidden under the veil answers nothing — and must not travel
+        // on to that control either.
+        assert.equal(decide({ key, focus: 'outside' }), 'swallow', `${JSON.stringify(key)} outside`);
+    }
+    // Modifiers do not turn an escaped keystroke back into somebody else's.
+    assert.equal(decide({ focus: 'outside', ctrlKey: true }), 'swallow');
+    assert.equal(decide({ focus: 'inside', shiftKey: true }), 'stand-down');
+});
+
+test('decideConfirmKeyAction answers confirm only for a bare Enter aimed at nothing: Space at nothing in particular, or a modified Enter, is not an answer', () => {
+    assert.equal(decide({ key: 'Enter', focus: 'none' }), 'confirm');
+
+    assert.equal(decide({ key: ' ', focus: 'none' }), 'ignore', 'Space at nothing is not an answer to anything');
+    for (const modifier of ['altKey', 'ctrlKey', 'metaKey', 'shiftKey']) {
+        assert.equal(
+            decide({ key: 'Enter', focus: 'none', [modifier]: true }),
+            'ignore',
+            `${modifier}+Enter is not "the answer" anywhere else in this app`,
+        );
+    }
+});
+
+test('decideConfirmKeyAction ignores every key that is no part of the dialog\'s model, in and out of the guard window', () => {
+    for (const key of ['a', '1', 'ArrowDown', 'Home', 'F5', 'Shift', 'Backspace', 'Delete', 'Enterprise']) {
+        for (const focus of FOCUS_ZONES) {
+            for (const nowMs of [OPENED_AT, PAST_GUARD]) {
+                assert.equal(
+                    decide({ key, focus, nowMs }),
+                    'ignore',
+                    `${JSON.stringify(key)} / ${focus} / +${nowMs - OPENED_AT}ms`,
+                );
+            }
+        }
+    }
+});
+
+// --- Focus trap arithmetic ---------------------------------------------------
+
+test('nextConfirmFocusIndex walks the dialog\'s controls forwards and backwards and wraps at both ends, so Tab can never walk out of the dialog', () => {
+    // Three controls is the three-way delete dialog (escalate / cancel /
+    // confirm) in source order; two is every other caller.
+    assert.equal(nextConfirmFocusIndex(3, 0, false), 1);
+    assert.equal(nextConfirmFocusIndex(3, 1, false), 2);
+    assert.equal(nextConfirmFocusIndex(3, 2, false), 0, 'forwards off the last control wraps to the first');
+    assert.equal(nextConfirmFocusIndex(3, 2, true), 1);
+    assert.equal(nextConfirmFocusIndex(3, 1, true), 0);
+    assert.equal(nextConfirmFocusIndex(3, 0, true), 2, 'backwards off the first control wraps to the last');
+
+    assert.equal(nextConfirmFocusIndex(2, 1, false), 0);
+    assert.equal(nextConfirmFocusIndex(2, 0, true), 1);
+
+    // A single control cycles to itself rather than escaping.
+    assert.equal(nextConfirmFocusIndex(1, 0, false), 0);
+    assert.equal(nextConfirmFocusIndex(1, 0, true), 0);
+});
+
+test('nextConfirmFocusIndex pulls focus back in from outside the cycle at the end the browser itself would have entered from, and answers null when there is nothing to focus', () => {
+    // -1 is what indexOf reports when focus is on the card, on <body>, or on
+    // something that has already escaped the modal: Tab re-enters at the top,
+    // Shift+Tab at the bottom.
+    assert.equal(nextConfirmFocusIndex(3, -1, false), 0);
+    assert.equal(nextConfirmFocusIndex(3, -1, true), 2);
+    // Any other out-of-range index is the same situation (a stale index taken
+    // before the dialog re-rendered, say) and must not throw or land nowhere.
+    assert.equal(nextConfirmFocusIndex(3, 3, false), 0);
+    assert.equal(nextConfirmFocusIndex(3, 99, true), 2);
+    assert.equal(nextConfirmFocusIndex(3, -7, false), 0);
+    assert.equal(nextConfirmFocusIndex(3, 1.5, false), 0);
+    assert.equal(nextConfirmFocusIndex(3, Number.NaN, true), 2);
+
+    // Nothing focusable in the dialog: the caller still swallows the keystroke,
+    // so focus stays put instead of leaving the modal.
+    assert.equal(nextConfirmFocusIndex(0, -1, false), null);
+    assert.equal(nextConfirmFocusIndex(0, 0, true), null);
+    assert.equal(nextConfirmFocusIndex(-1, 0, false), null);
+    assert.equal(nextConfirmFocusIndex(2.5, 0, false), null);
+    assert.equal(nextConfirmFocusIndex(Number.NaN, 0, false), null);
+    assert.equal(nextConfirmFocusIndex(Number.POSITIVE_INFINITY, 0, false), null);
 });

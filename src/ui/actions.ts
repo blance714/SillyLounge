@@ -75,8 +75,13 @@ export {
 export {
     resolveChatuiConfirm,
     resetChatuiConfirmStore,
-    shouldAcceptConfirmKey,
-    CHATUI_CONFIRM_KEY_GUARD_MS,
+    decideConfirmKeyAction,
+    nextConfirmFocusIndex,
+} from '../store/confirm-store.js';
+export type {
+    ChatuiConfirmFocusZone,
+    ChatuiConfirmKeyAction,
+    ChatuiConfirmKeystroke,
 } from '../store/confirm-store.js';
 
 export {

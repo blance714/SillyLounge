@@ -741,6 +741,19 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 - **`e2e/smoke.spec.mjs`**（CI 门禁，dist 发布前必须通过）：真实 ST 服务器 + 真实
   Chromium 下，smoke 会话正确投影进 SillyLounge，含一次真实消息编辑往返（回读
   `context.chat` 验证落盘）。
+- **`e2e/confirm-dialog-keyboard.spec.mjs`**（CI 门禁，与 smoke 同一次 Playwright
+  运行）：以真实消息删除确认弹窗为固件（用户消息 → 两态弹窗），钉死 §15.1 里两件
+  纯函数无从回答、只有真浏览器能回答的事。**焦点陷阱**：弹出后焦点在确认钮；连按
+  五次 `Tab`（两整圈多一格）与三次 `Shift+Tab`，每一次都断言焦点仍在弹窗卡片内且
+  落点序列精确匹配 `取消`/`删除` 的回卷顺序；弹窗存续期间 `body` 的每个直接子节点
+  都被标 `inert`（除弹窗自己的 portal），关闭后全部还原为非 `inert`，焦点交还给当初
+  打开弹窗的那个删除按钮。**自动重复**：真实按住 `Enter` 不放——第一次
+  `repeat === false` 的按下就是激活删除按钮、弹出弹窗的那一次，此后不松手，让
+  `300ms` 守卫窗口在被摁住的按键底下过期（按住时长 `3 ×` 守卫窗口）；断言弹窗仍在、
+  `context.chat` 长度不变，并回读一份窗口捕获期按键日志**证明浏览器确实投递了带
+  `repeat` 的 keydown**，否则「弹窗还在」可能是空过。最后用一次全新的 `Enter` 激活
+  取消钮收场：既证明陷阱与守卫没有顺手弄坏弹窗正常的键盘回答，也让整条脚本对共享
+  的一次性宿主**零改动**（全程不删任何消息）。
 - **`scripts/e2e/measure-chat-switch.mjs`**（CI 门禁，publish-dist 的显式步骤）：双
   400 楼会话经真实侧栏 A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表
   声明 800 条但只挂载有界窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、
@@ -862,26 +875,73 @@ promise 用 'cancel' 结算，绝不留空悬 promise），这是钉死的设计
 | 订阅在请求发起时收到该请求、回答后收到 null；取消订阅后不再收到通知 | `test/confirm-store.test.mjs :: subscribeChatuiConfirm notifies with the request on request and with null once answered; unsubscribing stops further notifications` |
 | 连续多轮请求各自拿到独一无二的 id | `test/confirm-store.test.mjs :: sequential requests each get a distinct id, even across many round trips` |
 
-### 15.1 吞键守卫（设计稿 §9）
+### 15.1 键盘模型：吞键守卫与焦点陷阱（设计稿 §6「确认与浮层」）
 
 对话框把焦点交给**确认钮**（不再是取消钮），按键因此直接回答问题；换来的安全性
 不靠焦点位置，而靠一段时间守卫：弹出后 300ms 内的激活键一律吞掉。危险的从来不是
-「用户有意按了回车」，而是「弹窗在用户连打回车的手底下冒出来」。判定被抽成
-`shouldAcceptConfirmKey(openedAtMs, nowMs)` 这个纯函数，因此可以脱离 DOM 钉死；
-组件层只负责记下自己何时挂载、以及把「吞」落实成 preventDefault（否则已获焦的确认
-钮会自己原生点击一次）。
+「用户有意按了回车」，而是「弹窗在用户连打回车的手底下冒出来」。
 
-守卫按**时间**而非按键判定，所以「激活键」由组件层定义为 Enter **与空格**两个：
-设计稿只点名 Enter，是因为它那份原型的按钮是不可聚焦的 span，空格根本够不着；本项
-目用的是真 `<button>`，空格同样会原生激活它，漏掉空格等于给守卫留一个正好一次按键
-宽的洞。空格没有「焦点不在按钮上时的兜底确认」——对着空处敲空格不是对任何问题的
+整套键盘模型收在 `decideConfirmKeyAction(keystroke)` 这个纯函数里：给定按键、修饰
+键、`repeat`、焦点落区（`inside` / `outside` / `none`）、挂载时刻与按键时刻，直接
+判出该做什么（`ignore` / `stand-down` / `swallow` / `cancel` / `confirm` /
+`focus-next` / `focus-previous`）。因此整张矩阵可以脱离 DOM 钉死；组件层只提供规则
+无从知道的两件事（键落在哪、现在几点），再执行判决——把「吞」落实成
+`preventDefault` **加** `stopPropagation`（前者杀掉已获焦确认钮的原生激活，后者拦住
+这个 window 捕获期监听放走的按键去够到帘幕背后的控件），以及按 `nextConfirmFocusIndex`
+的算术把焦点挪到下一站。
+
+「激活键」是 Enter **与空格**两个：设计稿只点名 Enter，是因为它那份原型的按钮是
+不可聚焦的 span，空格根本够不着；本项目用的是真 `<button>`，空格同样会原生激活它，
+漏掉空格等于给守卫留一个正好一次按键宽的洞。空格没有「焦点不在按钮上时的兜底
+确认」——对着空处敲空格不是对任何问题的回答。
+
+**自动重复（`event.repeat`）视为同一次物理按键**。守卫只看时间是不够的：按住 Enter
+不放，300ms 窗口会在**被摁住的那一次按键底下**自己过期，随后系统自动重复出来的
+keydown 就顺理成章地确认了删除——而这正是守卫立意要挡的那次事故（「弹窗在已经在
+打字的手底下冒出来」），只是写成了一次长按而非两次短按。所以带 `repeat` 的激活键
+一律吞掉，无论开了多久。Tab 不受此限：按住 Tab 走浮层是正常键盘用法，且挪焦点不是
 回答。
+
+**焦点陷阱**。组件声明 `aria-modal="true"`，但确认钮是 portal 内最后一个可聚焦元素，
+从前按一次 Tab 焦点就落到帘幕背后的宿主控件上（实测落在 ST 右侧菜单的图标上，完全
+不可见）。现在 Tab / Shift+Tab 由 `nextConfirmFocusIndex(count, currentIndex,
+backwards)` 在弹窗自己的可聚焦控件间循环，两端回卷，焦点不在环上（`-1`）时按浏览器
+自己的方向从对应一端拉回来。同时 `isolateBackground()` 在弹窗存续期间给
+`document.body` 的**直接子节点**加 `inert`（不是 `aria-hidden`：只有 `inert` 同时
+挡住焦点与指针，才对得起「模态」二字）——这是注入宿主页面的扩展，所以隔离范围刻意
+收窄：只标直接子节点、只在一个弹窗的生命周期内、只还原自己标过的那些（本来就
+`inert` 的兄弟节点属于别人，两个方向都不碰），弹窗自己的 portal 跳过。卸载时先撤
+`inert` 再把焦点交还给开弹窗前那个元素（元素已随删除消失就跳过）——顺序反了焦点进
+不去仍然 inert 的子树。窗口级「焦点在外就吞键」的那条从此是**陷阱之下的兜底**（挂载
+之后才出现的 body 子节点不在隔离范围内），不再是唯一的防线。
+
+完整矩阵（守卫期＝弹出后 300ms 内；「外」＝焦点已在弹窗之外，「无」＝没有可聚焦元素
+持有焦点，点击卡片正文即落此格）：
+
+| 按键 | 焦点：内 | 焦点：外 | 焦点：无 |
+| --- | --- | --- | --- |
+| `Esc`（守卫期内外、含 `repeat`、含修饰键） | 取消 | 取消 | 取消 |
+| `Tab` / `Shift+Tab`（守卫期内外、含 `repeat`） | 环内前移／后移 | 拉回环首／环尾 | 拉回环首／环尾 |
+| `Ctrl`/`Alt`/`Meta` + `Tab` | 放行 | 放行 | 放行 |
+| `Enter` / `空格`，`repeat === true` | 吞 | 吞 | 吞 |
+| `Enter` / `空格`，守卫期内 | 吞 | 吞 | 吞 |
+| `Enter` / `空格`，守卫期后 | 让位给原生激活 | 吞 | `Enter` 确认；空格与带修饰的 `Enter` 放行 |
+| 其余按键 | 放行 | 放行 | 放行 |
 
 | 不变量 | 验证 |
 | --- | --- |
 | 守卫窗口是「左闭右开」的 300ms：同一瞬间、1ms、299ms 都拒绝，正好 300ms 及以后接受 | `test/confirm-store.test.mjs :: shouldAcceptConfirmKey refuses an activation keystroke for the whole guard window and accepts it from the boundary onward` |
 | 时间戳异常一律按拒绝处理（时钟倒流、Infinity、NaN、undefined）——坏时间戳绝不能反过来授权一次删除 | `test/confirm-store.test.mjs :: shouldAcceptConfirmKey fails closed on a clock that ran backwards or on a timestamp that is not a finite number` |
 | 判定是纯函数：不读存储状态，有无在场请求都给同一答案 | `test/confirm-store.test.mjs :: shouldAcceptConfirmKey is pure: it reads nothing from the store, so an open dialog, a settled one and no dialog at all give the same answer` |
+| `Esc` 在矩阵每一格都取消：守卫期内、任意焦点落区、按住自动重复、带修饰键 | `test/confirm-store.test.mjs :: decideConfirmKeyAction cancels on Escape from every cell of the matrix — inside the guard window, from any focus, and while a held Escape auto-repeats` |
+| `Tab`/`Shift+Tab` 恒走弹窗自己的焦点环（守卫期不拦、`repeat` 不拦），但 `Ctrl`/`Alt`/`Meta`+`Tab` 属于浏览器与窗口管理器，放行 | `test/confirm-store.test.mjs :: decideConfirmKeyAction keeps Tab and Shift+Tab on the dialog's own focus cycle whatever the guard window says, but leaves browser/OS-level modified Tab alone` |
+| 自动重复的激活键一律吞掉，开多久都一样；同格 `repeat === false` 不吞，证明拒绝的是重复而不是时钟 | `test/confirm-store.test.mjs :: decideConfirmKeyAction swallows an auto-repeated activation keystroke however long the dialog has been open — a held key is one physical press, not a stream of answers` |
+| 守卫期内的激活键无论瞄向哪里都吞（不是「放行」——否则已获焦确认钮会自己原生点击）；坏时钟继承 fail-closed | `test/confirm-store.test.mjs :: decideConfirmKeyAction swallows every activation keystroke inside the guard window, whoever it was aimed at` |
+| 守卫期后：焦点在弹窗内让位给原生激活（不重复回答），焦点在弹窗外一律吞掉（不回答也不放它去够帘幕后的控件） | `test/confirm-store.test.mjs :: decideConfirmKeyAction past the guard stands down for a control inside the dialog and swallows one aimed outside it, so one keystroke is never two answers` |
+| 无焦点时只有裸 `Enter` 算确认：空格与任意修饰键 + `Enter` 都不是回答 | `test/confirm-store.test.mjs :: decideConfirmKeyAction answers confirm only for a bare Enter aimed at nothing: Space at nothing in particular, or a modified Enter, is not an answer` |
+| 模型之外的按键一概不碰（不 preventDefault、不 stopPropagation） | `test/confirm-store.test.mjs :: decideConfirmKeyAction ignores every key that is no part of the dialog's model, in and out of the guard window` |
+| 焦点环前后各走一格并在两端回卷（三态删除弹窗三个控件、其余两个、退化到一个也自环），Tab 绝不会走出弹窗 | `test/confirm-store.test.mjs :: nextConfirmFocusIndex walks the dialog's controls forwards and backwards and wraps at both ends, so Tab can never walk out of the dialog` |
+| 焦点不在环上（`-1` 及任何越界/非整数索引）时按浏览器自己的方向从环首／环尾拉回；环上无可聚焦元素时给 null（调用方照吞不误，焦点原地不动） | `test/confirm-store.test.mjs :: nextConfirmFocusIndex pulls focus back in from outside the cycle at the end the browser itself would have entered from, and answers null when there is nothing to focus` |
 
 ## 16. 未覆盖缺口（❌ 补测待办）
 
