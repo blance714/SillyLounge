@@ -489,6 +489,16 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
 - 剩余 `#options`/抽屉等 **模拟点击写路径**(22 处)迁到 ST 导出 —— **2026-07-05**:5-agent 静态审计逐条查过 ST `script.js`/`RossAscends-mods.js` 里每个目标的原生 handler,11/13 本来就安全,`#options`(续写/代笔/重生成/删除模式)整个在 `#sheld` 之外、从来不在被 shield 裁剪的区域里,不再是阻塞项。剩 `openDeleteMessageMode()`(零调用死代码)一处——它会写 `#send_form` 的 inline display,需要先处理跟 shield 规则的冲突才能接 UI(shield 规则已加 `!important` 防御)。迁移本身降级为纯架构债 / 代码整洁目标,不再紧急。
 - `content-visibility` 双重渲染优化 —— 等火焰图看实际性能。
 - 人设 chip 懒加载 —— 现每次 selector-sync 都拉 `getUserAvatars`,小优化。
+- **Gecko 门禁只在 CI 上跑得动。** Playwright 的 Firefox 在维护者的 Mac 上无法启动
+  (`RenderCompositorSWGL` 无法映射帧缓冲,无头/有头/软件渲染全试过;`xattr` 清隔离
+  属性也无效),所以 `pnpm run test:e2e` 钉死 `--project=chromium`,双引擎矩阵靠 CI
+  兜底。后果是**跨引擎缺陷的本地反馈环是断的**——只能靠推 PR 等 CI,或者请维护者在
+  Zen 的 Console 里跑只读快照脚本(2026-08-02 定位 rails 宽度缺陷用的就是后者)。
+  值得找的出路:换 Playwright 版本/Firefox 通道,或给这台机器找到能跑的图形后端。
+- **`scripts/e2e/*.mjs` 仍是 Chromium 独占。** 引擎矩阵目前只覆盖 `e2e/*.spec.mjs`;
+  `measure-chat-switch` / `verify-truncation-guard` / `measure-long-chat` 都直接
+  `chromium.launch()`。前者是性能基线,换引擎会让数字失去可比性,先不动;但**截断
+  守卫是纯行为验收,没有理由只在 Blink 上跑**,是矩阵下一个该扩的地方。
 
 ---
 
