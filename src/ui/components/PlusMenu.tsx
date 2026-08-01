@@ -2,16 +2,19 @@ import React, { useEffect, useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import type { PlusToolId } from '../types.js';
 import {
+    closeChatuiMenu,
+    closeChatuiMenuById,
     continueChatuiGeneration,
     impersonateChatui,
     listChatuiWandItems,
     openChatuiAttachmentPicker,
     regenerateChatuiLast,
     subscribeChatuiEvent,
+    toggleChatuiMenu,
     triggerChatuiWandItem,
     PLUS_TOOL_IDS,
 } from '../actions.js';
-import { useConfig } from '../hooks.js';
+import { useActiveChatuiMenu, useConfig } from '../hooks.js';
 
 type WandItem = { id: string; label: string; iconHtml: string };
 
@@ -54,7 +57,7 @@ export function PlusMenu({
 }: {
     chatKey: string;
 }): ComponentChild {
-    const [isOpen, setIsOpen] = useState(false);
+    const isOpen = useActiveChatuiMenu()?.id === 'plus';
     const [wandItems, setWandItems] = useState<WandItem[]>([]);
     const pinnedIds = useConfig().plusPinned;
 
@@ -64,8 +67,12 @@ export function PlusMenu({
         return subscribeChatuiEvent('CHAT_CHANGED', () => setWandItems(listChatuiWandItems()));
     }, [isOpen]);
 
+    // A composer that leaves (settings mode) takes its sheet with it, and only
+    // its own — see store/menu-store.ts on why the close is id-scoped.
+    useEffect(() => () => closeChatuiMenuById('plus'), []);
+
     const runTool = (tool: PlusTool) => {
-        setIsOpen(false);
+        closeChatuiMenu();
         tool.run(chatKey);
     };
 
@@ -85,7 +92,7 @@ export function PlusMenu({
                 aria-haspopup="menu"
                 aria-expanded={isOpen}
                 title="附件与工具"
-                onClick={() => setIsOpen(open => !open)}
+                onClick={() => toggleChatuiMenu('plus')}
             >
                 <i className="fa-solid fa-plus" />
             </button>
@@ -95,7 +102,7 @@ export function PlusMenu({
                         className="cui-root-plus-backdrop"
                         type="button"
                         aria-label="关闭菜单"
-                        onClick={() => setIsOpen(false)}
+                        onClick={() => closeChatuiMenu()}
                     />
                     <div className="cui-root-plus-menu cui-paper" role="menu">
                         <header className="cui-root-plus-header">
@@ -105,7 +112,7 @@ export function PlusMenu({
                                 type="button"
                                 aria-label="关闭菜单"
                                 title="关闭菜单"
-                                onClick={() => setIsOpen(false)}
+                                onClick={() => closeChatuiMenu()}
                             >
                                 <i className="fa-solid fa-xmark" />
                             </button>
@@ -150,7 +157,7 @@ export function PlusMenu({
                                             className="cui-root-plus-tool cui-paper-item"
                                             type="button"
                                             role="menuitem"
-                                            onClick={() => { setIsOpen(false); triggerChatuiWandItem(item.id, chatKey); }}
+                                            onClick={() => { closeChatuiMenu(); triggerChatuiWandItem(item.id, chatKey); }}
                                         >
                                             <span
                                                 className="cui-root-plus-wand-icon"
