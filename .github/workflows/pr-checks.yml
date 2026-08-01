@@ -55,13 +55,16 @@ jobs:
         working-directory: .test-host/SillyTavern
         run: npm ci --omit=dev
 
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        # Both engines: the rails-width defect fixed in 55af8f1 was invisible to
+        # Blink and plainly broken in Gecko, so layout gates that only ever ran
+        # in Chromium were not gates at all.
+        run: pnpm exec playwright install --with-deps chromium firefox
 
       - name: Assemble browser-test runtime
         run: pnpm run runtime
 
-      - name: Verify the real SillyTavern UI
+      - name: Verify the real SillyTavern UI (Chromium and Firefox)
         env:
           SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
         run: pnpm exec playwright test
