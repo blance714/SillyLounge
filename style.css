@@ -2965,21 +2965,21 @@ body.chatui-active .cui-root-swipe-count {
     letter-spacing: var(--cui-tracking-wide);
 }
 
+/* The containing block for whichever menu hangs off a ⋯ trigger. The topbar's
+   menu is a child of this box; the message list's is portaled to <body> and
+   positioned fixed, so it only borrows the class for the trigger's own layout.
+   No `> summary` rules any more: the topbar ⋯ stopped being a native
+   `<details>` when the menus became one state machine (store/menu-store.ts) —
+   a disclosure the app cannot close on Escape or on an outside click is not a
+   disclosure this design can use. */
 body.chatui-active .cui-root-action-menu {
     position: relative;
 }
 
-body.chatui-active .cui-root-action-menu > summary {
-    list-style: none;
-}
-
-body.chatui-active .cui-root-action-menu > summary::-webkit-details-marker {
-    display: none;
-}
-
-/* Portaled to document.body alongside the message actions' floating menu
-   (see MessageActions.tsx) — same invisible full-viewport click-outside
-   pattern as .cui-root-selchip-backdrop. */
+/* The invisible full-viewport click-outside layer both ⋯ menus use — the same
+   pattern as .cui-root-selchip-backdrop. Portaled to document.body under the
+   message list's menu (MessageMenuHost.tsx), an ordinary child under the
+   topbar's (TopbarMenu.tsx); `position: fixed` makes those the same box. */
 body.chatui-active .cui-root-menu-backdrop {
     position: fixed;
     inset: 0;
