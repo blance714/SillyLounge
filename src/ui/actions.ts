@@ -86,6 +86,23 @@ export {
 } from '../store/ui-store.js';
 
 export {
+    closeChatuiMenu,
+    closeChatuiMenuById,
+    closeChatuiMessageMenuFor,
+    openChatuiMenu,
+    openChatuiMessageMenu,
+    resetChatuiMenuStore,
+    toggleChatuiMenu,
+    toggleChatuiMessageMenu,
+} from '../store/menu-store.js';
+export type {
+    ChatuiActiveMenu,
+    ChatuiMenuId,
+    ChatuiMessageMenuAnchor,
+    ChatuiSimpleMenuId,
+} from '../store/menu-store.js';
+
+export {
     beginTempChatDraft,
     cancelTempChatDraft,
     getTempChat,

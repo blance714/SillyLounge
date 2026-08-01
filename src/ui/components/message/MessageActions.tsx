@@ -1,54 +1,63 @@
-import React, { createPortal, useEffect, useRef, useState } from 'preact/compat';
+import React, { useEffect, useRef } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import {
+    closeChatuiMessageMenuFor,
     swipeChatuiMessage,
+    toggleChatuiMessageMenu,
     triggerChatuiMessageAction,
 } from '../../actions.js';
+import { useActiveChatuiMenu } from '../../hooks.js';
+import { buildMessageMenuRows } from '../../message-menu-rows.js';
 import type { ChatuiAction, ChatuiMessage } from '../../types.js';
 import { ActionButton } from './ActionButton.js';
-import { MenuItem } from './MenuItem.js';
 import { SwipeSegments } from './SwipeSegments.js';
 
-type MenuAction = {
+type TiledAction = {
     label: string;
     iconClass: string;
     onClick: () => void;
     danger?: boolean;
-    /** Design §45 rules a dashed line off before the destructive row. */
-    separatorBefore?: boolean;
 };
 
 /**
- * Portals its dropdown to document.body: this button lives inside the
- * scrollable message list, and a non-portaled position:absolute menu there
- * both gets clipped for messages near the bottom of the list (nothing to
- * scroll it into view) and adds to the list's own scrollHeight while open.
- * Position is a one-shot snapshot of the trigger's rect taken on open; the
- * menu closes on scroll/resize instead of tracking the trigger live, same
- * trade-off ConfirmDialog/SelectorChip make for their own portaled/fixed UI.
+ * The ⋯ button, and nothing else: the menu it opens is drawn by
+ * MessageMenuHost at the app root, from the anchor this press writes into
+ * store/menu-store.ts. See that host's module doc for why the rendering had to
+ * leave the row — in short, the virtualiser unmounts this component whenever
+ * the row leaves the overscan window, which is not a moment the reader chose.
+ *
+ * The rect is still read here and only here: the button is the thing being
+ * measured, and it is about to stop being under the cursor.
  */
-function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
-    const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
+function MoreMenuTrigger({ message }: { message: ChatuiMessage }): ComponentChild {
+    const messageId = message.id;
+    const chatKey = message.chatKey;
+    const activeMenu = useActiveChatuiMenu();
     const triggerRef = useRef<HTMLButtonElement>(null);
+    const isOpen = activeMenu?.id === 'message'
+        && activeMenu.anchor.messageId === messageId
+        && activeMenu.anchor.chatKey === chatKey;
 
-    useEffect(() => {
-        if (!anchor) return;
-        const close = () => setAnchor(null);
-        window.addEventListener('scroll', close, true);
-        window.addEventListener('resize', close);
-        return () => {
-            window.removeEventListener('scroll', close, true);
-            window.removeEventListener('resize', close);
-        };
-    }, [anchor]);
+    // The cleanup path the lift created a need for. An open menu is anchored to
+    // a rect this row no longer occupies once it is gone, so the row taking its
+    // menu with it is not tidiness — it is the same contract "close on scroll"
+    // has always kept, now covering the case where the row leaves without a
+    // scroll event of its own (a chat switch, entering settings, the range
+    // extractor dropping it). Scoped to this row so a neighbour's unmount in
+    // the same commit cannot close a menu that was just opened elsewhere.
+    useEffect(() => () => closeChatuiMessageMenuFor(messageId, chatKey), [messageId, chatKey]);
 
-    if (items.length === 0) return null;
+    if (buildMessageMenuRows(message.isSystem).length === 0) return null;
 
     const toggle = () => {
-        if (anchor) { setAnchor(null); return; }
         const rect = triggerRef.current?.getBoundingClientRect();
         if (!rect) return;
-        setAnchor({ top: rect.bottom + 4, right: window.innerWidth - rect.right });
+        toggleChatuiMessageMenu({
+            messageId,
+            chatKey,
+            isSystem: message.isSystem,
+            trigger: { top: rect.top, bottom: rect.bottom, right: rect.right },
+        });
     };
 
     return (
@@ -58,40 +67,13 @@ function MoreMenu({ items }: { items: MenuAction[] }): ComponentChild {
                 className="cui-root-action-btn cui-root-menu-trigger"
                 type="button"
                 aria-haspopup="menu"
-                aria-expanded={anchor != null}
+                aria-expanded={isOpen}
                 aria-label="更多操作"
                 title="更多操作"
                 onClick={(event) => { event.stopPropagation(); toggle(); }}
             >
                 <i className="fa-solid fa-ellipsis" />
             </button>
-            {anchor && createPortal(
-                <>
-                    <button
-                        className="cui-root-menu-backdrop"
-                        type="button"
-                        aria-label="关闭菜单"
-                        onClick={() => setAnchor(null)}
-                    />
-                    <div
-                        className="cui-root-menu cui-paper"
-                        style={{ position: 'fixed', top: `${anchor.top}px`, right: `${anchor.right}px` }}
-                    >
-                        {items.map(item => (
-                            <React.Fragment key={item.label}>
-                                {item.separatorBefore && <div className="cui-paper-sep" />}
-                                <MenuItem
-                                    label={item.label}
-                                    iconClass={item.iconClass}
-                                    danger={item.danger}
-                                    onClick={() => { setAnchor(null); item.onClick(); }}
-                                />
-                            </React.Fragment>
-                        ))}
-                    </div>
-                </>,
-                document.body,
-            )}
         </div>
     );
 }
@@ -111,30 +93,20 @@ export function MessageActions({
     // Tiled — what you do *to* this turn, one click, no menu in the way. 重写
     // only exists for the message ST would actually regenerate: the trailing
     // character reply. Every other row therefore tiles three, not four.
-    const regen: MenuAction = { label: '重写', iconClass: 'fa-solid fa-rotate-right', onClick: () => dispatch('regen') };
-    const edit: MenuAction = { label: '编辑', iconClass: 'fa-solid fa-pen', onClick: onEdit };
-    const del: MenuAction = { label: '删除', iconClass: 'fa-solid fa-trash-can', onClick: () => dispatch('delete'), danger: true };
+    //
+    // The other half of the split — what you do *with* the turn — is the ⋯
+    // menu, and it is not built here: those rows have to be readable by the
+    // root-level host that draws the menu as well, so they live in
+    // ui/message-menu-rows.ts. A system row is not a turn anyone speaks, so it
+    // tiles nothing at all; that same test picks its (shorter) menu over there.
+    const regen: TiledAction = { label: '重写', iconClass: 'fa-solid fa-rotate-right', onClick: () => dispatch('regen') };
+    const edit: TiledAction = { label: '编辑', iconClass: 'fa-solid fa-pen', onClick: onEdit };
+    const del: TiledAction = { label: '删除', iconClass: 'fa-solid fa-trash-can', onClick: () => dispatch('delete'), danger: true };
 
-    // Menu — what you do *with* it: take it somewhere else, or take it out of
-    // the conversation. 隐藏此楼 is ruled off below the rest because it is the
-    // only one that changes what the model is told.
-    const copy: MenuAction = { label: '复制', iconClass: 'fa-solid fa-copy', onClick: () => dispatch('copy') };
-    const copySource: MenuAction = { label: '复制原文', iconClass: 'fa-solid fa-clipboard', onClick: () => dispatch('copySource') };
-    const branch: MenuAction = { label: '从此楼开分支', iconClass: 'fa-solid fa-code-branch', onClick: () => dispatch('branch') };
-    const checkpoint: MenuAction = { label: '在此楼设检查点', iconClass: 'fa-solid fa-flag-checkered', onClick: () => dispatch('checkpoint') };
-    const hide: MenuAction = { label: '隐藏此楼', iconClass: 'fa-solid fa-eye-slash', onClick: () => dispatch('hide'), danger: true, separatorBefore: true };
-
-    // System rows are not a turn anyone speaks: nothing may be written to them
-    // or branched from them, but their text is still text you may want. Which
-    // rows count as a turn is unchanged from before the regroup — only where
-    // each action is presented changed.
     const isTurn = !message.isSystem;
-    const tiled: MenuAction[] = isTurn
+    const tiled: TiledAction[] = isTurn
         ? [...(message.ui.isLast && message.isChar ? [regen] : []), edit, del]
         : [];
-    const overflow: MenuAction[] = isTurn
-        ? [copy, copySource, branch, checkpoint, hide]
-        : [copy, copySource];
 
     return (
         <div className="cui-root-message-actions">
@@ -147,13 +119,25 @@ export function MessageActions({
                     onClick={item.onClick}
                 />
             ))}
-            <MoreMenu items={overflow} />
+            <MoreMenuTrigger message={message} />
             {message.ui.canShowSwipe && (
                 <>
                     {/* Design §43 draws the swipe group after 重写/编辑/删除/⋯,
                         ruled off from them — what you do to this turn, then a
-                        seam, then which candidate reply you're looking at. */}
-                    <span className="cui-root-action-divider" aria-hidden="true" />
+                        seam, then which candidate reply you're looking at.
+                        The seam is drawn on the candidate count, not on
+                        canShowSwipe: the trailing character reply keeps its ›
+                        even at one candidate (that is how you ask for a second
+                        one, chat-store.ts), but with one candidate there is no
+                        "which version you're reading" on the far side — just a
+                        lone arrow — and a rule with nothing on one side of it
+                        reads as a mistake rather than a division. Neither the
+                        store's canShowSwipe nor the ‹ button's own swipe.id > 0
+                        test changes; this is the third, separate question of
+                        whether the two groups need telling apart at all. */}
+                    {message.swipe.hasMultiple && (
+                        <span className="cui-root-action-divider" aria-hidden="true" />
+                    )}
                     {message.swipe.id > 0 && (
                         <ActionButton
                             label="上一版本"

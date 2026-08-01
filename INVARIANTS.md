@@ -540,9 +540,84 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 80–240px 死区既不自动贴底也不显示胶囊（防两门被并回一个常量） | `test/follow-scroll-math.test.mjs :: readFollowGates: the 80–240px dead zone follows nothing and offers nothing` |
 | 两道门永不同时开（胶囊绝不浮在仍在自动贴底的视图上） | `test/follow-scroll-math.test.mjs :: readFollowGates: the two gates are never open at the same time` |
 | 过卷（负距离）与不可滚动容器一律判为贴底且不出胶囊 | `test/follow-scroll-math.test.mjs :: readFollowGates: over-scroll and unscrollable containers both count as pinned` |
+| 菜单盒模型常量取自 Chromium 实测（行 33px、分隔线 9px、外壳 10px、留白 4px），不是估算的整数 | `test/menu-placement.test.mjs :: the menu box constants are the ones measured against style.css, not round numbers` |
+| 按行数与分隔线数估高，逐一复现浏览器实测的每一种菜单尺寸 | `test/menu-placement.test.mjs :: estimateMenuHeight reproduces every menu size measured in the browser` |
+| 下方放得下时向下打开，顶边挂在触发钮下沿（设计 §6 默认方向） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: room below opens downward, hung off the trigger bottom` |
+| 触发钮贴近视口底边时向上翻转，底边挂在触发钮上沿（危险行不再被切掉） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: the desktop bug — a trigger near the viewport floor flips up` |
+| 翻转门是「比空间高」而非「与空间等高」：恰好装满仍向下，多 1px 才翻 | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: the flip boundary is "taller than the space", not "as tall as"` |
+| 上方比下方更挤时绝不翻转（含两侧相等的平局判向下） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: never flips into a space that is tighter than the one it left` |
+| 翻转与否取决于该菜单自身的高度，同一位置的两行菜单照旧向下 | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: a two-row system menu keeps opening down where a five-row one flips` |
+| 两个方向的偏移都只由实测到的触发钮边沿与留白决定，估高绝不进入几何（估错只会换个方向，不会让菜单脱离按钮） | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: both directions stay welded to an edge of the trigger` |
+| 显式 gap 为 0 时对应方向的留白确实消失 | `test/menu-placement.test.mjs :: placeMenuAgainstTrigger: an explicit gap of 0 removes the air on whichever side is used` |
 | 标头时间戳把 ST 写过的每种 `send_date`（ISO 8601 / `humanizedDateTime` / epoch 毫秒数与数字串）都渲染成时钟时间，无法辨认的原样透出而不臆造 | `test/format.test.mjs :: formatTimestamp renders every send_date shape SillyTavern writes as a clock time, and never invents one it cannot read` |
 | 时长与体积格式化保持中文口径，且「没有数值」不被四舍五入成「零」 | `test/format.test.mjs :: formatDuration and formatBytes stay in the language the rest of the UI speaks and refuse to round a non-quantity into one` |
 | 场刊卡片元信息按「N 条」计消息数、绝不写成「N 楼」（楼＝用户回合，会话列表只有 `chat_items` 总条数，写成楼就与楼层轨自相矛盾），缺失的一半连同分隔点一起消失 | `test/format.test.mjs :: the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator` |
+| 只剥 ST 自己写的那个精确前缀「角色名 + 空格短横空格」，形近串（无空格短横、串中出现、空角色名下的裸「 - 」）一律不动 | `test/format.test.mjs :: stripChatNameCharacterPrefix drops the host-repeated cast name and nothing that merely resembles it` |
+| 顶栏题名的回退判据是「这名字是宿主起的还是读者起的」而非「是否为空」：剥完只剩裸 `humanizedDateTime()` 戳（单聊「角色名 - 戳」、群聊裸戳）即视为无名，回退到角色/群名，再回退 `ChatUI`；读者起的名（含检查点后缀）原样呈现，且宿主戳绝不出现在题名里 | `test/format.test.mjs :: resolveConversationTitle treats a name ST generated as no name at all, and never repeats the eyebrow` |
+
+### 9.1 菜单互斥状态机（store/menu-store.ts）
+
+设计 §6 的「打开任一菜单关闭其余；点击外部关闭全部；Escape 关闭」。互斥不是一条被执行
+的规则，而是**状态的形状**：全应用只有一个「当前打开的菜单」槽位，所以「打开 B」本身
+就是「关闭 A」，没有任何菜单需要被通知、也没有任何菜单会忘记。此前是四套各自为政的
+开合（topbar ⋯ 的原生 `<details>`、三枚 selector chip 各一个 `useState`、＋菜单一个、
+消息 ⋯ 菜单内部一个），两个菜单能同时挂着，而 `<details>` 对 Escape 和外部点击都无动
+于衷——它的开合状态存在 DOM 里，不在应用里。
+
+消息 ⋯ 菜单是唯一带载荷的一档，因为它是唯一**渲染位置也必须上提**的一档：它的触发钮
+住在虚拟行里，行会被 virtualizer 在读者没选择的时刻卸载。只把状态提到全局、渲染留在行
+里，会得到两者中最坏的组合——store 说菜单开着，而已经没有组件画它。因此菜单改由
+`components/message/MessageMenuHost.tsx` 在 app 根渲染（仍 portal 到 `document.body`，
+`body > .cui-root-menu` 这一层级是 `scripts/e2e/measure-chat-switch.mjs` 的定位依据），
+锚点里带着行身份与**实测到的触发钮 rect**；至于往哪个方向开，是 rect 加菜单自身行数的
+纯函数（§9 的 `ui/menu-placement.ts`），留在知道行数的那一侧算，store 不必被教会菜单
+长什么样。
+
+关闭一律按 id 定域：卸载中的组件必须带走自己的菜单，但绝不能关掉**别人**的。这不是假想
+的时序——虚拟行可以在另一行的菜单打开的同一次 commit 里被卸载。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 菜单 id 是闭集（topbar ⋯ / 三枚 selector chip / ＋菜单 / 消息 ⋯），且每一个都真的能开 | `test/menu-store.test.mjs :: the menu ids are a closed set, and every one of them is reachable` |
+| 打开任一菜单必关闭当时开着的那个——对 id 全集两两穷举，而非抽查两个（抽查区分不出「一个槽位」与「四个恰好没打架的标志位」） | `test/menu-store.test.mjs :: opening any menu closes whichever menu was open — mutual exclusion is the shape of the state, not a rule applied to it` |
+| 触发钮再按一次关自己、按别的直接切换，永不落到两个同开的中间态；消息 ⋯ 的「自己」按行身份判定 | `test/menu-store.test.mjs :: a trigger toggles its own menu and switches to any other, never landing in a state where two are open` |
+| 消息 ⋯ 的锚点带齐根级宿主作画所需的一切：行 id、会话键、系统行与否、实测 rect（rect 原样过境，placement 由宿主推导而非入库） | `test/menu-store.test.mjs :: the message menu carries everything its root-level host needs: which row, which chat, and the rect the trigger was measured at` |
+| 组件卸载只关自己那一格：`closeChatuiMenuById` 对「已经换成别人」的槽位是无操作 | `test/menu-store.test.mjs :: an unmounting component closes only its own menu: closeChatuiMenuById never touches the menu that replaced it` |
+| 行卸载清理同时校验会话键：消息 id 是会话内下标，只按 id 关会让「刚离开的会话的第 12 行」关掉「刚进入的会话的第 12 行」刚打开的菜单 | `test/menu-store.test.mjs :: a virtualised row taking its menu with it matches on the chat as well as the message id` |
+| 只有真实迁移才通知订阅者（重复打开同一菜单、空槽位关闭、不匹配的定域关闭一律静默） | `test/menu-store.test.mjs :: only real transitions notify: re-opening the menu that is already open, and closing when nothing is, are silent` |
+| 同一行再次按 ⋯ 并带来新 rect 是一次更新而非无操作——两次按之间行可能已经移动 | `test/menu-store.test.mjs :: re-pressing the message ⋯ on the same row with a fresh rect is an update, not a no-op — the row may have moved under the reader` |
+| teardown 清空槽位，重挂载后不会留着上一世的菜单 | `test/menu-store.test.mjs :: resetChatuiMenuStore empties the slot so teardown cannot leave a menu open across a remount` |
+
+### 9.2 Escape 三级梯（ui/escape-ladder.ts）
+
+Escape 在本应用有三种含义，分三处结算：获焦的编辑器/改名框在**自己的元素上**
+`stopPropagation` 抢先（这一级由焦点在哪里决定，是对「这次 Escape 是干什么的」的真回
+答）；剩下两级都是全局的，因此由同一个纯函数按值决出、同一个 window 监听器派发。
+
+不能改成「再加一个 window 监听器」：同一个 target 上的两个监听器按注册顺序跑，彼此之间
+`stopPropagation()` 不起作用（它拦的是事件在树上的上下行，而两者都已在树顶）。于是生成
+中开着菜单时，一次 Escape 会既关菜单又中断回复。要让它不发生，只剩
+`stopImmediatePropagation` 加一个有保证的注册顺序、或捕获阶段拦截——两者都把优先级编码
+进「监听器碰巧何时安装」，正是本项目拒绝的那种靠时序运气的写法。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 菜单开着时 Escape 只关菜单：与生成中重叠的那一格必须解出**唯一**意图，关菜单绝不顺带中断回复 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: an open menu answers the key before a running generation does, and answers it alone` |
+| 无菜单时才落到停止生成 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with no menu on stage the key falls through to stopping the generation` |
+| 两者都没有时判 `ignore`，调用方据此**不**调用 preventDefault——Escape 仍属于宿主与浏览器 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with nothing of ChatUI's on screen the keystroke is not ours to take` |
+
+### 9.3 消息 ⋯ 菜单的行清单（ui/message-menu-rows.ts）
+
+行清单被两个组件读：虚拟行据此决定要不要画 ⋯ **触发钮**，根级宿主据此画菜单本身。各自
+推一份就会出现「触发钮存在、菜单是空的」或反之。每行只写 `ChatuiAction` 字符串而不带闭
+包，这正是清单能跨越那道缝的原因——宿主拿 store 里的锚点派发，不回指那个已不保证还挂
+着的行。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 普通楼按设计 §45 顺序给五行，分隔线画在破坏性那行之上，且「编辑」自 §42 重组后永不出现在菜单里 | `test/message-menu-rows.test.mjs :: buildMessageMenuRows: an ordinary turn carries design §45's five rows, in order, with the rule drawn above the destructive one` |
+| 系统行不是任何人说的一句话，只给两种复制，且清单非空（触发钮正是靠这一点存在） | `test/message-menu-rows.test.mjs :: buildMessageMenuRows: a system row is not a turn anyone speaks, so it offers only the two copies` |
+| 两种清单喂给翻转判定的估高，正是 Chromium 实测的 184px / 76px | `test/message-menu-rows.test.mjs :: the row lists feed the flip decision the sizes actually measured in Chromium` |
 
 ### 书脊入列规则（ui/spine-cast.ts）
 

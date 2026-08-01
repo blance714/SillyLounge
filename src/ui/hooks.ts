@@ -11,7 +11,10 @@ import { getToasts, subscribeToasts } from '../store/toast-store.js';
 import { getChatuiConfirmRequest, subscribeChatuiConfirm } from '../store/confirm-store.js';
 import { getConfig, subscribeConfig } from '../store/config-store.js';
 import { getUiState, subscribeUiStore } from '../store/ui-store.js';
+import { getActiveChatuiMenu, subscribeChatuiMenu } from '../store/menu-store.js';
+import type { ChatuiActiveMenu } from '../store/menu-store.js';
 import {
+    closeChatuiMenu,
     getChatuiCurrentChatHeader,
     getChatuiComposerDraftStoreSnapshot,
     getChatuiPendingDraftQuarantineCharacter,
@@ -27,6 +30,7 @@ import {
     subscribeTempChatStore,
 } from './actions.js';
 import { renderCardEmbeds } from './card-embed.js';
+import { resolveEscapeIntent } from './escape-ladder.js';
 import { readFollowGates } from './follow-scroll-math.js';
 import { orderSpineCast } from './spine-cast.js';
 import {
@@ -106,6 +110,15 @@ export type SettingsModeState = { settingsOpen: boolean; activeSettingsId: strin
 /** Reactive read of the full settings mode state (settingsOpen + activeSettingsId). */
 export function useSettings(): SettingsModeState {
     return useSyncExternalStore(subscribeUiStore, getUiState);
+}
+
+/**
+ * Reactive read of the single open-menu slot (store/menu-store.ts). Every menu
+ * trigger subscribes so its own `aria-expanded` can never disagree with what is
+ * actually on stage — which is the whole reason the slot exists.
+ */
+export function useActiveChatuiMenu(): ChatuiActiveMenu | null {
+    return useSyncExternalStore(subscribeChatuiMenu, getActiveChatuiMenu);
 }
 
 export function useToasts(): ReturnType<typeof getToasts> {
@@ -781,26 +794,40 @@ export function useAutoScroll(
 }
 
 /**
- * Global Escape-to-stop-generation, owned by ChatUI itself rather than relying
- * on ST's native document keydown handler (script.js), which only fires when
- * $('#mes_stop').is(':visible') — true under the shield's current CSS-clip
- * hiding, but permanently false once #send_form is display:none. Mirrors ST's
- * own IME-composing guard. Skips entirely while a message is being edited:
- * MessageEditor's own Escape handler (cancel edit) calls stopPropagation(),
- * so this listener simply never sees the keydown in that case — matching ST's
- * native priority of "close edit box" over "stop generation".
+ * ChatUI's single global Escape listener, owned by ChatUI itself rather than
+ * relying on ST's native document keydown handler (script.js), which only
+ * fires when $('#mes_stop').is(':visible') — true under the shield's old
+ * CSS-clip hiding, but permanently false once #send_form is display:none.
+ * Mirrors ST's own IME-composing guard.
+ *
+ * It is *one* listener on purpose. Both globally-meaningful uses of the key —
+ * dismiss the open floating menu (DESIGN §6) and stop a running generation —
+ * are decided together by resolveEscapeIntent(), because two listeners on
+ * window cannot express a precedence between themselves without leaning on
+ * registration order; ui/escape-ladder.ts's module doc has the long version.
+ *
+ * The third rung, 「退出编辑」, settles itself: MessageEditor and the two
+ * in-place rename inputs handle Escape on their own element and call
+ * stopPropagation(), so this listener never sees the keystroke while one of
+ * them has focus — matching ST's native priority of "close edit box" over
+ * "stop generation".
  */
-export function useEscapeToStopGeneration(isGenerating: boolean): void {
+export function useChatuiEscapeKey(isGenerating: boolean): void {
+    const hasOpenMenu = useActiveChatuiMenu() !== null;
+
     useEffect(() => {
-        if (!isGenerating) return;
+        if (!hasOpenMenu && !isGenerating) return;
 
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== 'Escape' || event.isComposing) return;
+            const intent = resolveEscapeIntent({ hasOpenMenu, isGenerating });
+            if (intent === 'ignore') return;
             event.preventDefault();
-            stopChatuiGeneration();
+            if (intent === 'close-menu') closeChatuiMenu();
+            else stopChatuiGeneration();
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [isGenerating]);
+    }, [hasOpenMenu, isGenerating]);
 }

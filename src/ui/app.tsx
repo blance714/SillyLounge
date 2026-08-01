@@ -17,6 +17,7 @@ import { QRBar } from './components/QRBar.js';
 import { NewChatCharacterPicker } from './components/composer/NewChatCharacterPicker.js';
 import { MessageItem } from './components/MessageItem.js';
 import { MessageFloorRail } from './components/MessageFloorRail.js';
+import { MessageMenuHost } from './components/message/MessageMenuHost.js';
 import { Sidebar } from './components/sidebar/Sidebar.js';
 import { Spine } from './components/sidebar/Spine.js';
 import { Toaster } from './components/Toaster.js';
@@ -26,9 +27,10 @@ import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { TopbarTitle } from './components/TopbarTitle.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useChatuiMessage, useChatuiSnapshot, useConfig, useEscapeToStopGeneration, useIsTempChatActive, useSidebarBasics, useSettings, useTopbarChatTarget } from './hooks.js';
-import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, renameChatuiChat, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMessageEditDraftStore } from './actions.js';
+import { useAutoScroll, useChatuiEscapeKey, useChatuiMessage, useChatuiSnapshot, useConfig, useIsTempChatActive, useSidebarBasics, useSettings, useTopbarChatTarget } from './hooks.js';
+import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, renameChatuiChat, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMenuStore, resetChatuiMessageEditDraftStore } from './actions.js';
 import { teardownCardEmbedRuntime } from './card-embed.js';
+import { resolveConversationTitle } from './format.js';
 import { chatuiQueryClient, resetChatuiQueryClient } from './query-client.js';
 import { StQueryBridge } from './use-st-query-bridge.js';
 import { resolveTopbarRenameCommit } from './topbar-menu-logic.js';
@@ -204,7 +206,12 @@ function ChatuiApp(): ComponentChild {
             messageVirtualizer.scrollToIndex(index, { align: 'start', behavior });
         },
     }), [messageIds, messageIndexById, messageVirtualizer]);
-    const conversationTitle = chatHeader.sessionName || chatHeader.characterName || 'ChatUI';
+    // DESIGN §4.1's two layers. The title resolves the fallback chain in
+    // format.ts (a chat ST named for itself does not count as having a name);
+    // the eyebrow then steps aside whenever the title has landed on the very
+    // name it would otherwise print, so the two lines can never say the same
+    // thing twice.
+    const conversationTitle = resolveConversationTitle(chatHeader);
     const conversationEyebrow = chatHeader.characterName && chatHeader.characterName !== conversationTitle
         ? chatHeader.characterName
         : chatHeader.isGroup ? '群组手记' : '对话手记';
@@ -245,7 +252,7 @@ function ChatuiApp(): ComponentChild {
     }, [topbarChatTarget, topbarRenameTarget]);
 
     const { awayFromLatest, scrollToBottom } = useAutoScroll(listNode, messageIds, state.chat.isGenerating, state.chat.chatKey);
-    useEscapeToStopGeneration(state.chat.isGenerating);
+    useChatuiEscapeKey(state.chat.isGenerating);
 
     const summonSidebar = () => setIsSidebarMobileOpen(true);
     const dismissSidebarNavigation = () => setIsSidebarMobileOpen(false);
@@ -423,6 +430,12 @@ function ChatuiApp(): ComponentChild {
                       />
                   </section>
             }
+            {/* The message ⋯ menu is drawn here, not by the row whose button
+                opened it: that row lives in the virtualiser and is unmounted
+                whenever it leaves the overscan window, which is not a moment
+                the reader chose (MessageMenuHost's own doc has the full
+                argument). It still portals to document.body from here. */}
+            <MessageMenuHost />
             <Toaster />
             <ConfirmDialogHost />
         </>
@@ -457,6 +470,7 @@ export function teardownChatuiRoot(): void {
         resetChatuiConfirmStore,
         resetChatuiComposerDraftStore,
         resetChatuiMessageEditDraftStore,
+        resetChatuiMenuStore,
         () => rootApi?.unmount(),
         resetChatuiQueryClient,
         teardownCardEmbedRuntime,

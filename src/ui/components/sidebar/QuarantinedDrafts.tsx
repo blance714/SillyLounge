@@ -1,7 +1,7 @@
 import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { deleteChatuiChat, openChatuiChatForCharacter } from '../../actions.js';
-import { formatConversationMeta } from '../../format.js';
+import { formatConversationMeta, stripChatNameCharacterPrefix } from '../../format.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
 import type { ChatListItem } from '../../types.js';
 
@@ -38,14 +38,14 @@ export function QuarantinedDrafts({
     // ST names a new chat 「角色名 - 时间戳」. Inside one character's playbill the
     // prefix is the column's own title repeated on every card, so it is dropped
     // and the timestamp — the only part that tells two drafts apart — is left.
-    const namePrefix = `${characterName} - `;
-
+    // The topbar's title has the same problem against its eyebrow and now
+    // shares the strip (format.ts); what it does *afterwards* differs, and
+    // deliberately: a draft card is a list of siblings and needs the stamp to
+    // tell them apart, a title page is alone on screen and falls back instead.
     return (
         <>
             {drafts.map(draft => {
-                const label = draft.displayName.startsWith(namePrefix)
-                    ? draft.displayName.slice(namePrefix.length)
-                    : draft.displayName;
+                const label = stripChatNameCharacterPrefix({ chatName: draft.displayName, characterName });
                 const meta = formatConversationMeta(draft.messageCount, draft.lastMesLabel);
                 return (
                     <li
