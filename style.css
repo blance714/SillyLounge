@@ -31,6 +31,26 @@
     --cui-overlay-bg: rgba(0, 0, 0, 0.45);
     --cui-veil-bg: rgba(0, 0, 0, 0.5);
 
+    /* Rail widths — the three numbers the left chrome is made of, in one
+       place, because .cui-root-rails has to add two of them up.
+
+       The rails used to have no width of its own: `flex: 0 0 auto` made it
+       ask its children, and the two engines answer differently. A child
+       sized by flex-basis alone (`flex: 0 0 300px`, no `width`) contributes
+       its flex base size in Blink but its *content* size in Gecko — measured
+       on the owner's Firefox at 889px, the settings rails came out
+       58 + 133 = 191px instead of 58 + 300 = 358px, so `overflow: hidden`
+       clipped the nav it exists to hold down to 133 visible px and the stage
+       started underneath the rest of it. Both of the owner's reports —
+       「侧边栏有点窄且有点怪」 and 「被右边遮住了」 — were that one number.
+
+       So: every rail declares its width outright, and the rails declares the
+       sum. Nothing about this layout is left to intrinsic sizing to
+       rediscover. */
+    --cui-spine-width: 58px;
+    --cui-playbill-width: 252px;
+    --cui-settings-nav-width: 300px;
+
     /* Color roles: ink-theatre palette — deep ink ground, parchment text,
        gold-brown accent. Every consumer below reads these, so this block
        alone repaints the whole app. */
@@ -1035,7 +1055,7 @@ body.chatui-active .cui-root-spine {
     flex-direction: column;
     align-items: center;
     gap: 10px;
-    width: 58px;
+    width: var(--cui-spine-width);
     min-height: 0;
     box-sizing: border-box;
     padding: 14px 0 12px;
@@ -1180,9 +1200,10 @@ body.chatui-active .cui-root-sidebar {
     flex: 0 0 auto;
     display: flex;
     flex-direction: column;
-    /* 252px on desktop; on a phone the drawer still has to leave the stage
-       visible behind it, so the pair (58 + this) tops out around 82vw. */
-    width: min(calc(82vw - 58px), 252px);
+    /* --cui-playbill-width on desktop; on a phone the drawer still has to
+       leave the stage visible behind it, so the pair (spine + this) tops out
+       around 82vw. */
+    width: min(calc(82vw - var(--cui-spine-width)), var(--cui-playbill-width));
     min-width: 0;
     min-height: 0;
     box-sizing: border-box;
@@ -1206,14 +1227,29 @@ body.chatui-active .cui-root-sidebar {
         position: relative;
         inset: auto;
         z-index: auto;
+        /* Definite, not intrinsic. `flex: 0 0 auto` alone leaves the width to
+           whatever the engine thinks the children contribute, and Gecko and
+           Blink disagree when a child is sized by flex-basis (see the rail
+           tokens at :root for the measurement). The pair is always spine +
+           exactly one rail on desktop — no collapse state exists — so the sum
+           is knowable, and stating it is what keeps `overflow: hidden` from
+           eating the rail it is meant to clip. */
         flex: 0 0 auto;
+        width: calc(var(--cui-spine-width) + var(--cui-playbill-width));
         height: auto;
         transform: none;
         box-shadow: none;
     }
 
+    /* Settings swaps the playbill for the wider nav, so the sum changes with
+       it. Higher specificity than the rule above, so source order is not
+       load-bearing here. */
+    body.chatui-active .cui-root-rails.is-settings {
+        width: calc(var(--cui-spine-width) + var(--cui-settings-nav-width));
+    }
+
     body.chatui-active .cui-root-sidebar {
-        width: 252px;
+        width: var(--cui-playbill-width);
     }
 
     body.chatui-active .cui-root-sidebar .cui-root-shell-close { display: none; }
@@ -4116,10 +4152,17 @@ body.chatui-active .cui-root-qrbar-label {
    columns, not a fourth column). Same 252px, because it is literally standing
    where the playbill stood. */
 body.chatui-active .cui-settings-nav {
-    /* 300px, not the playbill's 252px: nav rows carry icon + Chinese label and
-       read cramped at playbill width (owner call, 2026-08-01). Settings mode
-       has no reading column to protect, so the extra 48px is free. */
-    flex: 0 0 300px;
+    /* --cui-settings-nav-width (300px), not the playbill's 252px: nav rows
+       carry icon + Chinese label and read cramped at playbill width (owner
+       call, 2026-08-01). Settings mode has no reading column to protect, so
+       the extra 48px is free.
+
+       `width` as well as the flex basis, deliberately: a flex item whose size
+       lives only in `flex-basis` contributes its *content* width to an
+       ancestor's intrinsic sizing in Gecko, which is how this column ended up
+       measured at 133px there. A definite width leaves nothing to infer. */
+    flex: 0 0 var(--cui-settings-nav-width);
+    width: var(--cui-settings-nav-width);
     display: flex;
     flex-direction: column;
     min-height: 0;
