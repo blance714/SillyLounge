@@ -222,7 +222,11 @@ ChatUI intents into those native pipelines. A few ST-native keyboard shortcuts
 that depended on the native surfaces' own visibility (Escape-to-stop,
 Ctrl+Enter-regenerate, ArrowUp-edit-last) silently stopped working under real
 `display:none` and are now reimplemented against ChatUI's own state
-(`src/ui/hooks.ts` `useEscapeToStopGeneration`, `src/ui/components/Composer.tsx`).
+(`src/ui/hooks.ts` `useChatuiEscapeKey`, `src/ui/components/Composer.tsx`). That
+Escape listener is now the app's only global one: since the menus became a
+single state machine it also has to dismiss whichever floating menu is open, and
+the two meanings are decided together by `src/ui/escape-ladder.ts` rather than by
+a second listener racing the first (see INVARIANTS §9.2).
 
 ### Rules
 
