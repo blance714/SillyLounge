@@ -198,6 +198,14 @@ unsaved replacement for legacy chats, so that field is not a conversation id.
 ChatUI-owned ephemeral state migrates on confirmed chat rename and
 `CHARACTER_RENAMED` events.
 
+> **Being dismantled (2026-08-02, DESIGN §4.2).** The reader-facing half of this
+> is already gone: a new chat is an ordinary conversation, listed like any other,
+> with no draft card, no filtering, no ＋新对话 highlight and no one-at-a-time
+> rule. What follows describes the store layer, which is still in place and still
+> correct but now has exactly one consumer left — the spine's `leasedAvatars`,
+> compensating for `chat_size` being a boot-time disk snapshot. A second pass
+> re-homes that and removes the rest; see ROADMAP.md.
+
 ST materializes a real JSONL as soon as `doNewChat()` runs, but its delete
 endpoint has no server-side revision CAS. A client-side read/hash followed by
 DELETE therefore cannot prove that another tab did not save user content between
@@ -211,8 +219,7 @@ them; local work adopts the chat rather than quarantining it.
 
 Quarantine uses one localStorage key per conversation instead of one global slot,
 so different tabs can add drafts without last-writer-wins loss; `storage` events
-merge additions/removals into each live page. The sidebar exposes dormant leases
-in a separate “未完成草稿” shelf with an explicit restore path. Send, edit, swipe,
+merge additions/removals into each live page. Send, edit, swipe,
 delete, attachment/reasoning mutation, and generation-start events remove the
 current lease and publish the conversation normally; prompt dry-runs and quiet
 background probes explicitly do not. Restore first checks the raw filename list,
