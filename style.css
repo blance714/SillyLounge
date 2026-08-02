@@ -93,6 +93,22 @@
     --cui-color-spine: #0f0d0a;
     --cui-color-border-strong: #3f372c;
 
+    /* One step brighter than --cui-color-border-strong, on the same rule the
+       two accents already follow (#c9a06a → #e0bc85, #96633f → #a8734c) —
+       derived from the mix rather than typed as a hex, so the palette stays
+       one decision.
+
+       It exists because the playbill card's resting edge moved up to
+       border-strong on 2026-08-02: at the old --cui-color-border it was so
+       close to the surface that an empty card's *dashes* read louder than a
+       written-in card's solid edge (owner call, from a four-state render).
+       border-strong was already what hover spent, so raising the resting edge
+       to it would have left hover with no edge of its own to change — the
+       cursor would stop saying which card it is on. This is that step. It is
+       deliberately neutral, not warm: warm belongs to 「当前对话」, and a hover
+       that drifted toward rust would say the wrong thing. */
+    --cui-color-border-hover: color-mix(in srgb, var(--cui-color-text) 15%, var(--cui-color-border-strong));
+
     /* Referenced by the floor rail's two numeric labels since they were
        written, but never defined — so both `color` declarations were invalid
        at computed-value time and silently dropped, leaving the labels on
@@ -1474,10 +1490,16 @@ body.chatui-active .cui-root-playbill-cards {
    so it is a low mix of its own instead of a step on the --cui-tint-* scale;
    hover and "this is the night you are reading" are the states, and those do
    read the scale and the accent rule. */
+/* The resting edge is border-strong, not the fainter --cui-color-border it
+   started on: at that value the edge all but vanished into the surface, and an
+   empty card's dashes — the *same* colour, merely broken — read louder than a
+   written-in card's solid one. Two states that carry different meanings must
+   not differ in loudness for a reason unrelated to either (owner call,
+   2026-08-02, decided off a four-state render). */
 body.chatui-active .cui-root-playbill-card {
     position: relative;
     box-sizing: border-box;
-    border: 1px solid var(--cui-color-border);
+    border: 1px solid var(--cui-color-border-strong);
     border-radius: var(--cui-radius-card);
     background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
     padding: 11px 13px 9px;
@@ -1492,7 +1514,7 @@ body.chatui-active .cui-root-playbill-card {
 body.chatui-active .cui-root-playbill-card:hover,
 body.chatui-active .cui-root-playbill-card:focus-visible,
 body.chatui-active .cui-root-playbill-card:focus-within {
-    border-color: var(--cui-color-border-strong);
+    border-color: var(--cui-color-border-hover);
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
     opacity: 1;
     outline: none;

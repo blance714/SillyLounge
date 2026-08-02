@@ -113,6 +113,43 @@ test('＋新对话 lands an ordinary card in the playbill, dashed while empty, a
     expect(await readCardBorder(root, FIXTURE_CHAT), 'and the written-in one still is not')
         .toMatchObject({ style: 'solid' });
 
+    // ── The two states must differ in *kind*, not in loudness ────────────────
+    // The dashed card and the solid one are the same colour, so the only thing
+    // separating them is the break in the line. That only holds while the
+    // resting edge is actually visible: at the fainter --cui-color-border it
+    // once used, the solid card's edge sank into the surface and the dashes
+    // read as the louder state for a reason unrelated to what either means
+    // (owner call, 2026-08-02). Pinned as a *token identity* rather than a
+    // literal, and alongside a live resolve of the hover step, because this
+    // palette has twice shipped a colour declaration that referenced an
+    // undefined variable and was silently dropped at computed-value time —
+    // which fails exactly like a design regression and is invisible in review.
+    const palette = await page.evaluate(() => {
+        const probe = document.createElement('div');
+        document.body.appendChild(probe);
+        const resolve = (value) => {
+            probe.style.borderColor = '';
+            probe.style.borderColor = value;
+            return getComputedStyle(probe).borderTopColor;
+        };
+        const out = {
+            faint: resolve('var(--cui-color-border)'),
+            strong: resolve('var(--cui-color-border-strong)'),
+            hover: resolve('var(--cui-color-border-hover)'),
+            resting: getComputedStyle(
+                document.querySelector('.cui-root-nested-chat-row:not(.is-current)'),
+            ).borderTopColor,
+        };
+        probe.remove();
+        return out;
+    });
+    expect(palette.resting, 'a resting card edge is border-strong, not the faint hairline')
+        .toBe(palette.strong);
+    expect(palette.hover, 'and hover keeps a step of its own above it')
+        .not.toBe(palette.strong);
+    expect(palette.hover, 'which has to be a real colour, not a dropped declaration')
+        .not.toBe(palette.faint);
+
     // Evidence, the same way smoke.spec.mjs keeps one: the assertions above say
     // 'dashed', and this is what 'dashed' looked like on the run that passed.
     await testInfo.attach('playbill-blank-and-written', {
