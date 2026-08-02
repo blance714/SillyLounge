@@ -4,7 +4,6 @@ import { openChatuiChatForCharacter, deleteChatuiChat, renameChatuiChat } from '
 import { formatConversationMeta } from '../../format.js';
 import { useCaretOnMount } from '../../hooks.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
-import { QuarantinedDrafts } from './QuarantinedDrafts.js';
 import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '../../types.js';
 
 /**
@@ -125,12 +124,10 @@ function ConversationCard({
 
 function ConversationCards({
     group,
-    onNavigate,
     loadMoreCharacterChats,
     retryCharacterChats,
 }: {
     group: CharConversationGroup;
-    onNavigate: () => void;
     loadMoreCharacterChats: (avatar: string) => Promise<void>;
     retryCharacterChats: (avatar: string) => Promise<void>;
 }): ComponentChild {
@@ -143,7 +140,6 @@ function ConversationCards({
         || (!group.chatsLoaded && group.pending !== 'error');
     const showMore = group.chatsLoaded && !group.fullyLoaded;
     const isEmpty = group.chats.length === 0
-        && group.draftChats.length === 0
         && !showLoading
         && group.pending !== 'error';
 
@@ -151,12 +147,6 @@ function ConversationCards({
 
     return (
         <ul className="cui-root-playbill-cards">
-            <QuarantinedDrafts
-                drafts={group.draftChats}
-                avatar={group.avatar}
-                characterName={group.name}
-                onNavigate={onNavigate}
-            />
             {group.chats.map(chat => (
                 <ConversationCard
                     key={chat.fileName}
@@ -214,10 +204,8 @@ function ConversationCards({
  */
 export function CharacterConversationList({
     sidebar,
-    onNavigate,
 }: {
     sidebar: ChatuiSidebarState;
-    onNavigate: () => void;
 }): ComponentChild {
     const { charGroups, charGroupsError, characters, header, loadMoreCharacterChats, retryCharacterChats } = sidebar;
     const group = charGroups[0];
@@ -233,7 +221,6 @@ export function CharacterConversationList({
                     : (
                         <ConversationCards
                             group={group}
-                            onNavigate={onNavigate}
                             loadMoreCharacterChats={loadMoreCharacterChats}
                             retryCharacterChats={retryCharacterChats}
                         />

@@ -140,14 +140,14 @@ CHAT_CHANGED（autoload 关掉、读者自己点开该角色，或由下面那�
 早约 142ms。两条已知边界如实记在这里，并且是**接受**而不是遗漏：
 
 - 若那次 `saveChatConditional()` 直接失败，会留下一条指向永不出现的文件的草稿租约。
-  这是可恢复态而非坏态，而且恢复刻意走**休眠卡**而不是活着的那一条：读者还站在这场
+  这是可恢复态而非坏态，而且恢复刻意走**读者离开之后那一条**而不是活着的那一条：读者还站在这场
   对话里时，它只是「没落盘」而不是「不存在」，删除事务因此拒绝把它判成 `absent`，好
   让租约撑过下一次把文件写回来的保存；读者离开之后，恢复它会先查原始目录并清掉租约
   （`openChatuiChatForCharacter`），丢弃它会拿到 `absent` 同样清掉租约
   （`delete-transaction.ts`），两条路都不卡住。
-- 那约 142ms 窗口内点「丢弃」，DELETE 会跑在 ST 的 CREATE 前面，文件随后被创建却不再
+- 那约 142ms 窗口内点「删除」，DELETE 会跑在 ST 的 CREATE 前面，文件随后被创建却不再
   被租约持有——正是这条规则要防的「兜底文件变普通历史」。接受的理由是这个窗口人手
-  不可达：草稿卡要渲染出来、被找到、被点开、确认框还要被按下，全部发生在页面出现后的
+  不可达：那张卡要渲染出来、被找到、被点开、确认框还要被按下，全部发生在页面出现后的
   十分之一秒内。真要封死它，只能把立即判定挪到一个保证晚于落盘的信号上——那就是
   CHAT_CHANGED，而真机上那一次在本段代码首次运行前就已经发过了；改等下一次会让所有
   正常 autoload 启动全部落空。
@@ -263,6 +263,15 @@ ST 自己的处理器不会踩到，是因为 `$(this).attr('data-chid')` 是 DO
 新建但尚未被采纳的会话被隔离在版本戳保护的隔离区里；所有清理/移动/采纳操作都要
 通过版本比对拒绝 ABA 竞态。
 
+> **正在拆除（2026-08-02 拍板，DESIGN §4.2）。** 隔离区面向读者的那一层已经拆掉：
+> 新对话就是普通对话，没有草稿卡、没有「未完成草稿」标签、没有把新会话挡在列表外的
+> 过滤，＋新对话按钮不再高亮，也不再限制同时只能有一个。本节以下的不变量描述的是
+> **store 层**，它们此刻仍然全部成立，但已经只剩一个消费者（书脊入列的
+> `leasedAvatars`，用来补 `chat_size` 这个启动期磁盘快照的滞后）。第二棍会把 store
+> 连同 `adapter/chats/deletion-finalization.ts` 的凭证子系统一起收掉，届时本节整体
+> 退场；下面凡是用「草稿卡」「休眠卡」这类措辞描述读者动作的地方，读作「那条对话
+> 在场刊里的普通卡片」。
+
 | 不变量 | 验证 |
 | --- | --- |
 | 指针与乐观草稿拒绝过期的 ABA 清理 | `test/state-contracts.test.mjs :: temp-chat pointer and optimistic draft reject stale ABA cleanup` |
@@ -278,6 +287,7 @@ ST 自己的处理器不会踩到，是因为 `$(this).attr('data-chid')` 是 DO
 | 本地工作先于导航采纳临时会话，导航不能重置未决 UI 状态 | `test/state-contracts.test.mjs :: local work adopts a temp before navigation can reset pending UI state` |
 | 空操作导航保持当前临时会话活跃以待采纳 | `test/state-contracts.test.mjs :: a no-op navigation keeps the current temp active for later adoption` |
 | dry-run 与 quiet 生成探针不采纳未被触碰的临时会话 | `test/state-contracts.test.mjs :: dry-run and quiet generation probes do not adopt an untouched temp chat` |
+| 站在一场未落笔的新对话上再按 ＋新对话，必须再建一场并两场都被追踪——**不是**静默空操作（旧的「同时只能有一个新对话」拦截随草稿卡一起退场，2026-08-02） | `test/sidebar-actions.test.mjs :: a second ＋新对话 press creates a second chat instead of silently doing nothing` |
 
 ## 6. 输入框与编辑草稿
 
@@ -776,6 +786,15 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   仍是 `position: static`、且穿的是 ST 桌面版皮肤（10px 圆角）而非移动抽屉皮肤。守的是
   `.cui-settings-host` 整平选择器必须带 `#chatui-root` 祖先才压得过 ST 用 ID
   加 `!important` 写的移动端规则（c745053）。
+- **`e2e/new-chat-is-ordinary.spec.mjs`**（CI 门禁，两个引擎各跑一遍）：＋新对话
+  建出来的会话必须**以普通卡片列在场刊里**——按一次卡片数 +1 且新卡带 `is-current`，
+  再按一次 +2（旧的「同时只能有一个新对话」拦截若复活，这一步就停在 2）；全程断言
+  `.cui-root-draft-card`、`.cui-picker`、`.cui-root-newchat.is-active` 三者计数为
+  0，即三样退场的东西都不得回来（DESIGN §4.2，2026-08-02）。单测
+  （`sidebar-actions.test.mjs` 那条）只能证明第二次按下真的进了宿主；「读者在列表里
+  看得见它」只有真宿主答得了。**对共享宿主幂等**：结束前先切回固件会话（好让两次
+  删除都不是「删当前对话」——那条路会强制整页刷新，是另一个场景），再把自己建的两条
+  逐一删掉并断言列表回到固件原状；已用 `--repeat-each=3` 实测连跑不互相污染。
 - **`scripts/e2e/measure-chat-switch.mjs`**（CI 门禁，publish-dist 的显式步骤）：双
   400 楼会话经真实侧栏 A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表
   声明 800 条但只挂载有界窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、

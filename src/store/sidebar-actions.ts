@@ -152,10 +152,12 @@ async function _createTempDraft(avatar: string, draftIntent: TempChatDraftSnapsh
         deactivateTempChatIfMatches(old);
         old = getTempChatSnapshot();
     }
-    if (_sameChatIdentity(old.pointer, current)) {
-        cancelTempChatDraftIfMatches(draftIntent);
-        return;
-    }
+    // Pressing ＋新对话 while already sitting on an unadopted new chat used to
+    // return here, so a reader could only ever hold one. That rule existed to
+    // protect a button that was doubling as the new chat's own row: a second
+    // press had nowhere to be drawn. A new chat is an ordinary conversation
+    // now, with an ordinary card, so a second press is an ordinary request and
+    // is answered like any other.
 
     try {
         await chatuiAdapter.sidebarActions.newCharacterChat();

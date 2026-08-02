@@ -14,7 +14,6 @@ import type { Range as VirtualRange } from '@tanstack/react-virtual';
 import { ensureChatuiRoot } from '../shield/st-dom-shield.js';
 import { Composer, GeneratingIndicator } from './components/Composer.js';
 import { QRBar } from './components/QRBar.js';
-import { NewChatCharacterPicker } from './components/composer/NewChatCharacterPicker.js';
 import { MessageItem } from './components/MessageItem.js';
 import { MessageFloorRail } from './components/MessageFloorRail.js';
 import { MessageMenuHost } from './components/message/MessageMenuHost.js';
@@ -27,7 +26,7 @@ import { SettingsContent } from './components/settings/SettingsContent.js';
 import { TopbarMenu } from './components/TopbarMenu.js';
 import { TopbarTitle } from './components/TopbarTitle.js';
 import { SelectorChips } from './components/SelectorChip.js';
-import { useAutoScroll, useChatuiEscapeKey, useChatuiMessage, useChatuiSnapshot, useConfig, useIsTempChatActive, useSidebarBasics, useSettings, useTopbarChatTarget } from './hooks.js';
+import { useAutoScroll, useChatuiEscapeKey, useChatuiMessage, useChatuiSnapshot, useConfig, useSidebarBasics, useSettings, useTopbarChatTarget } from './hooks.js';
 import { clearChatuiToasts, closeChatuiSettings, disableChatui, regenerateChatuiLast, renameChatuiChat, resetChatuiComposerDraftStore, resetChatuiConfirmStore, resetChatuiMenuStore, resetChatuiMessageEditDraftStore } from './actions.js';
 import { teardownCardEmbedRuntime } from './card-embed.js';
 import { resolveConversationTitle } from './format.js';
@@ -142,7 +141,6 @@ function ChatuiApp(): ComponentChild {
     // tracks rename/delete events, so the title never goes stale).
     const sidebarBasics = useSidebarBasics();
     const chatHeader = sidebarBasics.header;
-    const isTempChatActive = useIsTempChatActive();
     const { hasCurrentChat: canRenameTopbarTitle, target: topbarChatTarget } = useTopbarChatTarget();
     const [listNode, setListNode] = useState<HTMLDivElement | null>(null);
     const initializedVirtualChatKeyRef = useRef<string | null>(null);
@@ -303,7 +301,6 @@ function ChatuiApp(): ComponentChild {
                     : <Sidebar
                           onClose={() => setIsSidebarMobileOpen(false)}
                           onNavigate={dismissSidebarNavigation}
-                          isTempChatActive={isTempChatActive}
                       />
                 }
             </div>
@@ -416,13 +413,6 @@ function ChatuiApp(): ComponentChild {
                           </div>
                       )}
                       <QRBar chatKey={state.chat.chatKey} />
-                      {isTempChatActive && (
-                          <NewChatCharacterPicker
-                              characters={sidebarBasics.characters}
-                              getDraftSnapshot={sidebarBasics.getDraftSnapshot}
-                              isGenerating={state.chat.isGenerating}
-                          />
-                      )}
                       <Composer
                           chatKey={state.chat.chatKey}
                           isGenerating={state.chat.isGenerating}
