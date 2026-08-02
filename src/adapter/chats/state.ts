@@ -26,6 +26,8 @@ export type CharConversationGroupDto = {
     isCurrent: boolean;
     dateLastChatTs: number;
     chatSize: number;
+    /** Whether ST would seed a new chat for this character with a greeting. */
+    hasGreeting: boolean;
     chats: ChatListItemDto[];
     visibleCount: number;
     chatsLoaded: boolean;
@@ -42,6 +44,8 @@ export type CharacterSummaryDto = {
     charId: number;
     dateLastChatTs: number;
     chatSize: number;
+    /** Whether ST would seed a new chat for this character with a greeting. */
+    hasGreeting: boolean;
 };
 
 export type CurrentChatHeaderDto = {

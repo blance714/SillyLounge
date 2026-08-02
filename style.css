@@ -1604,6 +1604,25 @@ body.chatui-active .cui-root-nested-chat-row.is-current .cui-root-playbill-card-
     color: color-mix(in srgb, var(--cui-color-accent) 70%, transparent);
 }
 
+/* A conversation nobody has written in yet keeps the retired draft card's one
+   surviving idea: the outline is drawn but not yet inked (owner call,
+   2026-08-02, ui/blank-conversation.ts decides which those are). Only the
+   border *style* changes — title, preview, meta, dock and every colour stay
+   exactly what they are for an ordinary card, so this composes with
+   `.is-current` rather than competing with it: the current conversation is
+   still rust, it is merely rust-and-dashed while it is empty.
+
+   Deliberately not the old draft card: no tag, no tinted fill, no italic
+   preview. Those said 「this is a different kind of thing」, and it is not one
+   any more — it is the same conversation, one state earlier.
+
+   The binding gutter needs no rule here: its edge is already 1px dashed on
+   every card — that is the leaf motif, not a state — so a blank card is simply
+   dashed on all four sides, which is what the retired draft card looked like. */
+body.chatui-active .cui-root-nested-chat-row.is-blank {
+    border-style: dashed;
+}
+
 /* In-place rename (DESIGN §4.2): the title becomes an input where it stands,
    so it keeps the title's own type and only gains the rust outline that says
    it is now being written in. */

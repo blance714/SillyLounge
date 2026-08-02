@@ -470,6 +470,7 @@ export function useSidebarData(): ChatuiSidebarState {
             isCurrent: !!currentChat && currentChat.avatar === group.avatar,
             dateLastChatTs: finiteNumber(group.dateLastChatTs),
             chatSize: finiteNumber(group.chatSize),
+            hasGreeting: group.hasGreeting,
             chats: displayChats,
             // Honest only once the full per-character listing has landed: until
             // then `sourceChats` is the recents page, capped at five, and

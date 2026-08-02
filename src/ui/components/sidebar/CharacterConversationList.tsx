@@ -1,6 +1,7 @@
 import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { openChatuiChatForCharacter, deleteChatuiChat, renameChatuiChat } from '../../actions.js';
+import { isBlankConversation } from '../../blank-conversation.js';
 import { formatConversationMeta } from '../../format.js';
 import { useCaretOnMount } from '../../hooks.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
@@ -20,9 +21,12 @@ import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '..
 function ConversationCard({
     chat,
     charAvatar,
+    isBlank,
 }: {
     chat: ChatListItem;
     charAvatar: string;
+    /** Nobody has written here yet — drawn dashed, and nothing else. */
+    isBlank: boolean;
 }): ComponentChild {
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [renameDraft, setRenameDraft] = useState<string | null>(null);
@@ -49,7 +53,7 @@ function ConversationCard({
 
     return (
         <li
-            className={`cui-root-playbill-card cui-root-nested-chat-row${chat.isCurrent ? ' is-current' : ''}`}
+            className={`cui-root-playbill-card cui-root-nested-chat-row${chat.isCurrent ? ' is-current' : ''}${isBlank ? ' is-blank' : ''}`}
             role="button"
             tabIndex={0}
             onClick={open}
@@ -152,6 +156,10 @@ function ConversationCards({
                     key={chat.fileName}
                     chat={chat}
                     charAvatar={group.avatar}
+                    isBlank={isBlankConversation({
+                        messageCount: chat.messageCount,
+                        hasGreeting: group.hasGreeting,
+                    })}
                 />
             ))}
             {showLoading && (
