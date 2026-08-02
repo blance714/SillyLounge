@@ -11,9 +11,17 @@ import { expect, test } from '@playwright/test';
  * to be drawn and was refused. Take the quarantine's reader-facing layer away
  * and each of the three simply has no reason to exist.
  *
- * The unit gate (sidebar-actions.test.mjs) proves the second press reaches the
- * host. Only a real host can answer the question that actually changed for the
- * reader: does the chat show up in the playbill like everything else.
+ * One thing survived the demolition, as presentation rather than as a tier: a
+ * conversation nobody has written in yet is drawn with a dashed border
+ * (ui/blank-conversation.ts decides which those are). It is still an ordinary
+ * card in every other respect, which is why this spec reads the computed
+ * border style off both a fresh chat and the written-in fixture — a rule that
+ * dashed everything, or nothing, would pass a class-name assertion.
+ *
+ * The unit gates prove the pieces: sidebar-actions.test.mjs that the second
+ * press reaches the host, blank-conversation.test.mjs that the predicate is
+ * right. Only a real host can answer the question that actually changed for
+ * the reader: does the chat show up in the playbill like everything else.
  *
  * Idempotent, as anything touching the shared disposable host must be
  * (playwright-global-setup.mjs boots one for the whole run — see
@@ -39,7 +47,19 @@ async function expectNoDraftVocabulary(page, root, label) {
         .toHaveCount(0);
 }
 
-test('＋新对话 lands an ordinary card in the playbill, and can be pressed again', async ({ page }) => {
+/**
+ * The one thing a blank conversation *does* get: a dashed border, and only
+ * that (DESIGN §4.2). Read off the computed style rather than the class, so a
+ * rule that stops applying — or one an engine draws differently — fails here.
+ */
+function readCardBorder(root, name) {
+    return root.locator('.cui-root-nested-chat-row', { hasText: name }).evaluate((card) => {
+        const style = getComputedStyle(card);
+        return { style: style.borderTopStyle, width: style.borderTopWidth };
+    });
+}
+
+test('＋新对话 lands an ordinary card in the playbill, dashed while empty, and can be pressed again', async ({ page }, testInfo) => {
     const pageErrors = [];
     page.on('pageerror', error => pageErrors.push(error.stack ?? error.message));
 
@@ -54,6 +74,11 @@ test('＋新对话 lands an ordinary card in the playbill, and can be pressed ag
     const names = cardNames(root);
     await expect(names).toHaveText([FIXTURE_CHAT]);
     await expectNoDraftVocabulary(page, root, 'before any new chat');
+
+    // The fixture conversation has four messages in it, so it is the control:
+    // whatever the dashed rule does below, it must not be doing it here.
+    expect(await readCardBorder(root, FIXTURE_CHAT), 'a written-in conversation is solid')
+        .toMatchObject({ style: 'solid' });
 
     const newChat = root.locator('.cui-root-newchat');
     await expect(newChat).toBeEnabled();
@@ -76,6 +101,24 @@ test('＋新对话 lands an ordinary card in the playbill, and can be pressed ag
     const created = (await names.allTextContents()).filter(name => name !== FIXTURE_CHAT);
     expect(created, 'the two new chats are distinct files').toHaveLength(2);
     expect(new Set(created).size).toBe(2);
+
+    // ── Blank conversations are drawn dashed, and only that ──────────────────
+    // The fixture character has a first_mes, so each of these holds exactly one
+    // message — the greeting — which is what ui/blank-conversation.ts reads as
+    // 「nobody has written here yet」.
+    for (const name of created) {
+        expect(await readCardBorder(root, name), `${name} is dashed while it is empty`)
+            .toMatchObject({ style: 'dashed', width: '1px' });
+    }
+    expect(await readCardBorder(root, FIXTURE_CHAT), 'and the written-in one still is not')
+        .toMatchObject({ style: 'solid' });
+
+    // Evidence, the same way smoke.spec.mjs keeps one: the assertions above say
+    // 'dashed', and this is what 'dashed' looked like on the run that passed.
+    await testInfo.attach('playbill-blank-and-written', {
+        body: await root.locator('.cui-root-sidebar').screenshot(),
+        contentType: 'image/png',
+    });
 
     // ── Leave the host as it was found ───────────────────────────────────────
     // The fixture chat first, so neither delete below is the current chat.
