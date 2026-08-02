@@ -18,16 +18,6 @@ import type {
 } from '../adapter/schema.js';
 import { createStore } from './create-store.js';
 import {
-    clearTempChat,
-    getTempChat,
-    getTempChatSnapshot,
-    markTempChatActive,
-    moveTempChatIfMatches,
-    moveTempChatsForCharacter,
-    subscribeTempChatStore,
-} from './temp-chat-store.js';
-import { shouldAdoptTempChatOnGenerationStart } from './temp-chat-navigation.js';
-import {
     moveComposerDraft,
     moveComposerDraftCharacterScope,
 } from './composer-draft-store.js';
@@ -608,17 +598,6 @@ export function refreshChatuiMessage(messageId: number | string) {
     _notifyMessage(id);
 }
 
-/**
- * @returns {void}
- */
-function _clearTempChatIfCurrent() {
-    const current = chatuiAdapter.getCurrentChatIdentity();
-    const tempChat = getTempChat();
-    if (current && tempChat && current.avatar === tempChat.avatar && current.fileName === tempChat.fileName) {
-        clearTempChat();
-    }
-}
-
 function _stripChatExt(value: unknown): string {
     return typeof value === 'string' ? value.replace(/\.jsonl$/i, '') : '';
 }
@@ -650,8 +629,6 @@ function _refreshAfterChatLoaded(): void {
 function _handleChatChanged(): void {
     const oldChatKey = getChatuiState().chat.chatKey;
     const newChatKey = chatuiAdapter.getCurrentChatKey();
-    const current = chatuiAdapter.getCurrentChatIdentity();
-    if (current) markTempChatActive(current.avatar, current.fileName);
     _pendingChatLoadTransition = oldChatKey && newChatKey && oldChatKey !== newChatKey
         ? { oldChatKey, newChatKey }
         : null;
@@ -707,20 +684,12 @@ function _migrateRenamedChatState(eventData: unknown): void {
     if (!newChatKey || newChatKey === oldChatKey) return;
 
     moveComposerDraft(oldChatKey, newChatKey);
-    const temp = getTempChatSnapshot();
-    if (!groupId && temp.pointer?.avatar === avatar && temp.pointer.fileName === oldFileName) {
-        const newFileName = wasActiveTarget
-            ? chatuiAdapter.getCurrentChatIdentity()?.fileName || eventNewFileName
-            : eventNewFileName;
-        moveTempChatIfMatches(temp, { avatar, fileName: newFileName });
-    }
 }
 
 function _migrateRenamedCharacterState(oldAvatar: unknown, newAvatar: unknown): void {
     if (typeof oldAvatar !== 'string' || typeof newAvatar !== 'string') return;
     if (!oldAvatar || !newAvatar || oldAvatar === newAvatar) return;
     moveComposerDraftCharacterScope(oldAvatar, newAvatar);
-    moveTempChatsForCharacter(oldAvatar, newAvatar);
 }
 
 /**
@@ -772,28 +741,10 @@ export function initChatuiStore() {
     _isInitializing = true;
     const registered: Array<() => void> = [];
     try {
-        const current = chatuiAdapter.getCurrentChatIdentity();
-        if (current) markTempChatActive(current.avatar, current.fileName);
         refreshChatuiStore();
 
         const refreshNow = () => refreshChatuiStore();
         const refreshMessage = (messageId: number | string) => refreshChatuiMessage(messageId);
-        const refreshSentMessage = (messageId: number | string) => {
-            _clearTempChatIfCurrent();
-            refreshChatuiMessage(messageId);
-        };
-        const refreshUpdatedMessage = (messageId: number | string) => {
-            _clearTempChatIfCurrent();
-            refreshChatuiMessage(messageId);
-        };
-        const adoptAndRefreshMessage = (messageId: number | string) => {
-            _clearTempChatIfCurrent();
-            refreshChatuiMessage(messageId);
-        };
-        const adoptAndRefreshNow = () => {
-            _clearTempChatIfCurrent();
-            refreshChatuiStore();
-        };
         const register = (key: string, handler: (...args: any[]) => void) => {
             registered.push(chatuiAdapter.subscribe(key, handler));
         };
@@ -803,13 +754,6 @@ export function initChatuiStore() {
         const registerLast = (key: string, handler: (...args: any[]) => void) => {
             registered.push(chatuiAdapter.subscribeLast(key, handler));
         };
-
-        // Storage merges cannot inspect ST from the ST-free temp store. Rebind
-        // any newly arrived lease that already matches this tab's loaded chat.
-        registered.push(subscribeTempChatStore(() => {
-            const loaded = chatuiAdapter.getCurrentChatIdentity();
-            if (loaded) markTempChatActive(loaded.avatar, loaded.fileName);
-        }));
 
         registerFirst(stEventKeys.CHAT_CHANGED, _handleChatChanged);
         registerLast(stEventKeys.CHAT_CHANGED, _scheduleChatLoadTransitionExpiry);
@@ -826,33 +770,19 @@ export function initChatuiStore() {
         registerFirst(stEventKeys.CHAT_LOADED, _refreshAfterChatLoaded);
         registerLast(stEventKeys.CHAT_LOADED, _scheduleChatLoadTransitionExpiry);
         register(stEventKeys.MORE_MESSAGES_LOADED, refreshNow);
-        register(stEventKeys.MESSAGE_SENT, refreshSentMessage);
-        register(stEventKeys.MESSAGE_UPDATED, refreshUpdatedMessage);
-        register(stEventKeys.MESSAGE_EDITED, adoptAndRefreshMessage);
-        register(stEventKeys.MESSAGE_SWIPED, adoptAndRefreshMessage);
-        register(stEventKeys.MESSAGE_SWIPE_DELETED, adoptAndRefreshNow);
-        register(stEventKeys.MESSAGE_DELETED, adoptAndRefreshNow);
-        register(stEventKeys.MESSAGE_FILE_EMBEDDED, adoptAndRefreshMessage);
-        register(stEventKeys.MESSAGE_REASONING_EDITED, adoptAndRefreshMessage);
-        register(stEventKeys.MESSAGE_REASONING_DELETED, adoptAndRefreshMessage);
-        register(stEventKeys.MESSAGE_RECEIVED, (_messageId: number | string, type: unknown) => {
-            // ST emits `first_message` while constructing the untouched greeting.
-            // Every other received message is user work and adopts the temp chat.
-            if (type !== 'first_message') _clearTempChatIfCurrent();
-        });
+        register(stEventKeys.MESSAGE_SENT, refreshMessage);
+        register(stEventKeys.MESSAGE_UPDATED, refreshMessage);
+        register(stEventKeys.MESSAGE_EDITED, refreshMessage);
+        register(stEventKeys.MESSAGE_SWIPED, refreshMessage);
+        register(stEventKeys.MESSAGE_SWIPE_DELETED, refreshNow);
+        register(stEventKeys.MESSAGE_DELETED, refreshNow);
+        register(stEventKeys.MESSAGE_FILE_EMBEDDED, refreshMessage);
+        register(stEventKeys.MESSAGE_REASONING_EDITED, refreshMessage);
+        register(stEventKeys.MESSAGE_REASONING_DELETED, refreshMessage);
         register(stEventKeys.CHARACTER_MESSAGE_RENDERED, refreshMessage);
         register(stEventKeys.USER_MESSAGE_RENDERED, refreshMessage);
         register(stEventKeys.STREAM_TOKEN_RECEIVED, _scheduleStreamRefresh);
-        register(stEventKeys.GENERATION_STARTED, (
-            type: unknown,
-            _params: unknown,
-            isDryRun: unknown,
-        ) => {
-            if (shouldAdoptTempChatOnGenerationStart(type, isDryRun)) {
-                _clearTempChatIfCurrent();
-            }
-            refreshChatuiStore();
-        });
+        register(stEventKeys.GENERATION_STARTED, refreshNow);
         register(stEventKeys.GENERATION_STOPPED, refreshNow);
         register(stEventKeys.GENERATION_ENDED, refreshNow);
 

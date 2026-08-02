@@ -12,10 +12,13 @@
 // character's last conversation made the character you were standing on
 // vanish from the rail on the very next paint, with no way back.
 //
-// Every case below is written against the four enrolment sources by name
-// (disk snapshot / on stage / quarantine lease / pending draft credential) and
-// against literal expected orders, not against a re-derivation of the sort
-// comparator.
+// Every case below is written against the three enrolment sources by name
+// (disk snapshot / on stage / session ledger) and against literal expected
+// orders, not against a re-derivation of the sort comparator.
+//
+// The ledger replaced a pair of quarantine-shaped sources on 2026-08-02: a
+// lease set and a sessionStorage credential, both of which happened to name
+// the right characters while tracking something else entirely.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -29,39 +32,37 @@ function character(avatar, { chatSize = 0, dateLastChatTs = 0, name = avatar.rep
 
 const names = cast => cast.map(entry => entry.avatar);
 
-test('the spine enrols the union of the four sources and seats a character named by several of them exactly once', () => {
+test('the spine enrols the union of the three sources and seats a character named by several of them exactly once', () => {
     const cast = [
         // 1. the disk snapshot: has conversations, like any ordinary entry.
         character('ann.png', { chatSize: 4096, dateLastChatTs: 300 }),
         // 2. on stage right now, but its chats directory reads empty — the
         //    state a current-chat delete leaves behind until the next boot.
         character('bob.png'),
-        // 3. holding a temp-chat quarantine lease.
+        // 3. in the session ledger: ChatUI gave it a conversation after the
+        //    snapshot was taken (＋新对话, or a post-delete landing).
         character('cat.png'),
-        // 4. named by a queued-but-unresolved draft-quarantine credential…
-        character('dan.png'),
         // …and never used at all: the case the original filter exists for.
         character('eve.png'),
     ];
 
     const enrolled = orderSpineCast(cast, {
         onStageAvatar: 'bob.png',
-        leasedAvatars: ['cat.png'],
-        pendingDraftAvatar: 'dan.png',
+        sessionAvatars: ['cat.png'],
     });
 
     assert.deepEqual(
         new Set(names(enrolled)),
-        new Set(['ann.png', 'bob.png', 'cat.png', 'dan.png']),
-        'each of the four sources enrols its character; a character no source names stays off the rail',
+        new Set(['ann.png', 'bob.png', 'cat.png']),
+        'each source enrols its character; a character no source names stays off the rail',
     );
-    assert.equal(enrolled.length, 4, 'and nobody is enrolled twice');
+    assert.equal(enrolled.length, 3, 'and nobody is enrolled twice');
 
     // The same character named by every source at once is still one seat: the
     // rule filters the cast list, it does not concatenate source lists.
     const allAtOnce = orderSpineCast(
         [character('bob.png', { chatSize: 4096, dateLastChatTs: 300 })],
-        { onStageAvatar: 'bob.png', leasedAvatars: ['bob.png', 'bob.png'], pendingDraftAvatar: 'bob.png' },
+        { onStageAvatar: 'bob.png', sessionAvatars: ['bob.png', 'bob.png'] },
     );
     assert.deepEqual(names(allAtOnce), ['bob.png']);
 });
@@ -79,7 +80,7 @@ test('with no session sources at all the spine is exactly the characters that ha
         'the filter the union relaxes is still the filter: an unused character is not on the bill',
     );
     assert.deepEqual(
-        names(orderSpineCast(cast, { onStageAvatar: null, leasedAvatars: [], pendingDraftAvatar: null })),
+        names(orderSpineCast(cast, { onStageAvatar: null, sessionAvatars: [] })),
         ['ann.png', 'cat.png'],
         'empty/null sources must behave exactly like passing nothing',
     );
@@ -95,8 +96,7 @@ test('entries with no usable identity are refused no matter which source names t
     assert.deepEqual(
         names(orderSpineCast(cast, {
             onStageAvatar: 'blank.png',
-            leasedAvatars: [''],
-            pendingDraftAvatar: 'blank.png',
+            sessionAvatars: ['', 'blank.png'],
         })),
         ['ann.png'],
         'a seat needs an avatar to key it and a name to label it; enrolment cannot conjure either',
@@ -127,14 +127,13 @@ test('a character the disk snapshot already accounts for keeps its recency seat,
         character('cat.png', { chatSize: 4096, dateLastChatTs: 100 }),
     ];
 
-    // Holding the stage, a lease and a credential all at once still does not
-    // move a character that the ordinary rule already seats: the union changes
-    // who is on the rail, not how the rail is ordered.
+    // Holding the stage *and* sitting in the session ledger still does not move
+    // a character the ordinary rule already seats: the union changes who is on
+    // the rail, not how the rail is ordered.
     assert.deepEqual(
         names(orderSpineCast(cast, {
             onStageAvatar: 'cat.png',
-            leasedAvatars: ['cat.png'],
-            pendingDraftAvatar: 'cat.png',
+            sessionAvatars: ['cat.png'],
         })),
         ['ann.png', 'bob.png', 'cat.png'],
     );
@@ -151,15 +150,14 @@ test('ties fall back to the incoming cast order, so two session-known characters
     ];
 
     assert.deepEqual(
-        names(orderSpineCast(cast, { leasedAvatars: ['cat.png'], pendingDraftAvatar: 'ann.png' })),
+        names(orderSpineCast(cast, { sessionAvatars: ['ann.png', 'cat.png'] })),
         ['ann.png', 'cat.png', 'bob.png'],
     );
     // Reversing the input reverses only the tied pair, proving the fallback is
     // the input order rather than something derived from the avatars.
     assert.deepEqual(
         names(orderSpineCast([cast[2], cast[1], cast[0]], {
-            leasedAvatars: ['cat.png'],
-            pendingDraftAvatar: 'ann.png',
+            sessionAvatars: ['ann.png', 'cat.png'],
         })),
         ['cat.png', 'ann.png', 'bob.png'],
     );
@@ -173,7 +171,7 @@ test('malformed recency and size values are read as zero instead of poisoning th
     ];
 
     assert.deepEqual(
-        names(orderSpineCast(cast, { onStageAvatar: 'ann.png', leasedAvatars: ['bob.png'] })),
+        names(orderSpineCast(cast, { onStageAvatar: 'ann.png', sessionAvatars: ['bob.png'] })),
         // ann and bob both read as size 0 (NaN and a string are not finite
         // numbers), so they lead in input order; cat is the only entry the
         // snapshot can speak for.

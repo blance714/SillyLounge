@@ -84,9 +84,7 @@
 | 待删文件不存在时只做一次存在性检查、绝不发出破坏性请求，并如实上报 `absent`（供调用方清掉自己那条已无文件可指的租约） | `test/adapter-chats.test.mjs :: deleting a chat absent from the raw directory listing reports it as absent after one existence check, without issuing the destructive request` |
 | 目录读取失败绝不冒充「文件不存在」：读不到不等于不在，否则会丢掉仍持有真实文件的隔离租约 | `test/adapter-chats.test.mjs :: a directory listing that could not be read is never reported as absence` |
 | 「没有文件」不等于「没有这场对话」：待删名字正是运行时当前所在的会话时绝不上报 `absent`（它只是还没落盘，下一次保存就会写回来；报 absent 会让调用方丢掉活草稿的租约，落盘后变成无人认领的永久历史） | `test/adapter-chats.test.mjs :: a missing file that is still the live chat is not absence: the conversation is alive and unsaved, so the lease must survive` |
-| 丢弃一条文件已消失的隔离草稿必须清掉租约并如实告知，绝不报「删除失败」（丢弃就是这一次调用，报失败等于租约永远清不掉） | `test/sidebar-actions.test.mjs :: discarding a quarantined draft whose file has already vanished drops the lease instead of reporting a failure that can never be retried` |
 | 结算这条「文件已不存在」的删除同时必须广播该对话已消失：宿主什么都没删，就不会有 CHAT_DELETED，而侧栏缓存的角色列表仍握着这个文件名——不广播的话草稿卡不是消失，而是**转成**一条指向不存在文件的普通历史行（真机 danglinglease 格实测） | `test/sidebar-actions.test.mjs :: settling a delete against a file that is not there announces the vanished conversation, so the cached listing cannot go on serving it as ordinary history` |
-| 恢复一条文件已消失的草稿、以及宿主回 `notfound` 的那次打开，走同一条广播：同一个消失的文件，「恢复」与「丢弃」不得给出不同的列表结局。注意 `notfound` 的范围比字面窄——`adapter/chats/navigation.ts` 只在**角色卡不在名册**或文件名为空时回它，从不为「聊天文件消失」回它（对已在台上的角色打开一个不存在的文件，ST 当作空对话加载，不报错），所以**普通历史行的文件消失走不到这里**，见 `ROADMAP.md` G4 | `test/sidebar-actions.test.mjs :: both of openChatuiChatForCharacter's "it is not there" exits announce the vanished conversation too: a restore whose draft file is gone, and a host-reported notfound` |
 | 删除非当前、非指针会话时干净成功并广播 CHAT_DELETED | `test/adapter-chats.test.mjs :: deleting a non-current chat that is not the character-card pointer resolves cleanly and emits CHAT_DELETED` |
 | 删除后核实读取暂时性失败时有界重试，直到确认文件消失才报 deleted | `test/adapter-chats.test.mjs :: the post-delete existence check retries through transient read failures and resolves deleted once the listing confirms removal` |
 | 核实读取成功但文件仍在时立即如实报 deleted:false，不进入轮询 | `test/adapter-chats.test.mjs :: a listing that successfully reads back but still shows the file resolves deleted:false immediately, without polling` |
@@ -191,23 +189,22 @@ bootstrap 模式（`settings.enabled === false`）下唯一被摘掉的就是这
 
 | 不变量 | 验证 |
 | --- | --- |
-| 没有排队的兜底草稿隔离凭证时，认领函数直接返回 null，不发任何请求、不写任何存储 | `test/adapter-chats.test.mjs :: armPendingCharacterChatDraftQuarantine resolves null and touches nothing when no tombstone was queued` |
-| 缺角色 avatar 或文件名时排队函数是纯空操作，不写入任何凭证 | `test/adapter-chats.test.mjs :: queueCharacterChatDraftQuarantine with a missing avatar or filename is a no-op` |
-| 启动时 ST 尚未载入兜底文件（真实时序）不算失败：凭证保留、判定为 waiting；兜底文件成为当前对话的那一刻才交还指针并清空凭证，且全程零网络请求 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone waits through the boot in which ST has not yet loaded the fallback file, then resolves the moment it becomes the live chat — without ever reading the chat directory` |
-| 当前对话是别的文件、或同名文件挂在别的角色下时一律 waiting：绝不误隔离别人，也绝不因此丢弃仍待兑现的意图 | `test/adapter-chats.test.mjs :: the draft-quarantine tombstone keeps waiting while an unrelated chat holds the live slot, and never quarantines it` |
-| 已被上一次页面加载认领却未兑现的凭证，由下一次启动过期丢弃，绝不无限悬挂；过期之后连只读的 peek 也读不到它（spine 拿它当入列来源且收不到任何变更通知，过期后仍读得到就会白占一个位子直到本会话结束） | `test/adapter-chats.test.mjs :: a draft-quarantine tombstone the previous page load already armed is expired by the next boot instead of dangling` |
-| 没有凭证时判定函数报 settled 并短路，连当前对话身份都不去读 | `test/adapter-chats.test.mjs :: resolvePendingCharacterChatDraftQuarantine reports settled without reading the live chat when no tombstone is queued` |
-| 删除角色仅剩对话时，`deleteChatuiChat` 在刷新前把兜底文件名连同既有的 CHAT_DELETED 回放凭证一起排队；下次启动 `finalizeChatuiDraftQuarantine` 先认领、再等 CHAT_CHANGED，兜底文件真正上台后才折进临时会话隔离集并标记为活跃，随即注销监听 | `test/sidebar-actions.test.mjs :: deleting a character's only chat queues the draft-quarantine tombstone before reload, and finalizeChatuiDraftQuarantine folds the fallback file into the same temp-chat quarantine ＋新对话 uses once ST's boot finally makes it live` |
-| 删除后仍有真实剩余对话时绝不排队草稿隔离凭证，也绝不污染隔离集 | `test/sidebar-actions.test.mjs :: deleting a chat that leaves a real remaining conversation never queues a draft-quarantine tombstone` |
-| 非兜底文件的 CHAT_CHANGED 既不隔离它、也不丢弃凭证，继续等真正那一条 | `test/sidebar-actions.test.mjs :: a pending draft quarantine ignores chat changes that are not its fallback file, and keeps waiting for the one that is` |
-| 没有待处理凭证时 `finalizeChatuiDraftQuarantine` 是纯空操作：零网络请求、隔离集不变、不留下任何 CHAT_CHANGED 监听 | `test/sidebar-actions.test.mjs :: finalizeChatuiDraftQuarantine is a no-op when no draft-quarantine tombstone is pending` |
-| 凭证不消费也不认领即可读出它指向哪个角色（供 spine 入列），peek 之后 arm/resolve 语义一字不变 | `test/adapter-chats.test.mjs :: peekPendingCharacterChatDraftQuarantine reports who a waiting credential is about without arming or consuming it` |
+| 没有排队的落地凭证时，认领函数直接返回 null，不发任何请求、不写任何存储，连当前对话都不去读 | `test/adapter-chats.test.mjs :: armPendingCharacterChatLanding resolves null and touches nothing when nothing was queued` |
+| 缺角色 avatar 时排队函数是纯空操作，不写入任何凭证 | `test/adapter-chats.test.mjs :: queueCharacterChatLanding with a missing avatar is a no-op` |
+| 已认领但未兑现的凭证由下一次启动过期丢弃，绝不在一页之后才把读者放到某个角色上 | `test/adapter-chats.test.mjs :: a landing the previous page load already armed is expired by the next boot instead of dangling` |
+| 排队的凭证在下一次启动报出它指向的角色，并**在读到的那一刻就被消费**（没有需要等的后续信号了） | `test/adapter-chats.test.mjs :: the queued landing names its character on the next boot, and is consumed by reading it` |
+| 上一个版本写下的旧格式凭证（多一个 fileName 字段）仍能把读者送回该角色——存储键因此刻意沿用旧名 | `test/adapter-chats.test.mjs :: a credential written by the previous build still lands its reader` |
+| 读不出或格式不对的凭证一律当作没有，绝不半途应用 | `test/adapter-chats.test.mjs :: an unreadable or malformed credential is ignored rather than half-applied` |
+| 删除角色仅剩对话时，`deleteChatuiChat` 在刷新前排队落地凭证；下次启动 `finalizeChatuiChatTransaction` 把该角色记进会话台账（好让书脊还能显示它），全程零网络请求 | `test/sidebar-actions.test.mjs :: deleting a character's only chat queues the landing credential before the reload, and the next boot puts the reader back on that character` |
+| 删除后仍有真实剩余对话时绝不排队落地凭证，启动时也无事可做 | `test/sidebar-actions.test.mjs :: deleting a chat that leaves a real remaining conversation never queues a landing credential` |
+| 空台启动（ST 默认不 autoload）时事务收尾走完全程：选上凭证指向的角色，并把它记进会话台账 | `test/sidebar-actions.test.mjs :: a boot that lands on nobody finishes the delete transaction itself: ChatUI selects the credential's character` |
+| ChatUI 关着时（bootstrap 模式）绝不替读者在 ST 原生界面里选角色，但凭证照常消费、台账照常记——读者本页把 ChatUI 打开时书脊仍要显示得出那个角色 | `test/sidebar-actions.test.mjs :: with ChatUI switched off the boot still spends the credential, but never selects a character inside ST's own interface` |
+| 宿主回 `notfound` 的那次打开必须广播该对话已消失，否则缓存列表会继续把它当普通历史行来服务 | `test/sidebar-actions.test.mjs :: openChatuiChatForCharacter's host-reported notfound announces the vanished conversation` |
+| 站在一场未落笔的新对话上再按 ＋新对话，必须再建一场——**不是**静默空操作（旧的「同时只能有一个新对话」拦截随草稿卡一起退场，2026-08-02） | `test/sidebar-actions.test.mjs :: a second ＋新对话 press creates a second chat instead of silently doing nothing` |
 | ST 默认设置（不 autoload）下启动落在「没有角色」时，凭证指向的角色被主动选上，落地后按常规持久化 active_character | `test/adapter-chats.test.mjs :: a pending chat transaction lands on its character when ST's boot chose nobody, persisting the selection like any other landing` |
 | 已经有人占台（读者 autoload 回来的角色，含下标 0；或群聊）时一律不抢，且什么都不持久化 | `test/adapter-chats.test.mjs :: a pending chat transaction never steals a stage somebody already holds — not a character ST autoloaded, not a group` |
 | 角色卡已不存在、或 ST 拒绝这次选择时如实上报且不持久化，绝不假定落地 | `test/adapter-chats.test.mjs :: a pending chat transaction whose character is gone, or whose selection ST refuses, reports it and persists nothing` |
-| 空台启动时事务收尾走完全程：选上角色 → ST 写出兜底文件并发 CHAT_CHANGED → 折进隔离集、凭证消费、监听注销 | `test/sidebar-actions.test.mjs :: a boot that lands on nobody finishes the delete transaction itself: ChatUI selects the credential's character and the fallback file lands in quarantine` |
 | 启动落在别的角色上时绝不改动，凭证继续等待；读者之后走到该角色仍照常兑现 | `test/sidebar-actions.test.mjs :: a boot that landed on somebody else is never overridden: the credential simply keeps waiting` |
-| ChatUI 关着时（bootstrap 模式）绝不替读者在 ST 原生界面里选角色，但凭证照常认领、监听照常挂：ST 若真写出兜底文件仍折进持久化隔离集，ChatUI 回来时它还是草稿 | `test/sidebar-actions.test.mjs :: with ChatUI switched off the boot still arms and watches the credential, but never selects a character inside ST's own interface` |
 | 「关扩展→刷新→再开扩展」：bootstrap 页认领却没兑现的凭证由下一次启动过期丢弃，绝不在一页之后才选中某人，之后才上台的同名文件是普通历史而非被追认的草稿 | `test/sidebar-actions.test.mjs :: a credential the bootstrap page owned but never redeemed expires on the next boot instead of selecting somebody a page later` |
 | 这次落地走共享串行通道：通道里已有宿主工作时必须排队等它做完才进 ST，且排队期间 CHAT_CHANGED 监听已经注册（解析凭证的那个事件正是从落地内部发出的），入队不影响兑现 | `test/sidebar-actions.test.mjs :: the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it` |
 
@@ -258,36 +255,17 @@ ST 自己的处理器不会踩到，是因为 `$(this).attr('data-chid')` 是 DO
 | 格式化 HTML 缓存超过上限（1024）后持续裁剪收敛，不无界增长 | `test/chat-store.test.mjs :: the formatter HTML cache trims to FORMAT_HTML_CACHE_LIMIT once distinct formatted messages exceed it` |
 | 同一消息的正文与推理文本 HTML 各占独立缓存槽，互不覆盖、互不代答 | `test/chat-store.test.mjs :: the formatter HTML cache keeps a message's reasoning-text HTML and body HTML in independent slots, so editing one never reformats or leaks into the other` |
 
-## 5. 临时会话隔离（temp-chat）
+## 5.（已退场）临时会话隔离（temp-chat）
 
-新建但尚未被采纳的会话被隔离在版本戳保护的隔离区里；所有清理/移动/采纳操作都要
-通过版本比对拒绝 ABA 竞态。
+**2026-08-02 整节移除。** 新建但尚未采纳的会话曾被隔离在一个版本戳保护的持久化租约集
+里，那套 ABA 防护是本仓库最精细的一块状态机——而它存在的唯一理由，是让未落笔的新对话
+不混进普通历史。owner 取消了「未完成草稿」这一档（DESIGN §4.2）：新对话就是普通对话，
+于是这块状态机没有任何东西要保护了，连同 `store/temp-chat-store.ts`（548 行）与
+`temp-chat-navigation.ts` 一起删除，本节的 13 条不变量及其单测随之退场。
 
-> **正在拆除（2026-08-02 拍板，DESIGN §4.2）。** 隔离区面向读者的那一层已经拆掉：
-> 新对话就是普通对话，没有草稿卡、没有「未完成草稿」标签、没有把新会话挡在列表外的
-> 过滤，＋新对话按钮不再高亮，也不再限制同时只能有一个。本节以下的不变量描述的是
-> **store 层**，它们此刻仍然全部成立，但已经只剩一个消费者（书脊入列的
-> `leasedAvatars`，用来补 `chat_size` 这个启动期磁盘快照的滞后）。第二棍会把 store
-> 连同 `adapter/chats/deletion-finalization.ts` 的凭证子系统一起收掉，届时本节整体
-> 退场；下面凡是用「草稿卡」「休眠卡」这类措辞描述读者动作的地方，读作「那条对话
-> 在场刊里的普通卡片」。
-
-| 不变量 | 验证 |
-| --- | --- |
-| 指针与乐观草稿拒绝过期的 ABA 清理 | `test/state-contracts.test.mjs :: temp-chat pointer and optimistic draft reject stale ABA cleanup` |
-| 过期的临时会话完成记录文件名，但不抹掉更新的草稿意图 | `test/state-contracts.test.mjs :: stale temp-chat completion records its file without erasing a newer draft intent` |
-| 离开临时会话只使其失活，不发布也不阻塞下一个草稿 | `test/state-contracts.test.mjs :: leaving a temp chat deactivates it without publishing or blocking the next draft` |
-| 采纳活跃临时会话时保留其它隔离中的草稿 | `test/state-contracts.test.mjs :: adopting the active temp preserves other quarantined drafts` |
-| 恢复并重命名隔离草稿后仍被追踪 | `test/state-contracts.test.mjs :: restoring and renaming a quarantined draft keeps it tracked` |
-| 结果不明的重命名将两个可能的文件身份同时隔离 | `test/state-contracts.test.mjs :: an uncertain rename quarantines both possible file identities` |
-| 单条损坏的持久化租约不能连带发布其它隔离草稿 | `test/state-contracts.test.mjs :: one corrupt persisted lease cannot publish other quarantined drafts` |
-| 无关的隔离区变动不使串行化的新会话槽位失效 | `test/state-contracts.test.mjs :: unrelated quarantine churn does not invalidate a serialized new-chat slot` |
-| 过期的离开操作不能使更新的活跃临时会话失活 | `test/state-contracts.test.mjs :: stale departure cannot deactivate a newer active temp` |
-| 排队导航能捕获用户点击离开之后才创建完成的具体临时会话 | `test/state-contracts.test.mjs :: queued navigation captures a concrete temp created after the user clicked away` |
-| 本地工作先于导航采纳临时会话，导航不能重置未决 UI 状态 | `test/state-contracts.test.mjs :: local work adopts a temp before navigation can reset pending UI state` |
-| 空操作导航保持当前临时会话活跃以待采纳 | `test/state-contracts.test.mjs :: a no-op navigation keeps the current temp active for later adoption` |
-| dry-run 与 quiet 生成探针不采纳未被触碰的临时会话 | `test/state-contracts.test.mjs :: dry-run and quiet generation probes do not adopt an untouched temp chat` |
-| 站在一场未落笔的新对话上再按 ＋新对话，必须再建一场并两场都被追踪——**不是**静默空操作（旧的「同时只能有一个新对话」拦截随草稿卡一起退场，2026-08-02） | `test/sidebar-actions.test.mjs :: a second ＋新对话 press creates a second chat instead of silently doing nothing` |
+它顺带回答过的另一个问题——**「谁的对话是本会话才有的、ST 启动快照还不知道」**——由
+`store/session-characters.ts` 接手，见 §9 的「会话角色台账」。那才是这个问题本来该有的
+形状：进程内、页级、一个 Set，而不是持久化租约的副产品。
 
 ## 6. 输入框与编辑草稿
 
@@ -649,7 +627,7 @@ spine 是 ChatUI 唯一的换角色入口（ST 原生列表在遮罩之下），
 
 | 不变量 | 验证 |
 | --- | --- |
-| 四类来源各自都能让角色入列，被多类同时指向也只占一个位子 | `test/spine-cast.test.mjs :: the spine enrols the union of the four sources and seats a character named by several of them exactly once` |
+| 三类来源各自都能让角色入列，被多类同时指向也只占一个位子 | `test/spine-cast.test.mjs :: the spine enrols the union of the three sources and seats a character named by several of them exactly once` |
 | 没有任何会话内来源时，spine 恰好等于「磁盘上有对话」那一批（原始过滤目的保留） | `test/spine-cast.test.mjs :: with no session sources at all the spine is exactly the characters that have conversations on disk` |
 | 缺 avatar 或缺名字的条目任何来源都无法让它入列 | `test/spine-cast.test.mjs :: entries with no usable identity are refused no matter which source names them` |
 | 仅靠会话内来源入列的角色排在最前（其 recency 键是「没有」而不是「旧」） | `test/spine-cast.test.mjs :: a character ChatUI knows is live leads the rail, because its recency key is absent rather than old` |
@@ -688,6 +666,30 @@ src/endpoints/chats.js）只报消息**条数**、最后一条正文、时间戳
 | 恰好 1 条：有开场白的角色算未落笔（那条只能是开场白），没开场白的角色**不算**（那条只能是读者写的） | `test/blank-conversation.test.mjs :: one message means the greeting alone for a character who has one, and the reader's own line for one who does not` |
 | 已经有回复的对话任何情况下都不算未落笔 | `test/blank-conversation.test.mjs :: a conversation with a reply in it is never blank` |
 | 列表没给出可用条数时判为「不是未落笔」，绝不猜——虚线是对文件的一个断言，没证据就不断言，且反过来会把真实历史标成未写过 | `test/blank-conversation.test.mjs :: a count the listing could not supply is read as "not blank" rather than guessed` |
+
+### 会话角色台账（store/session-characters.ts）
+
+书脊的入列规则要问「这个角色有对话吗」，而 ST 给的 `chat_size` 是**每次启动扫一次
+磁盘**的快照（`calculateChatSize`，src/endpoints/characters.js），页内永不刷新。凡是
+在那次扫描**之后**才拿到第一场对话的角色，快照都看不见——而快照说不出话的角色，读者
+就走不到（书脊是 ChatUI 唯一的换角色入口，ST 原生列表在遮罩之下）。
+
+造成这个缺口的只有两件事，且都是 ChatUI 自己做的：给一个本来没有对话的角色按 ＋新对话；
+以及删掉某角色最后一条对话后的那次刷新——ST 在那一次启动里写出兜底文件，而该次启动的
+快照是在它存在之前取的。所以 ChatUI 边做边记。
+
+台账**刻意是进程内、页级**的：它只为盖住一次过期的快照而存在，下一次启动自己的扫描就
+是权威。这一点是它与被它取代的持久化隔离租约集最大的不同——那套东西回答同一个问题只是
+副产品（2026-08-02 退役，见 §5）。一个关于「磁盘快照过期了」的答案，没有理由活得比那张
+快照所属的页面更久。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 记下的角色会被报出，重复记录是幂等的 | `test/session-characters.test.mjs :: a remembered character is reported, and remembering is idempotent` |
+| 空串/非字符串一律拒绝，绝不记成一条空条目 | `test/session-characters.test.mjs :: an unusable avatar is refused rather than recorded as a blank entry` |
+| 什么都没变的读取必须返回**同一个对象**：`useSyncExternalStore` 按引用比快照，每次读都重建数组会让书脊在任何无关通知上重绘 | `test/session-characters.test.mjs :: the snapshot is stable across reads that changed nothing` |
+| 订阅者只在真的新增时被通知，重复记录与被拒绝的值都不发通知 | `test/session-characters.test.mjs :: subscribers hear real additions and nothing else` |
+| 重置一个本来就空的台账不通知任何人（拆卸不得重绘一条没有变化的轨） | `test/session-characters.test.mjs :: resetting an already-empty ledger notifies nobody` |
 
 ### Topbar 改名与分支门禁（ui/topbar-menu-logic.ts）
 
@@ -834,6 +836,18 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   **对共享宿主幂等**：结束前先切回固件会话（好让两次
   删除都不是「删当前对话」——那条路会强制整页刷新，是另一个场景），再把自己建的两条
   逐一删掉并断言列表回到固件原状；已用 `--repeat-each=3` 实测连跑不互相污染。
+- **`scripts/e2e/verify-last-chat-delete.mjs`**（CI 门禁，publish-dist 与 pr-checks 的
+  显式步骤）：**删掉某角色唯一一条对话**这条路，端到端跑在真宿主上——读者从场刊删除 →
+  `delete-transaction.ts` 把角色的持久指针挪到一个尚未写出的兜底名 → 排队落地凭证 →
+  强制整页刷新 → ST 启动写出该文件 → 断言读者回到**同一个角色**、手里有一场**能写的**
+  对话、被删的那条不在列表里且恰好有一条替代、角色仍在书脊上、全程零 page error。
+  它**自带一次性数据根与一次性 ST**（照 `verify-truncation-guard.mjs` 的样子），不跑在
+  共享宿主上——因为它对固件是不可逆破坏性的：删掉的正是固件唯一那条对话，替代它的是 ST
+  在刷新里新写的文件，放进共享套件会让其后每个 spec 面对一个和它们所写时不同的宿主。
+  这条路每一环都在真机上坏过（书脊丢角色、danglinglease），所以它按行为验收而不是按
+  实现细节写。**够不到的那一支**：固件强制 `auto_load_chat = true`，所以座位是 ST 自己
+  的 autoload 给的，ChatUI 面向默认宿主的 `selectCharacterIfNobodyIsOnStage` 兜底不在
+  这条路上——那一支由 `sidebar-actions.test.mjs` 的单测覆盖，此处如实标注而不含糊带过。
 - **`scripts/e2e/measure-chat-switch.mjs`**（CI 门禁，publish-dist 的显式步骤）：双
   400 楼会话经真实侧栏 A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表
   声明 800 条但只挂载有界窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、

@@ -89,6 +89,16 @@ jobs:
             exit "$status"
           }
 
+      - name: Verify the last-chat delete transaction
+        env:
+          SILLYTAVERN_TEST_ROOT: ${{ github.workspace }}/.test-host/SillyTavern
+        run: |
+          node ./scripts/e2e/verify-last-chat-delete.mjs || {
+            status=$?
+            echo "::error::last-chat-delete acceptance failed; its report lives under test-results/last-chat-delete/ and is picked up by the browser-test evidence upload below"
+            exit "$status"
+          }
+
       - name: Upload browser-test evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v6
