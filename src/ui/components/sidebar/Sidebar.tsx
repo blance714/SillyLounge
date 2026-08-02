@@ -1,6 +1,6 @@
 import React from 'preact/compat';
 import type { ComponentChild } from 'preact';
-import { useSidebarBasics, useSidebarData } from '../../hooks.js';
+import { useSidebarData } from '../../hooks.js';
 import { CharacterConversationList } from './CharacterConversationList.js';
 import { NewChatButton } from './NewChatButton.js';
 
@@ -27,17 +27,11 @@ const SIDEBAR_NAV_IGNORE_SELECTOR = [
 export function Sidebar({
     onClose,
     onNavigate,
-    isTempChatActive,
 }: {
     onClose: () => void;
     onNavigate: () => void;
-    isTempChatActive: boolean;
 }): ComponentChild {
-    // Two hooks, one column: useSidebarData is the current character's
-    // conversation feed, useSidebarBasics is the only owner of the draft
-    // snapshot the ＋新对话 button hands to the quarantine lease.
     const sidebar = useSidebarData();
-    const { getDraftSnapshot } = useSidebarBasics();
     const { characters, header } = sidebar;
     const currentAvatar = characters.find(char => char.isCurrent)?.avatar ?? '';
     const conversationCount = sidebar.charGroups[0]?.totalCount ?? null;
@@ -84,13 +78,10 @@ export function Sidebar({
                     <i className="fa-solid fa-xmark" />
                 </button>
             </header>
-            <CharacterConversationList sidebar={sidebar} onNavigate={onNavigate} />
+            <CharacterConversationList sidebar={sidebar} />
             <div className="cui-root-playbill-footer">
                 <NewChatButton
-                    avatar={currentAvatar}
-                    draftSnapshot={currentAvatar ? getDraftSnapshot(currentAvatar) : { fileNames: [], complete: false }}
                     disabled={!currentAvatar || !header.characterName || header.isGroup}
-                    active={isTempChatActive}
                     onNavigate={onNavigate}
                 />
             </div>
