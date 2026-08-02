@@ -32,7 +32,7 @@ Chapter by chapter against the handoff's ten Screens/Views
 
 | # | Chapter | State | Landed on |
 | --- | --- | --- | --- |
-| 1 | 对话列表卡片 | **done** — cards, binding gutter, hover action dock, in-place rename, dashed 未完成草稿 cards | pr9 |
+| 1 | 对话列表卡片 | **done** — cards, binding gutter, hover action dock, in-place rename. The dashed 未完成草稿 cards pr9 added were retired again on 2026-08-02: a new chat is an ordinary conversation now (DESIGN §4.2) | pr9 |
 | 2 | 空态（无角色） | **half** — the playbill says 「书架还空着……」; the 300px 空戏单 card on the stage (虚位以待, drag in a PNG/JSON card, 浏览文件) is not built | — |
 | 3 | 楼层刻度轨 | **refused on purpose** (`DESIGN.md` §4.3) — desktop keeps ChatUI's own measured `2px/8px` ticks, 40px safety and bounded wheel window; only the preview bubble's floor number and edge fade were aligned | main |
 | 4 | 消息流 | **done** — stage ground, connector header row, ruled body, thinking block, action bar, swipe ticks, in-place editor, ⋯ menu, 回到最新 capsule | pr4·pr5·pr6 |
@@ -272,21 +272,26 @@ its first and last user-turn numbers, then fade after input stops. Touch/mobile
 deliberately remains unchanged until a separate mis-touch-resistant interaction
 is designed.
 
+**2026-08-02: the reader-facing half of everything in this section is gone.** The
+owner retired the 「未完成草稿」 tier outright (DESIGN §4.2): ＋新对话 makes an
+ordinary conversation, listed in the playbill like any other, and the three things
+that only existed to prop up a withheld chat went with it — the draft cards, the
+button highlight, and the one-new-chat-at-a-time rule. The store described below
+is still in place and still correct, with one consumer left (the spine's
+`leasedAvatars`); a second pass removes it. Read the rest as store-layer history.
+
 New-chat drafts now use per-conversation quarantine leases in localStorage instead
 of `chat_metadata.chatui_isNewChat` / message-count heuristics. A leased draft is
-hidden from ordinary history, highlights the ＋新对话 tab while active, is replaced only
+replaced only
 through guarded `doNewChat`, and becomes a normal kept conversation when the user
 sends, edits, swipes, generates, or otherwise mutates it. After successful
 navigation, ChatUI keeps an untouched file in a persisted quarantine set instead
 of releasing it into ordinary history. Navigation captures the active lease only
 after older queued creation has completed, so the quick “new → old chat” path
-cannot miss the concrete filename. Dormant drafts do not block another new chat
-and are recoverable from 未完成草稿 cards inlined in that character's playbill
-column (pr9 second baton — they were a separate cross-character shelf before,
-and the container is all that changed: the lease set still decides which files
-these are, and they are still never mixed into ordinary history). ST still
+cannot miss the concrete filename. Dormant drafts do not block another new chat.
+ST still
 lacks an atomic server-side conditional DELETE, so physical deletion remains an
-explicit user action rather than unsafe background GC — a draft card's 丢弃 is
+explicit user action rather than unsafe background GC — the card's 删除 is
 that explicit action, and it goes through the same checked delete transaction
 and the same confirm dialog as any other conversation. Restore first checks the raw file
 list; prompt dry-runs and quiet background generation do not adopt a draft; an
@@ -319,8 +324,9 @@ the tombstone alone (its meaning is "if this name goes live, it is a draft",
 and landing elsewhere is no evidence against that); an intent the page never
 resolves is expired by the next boot, so nothing dangles and no wall-clock
 timeout was invented. Once it fires, the file folds into the same quarantine
-set `newChatuiChat()` uses — same 未完成草稿 card, same 丢弃 action, same
-lease rules. The whole boot half is request-free. The decision lives in the
+set `newChatuiChat()` uses — same lease rules, and since 2026-08-02 the same
+ordinary card, since that is now the only kind there is. The whole boot half is
+request-free. The decision lives in the
 adapter (read-only over live identity) and the store owns the actual quarantine
 write, keeping the adapter/store boundary intact. Deleting down to a
 *remaining* real chat is unaffected — that path already worked and queues
