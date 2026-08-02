@@ -18,6 +18,7 @@
         "test:e2e:gecko": "pnpm run runtime && playwright test --project=firefox",
         "test:e2e:switch": "pnpm run runtime && node ./scripts/e2e/measure-chat-switch.mjs",
         "test:e2e:guard": "pnpm run runtime && node ./scripts/e2e/verify-truncation-guard.mjs",
+        "test:e2e:lastdelete": "pnpm run runtime && node ./scripts/e2e/verify-last-chat-delete.mjs",
         "test:perf": "pnpm run runtime && node ./scripts/e2e/measure-long-chat.mjs",
         "test:st": "pnpm run runtime && node ./scripts/e2e/smoke-st.mjs",
         "typecheck": "tsc --noEmit",
