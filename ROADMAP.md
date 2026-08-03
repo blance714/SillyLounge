@@ -549,8 +549,9 @@ main 86995df
 2026-07-10/11 hardening、Manuscript Flow 视觉复归、new-chat quarantine 修复与楼层导航均已
 进入提交历史;本地 validated runtime 也已发布并通过 assembled-tree 检查。仓库现已由
 `.github/workflows/publish-dist.yml` 在每次推送 `main` 后执行完整验证、固定版本的真实
-SillyTavern Chromium 门禁与可安装树检查，并自动更新默认的 `dist` 分支；具体发布契约
-见 README「自动发布 `dist`」。
+SillyTavern 双引擎门禁与可安装树检查，并把产物推到独立的
+[`SillyLounge-dist`](https://github.com/blance714/SillyLounge-dist) 仓库
+（2026-08-03 由「同仓 `dist` 分支」改成两个仓库，理由见 README「两个仓库」）。
 
 **五大区主干已闭环,settings 已转为 two-pane mode swap,独立配置面已解锁 §7,
 侧栏已迁移到 TanStack Query,全源码已 TypeScript 化(Vite 构建)。**
