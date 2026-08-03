@@ -55,7 +55,11 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
             globalExtensions: discoveredExtensions
                 .filter(extension => extension.type === 'global')
                 .map(extension => extension.name),
-            manifest: context.getExtensionManifest('SillyLounge'),
+            // Keyed by the *install directory*, which SillyTavern names after
+            // the repo it cloned — blance714/SillyLounge-dist. Not a cosmetic
+            // string: this lookup returned null the moment the fixture folder
+            // was renamed and this assertion was the only thing that noticed.
+            manifest: context.getExtensionManifest('SillyLounge-dist'),
         };
     });
     await testInfo.attach('sillytavern-host-state', {
@@ -80,7 +84,7 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
         ],
         manifest: { display_name: 'SillyLounge 🍸' },
     });
-    expect(hostState.disabledExtensions).not.toContain('third-party/SillyLounge');
+    expect(hostState.disabledExtensions).not.toContain('third-party/SillyLounge-dist');
     expect(hostState.disabledExtensions).not.toContain('SillyLounge');
     for (const extensionName of hostState.globalExtensions) {
         expect(hostState.disabledExtensions).toContain(extensionName);

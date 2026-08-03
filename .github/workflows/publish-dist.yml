@@ -1,4 +1,4 @@
-name: Publish installable branch
+name: Publish installable build
 
 on:
   push:
@@ -6,7 +6,9 @@ on:
       - main
 
 permissions:
-  contents: write
+  # Nothing is written back to *this* repo any more; the installable payload
+  # goes to blance714/SillyLounge-dist over a scoped deploy key.
+  contents: read
 
 concurrency:
   group: publish-dist
@@ -115,8 +117,25 @@ jobs:
       - name: Assemble validated runtime
         run: node ./scripts/runtime.mjs --target "$RUNNER_TEMP/SillyLounge-runtime"
 
-      - name: Publish dist branch
+      # Publishes into a separate repository, not a branch of this one.
+      #
+      # SillyTavern names the installed extension's directory after the *repo*
+      # (`sanitize(path.basename(parsedUrl.pathname, '.git'))`, its
+      # endpoints/extensions.js), and installs the default branch unless the
+      # reader fills in the optional branch field — which almost no extension
+      # requires, so almost nobody does. Publishing to a branch of the source
+      # repo therefore forced a choice between "the install URL just works" and
+      # "GitHub shows the source", and this repo had picked the former: its
+      # default branch was the build output. Two repos give both.
+      #
+      # blance714/SillyLounge-dist must never be renamed. Its name *is* the
+      # install directory name, so renaming it silently orphans every existing
+      # install and changes EXTENSION_FOLDER in the e2e fixture.
+      - name: Publish to the installable repository
         shell: bash
+        env:
+          DIST_PUBLISH_KEY: ${{ secrets.DIST_PUBLISH_KEY }}
+          DIST_REPO: git@github.com:blance714/SillyLounge-dist.git
         run: |
           set -euo pipefail
 
@@ -126,18 +145,21 @@ jobs:
 
           mkdir -p "$payload_dir"
           rsync -a --delete "$runtime_dir/" "$payload_dir/"
-          cp README.md "$payload_dir/README.md"
+          # Not this repo's README: that one is for people reading the source.
+          # The installable repo's landing page is an install page.
+          cp dist-README.md "$payload_dir/README.md"
           node ./scripts/check-runtime.mjs "$payload_dir"
 
-          if git ls-remote --exit-code --heads origin refs/heads/dist >/dev/null; then
-            git fetch origin refs/heads/dist:refs/remotes/origin/dist
-            git worktree add -B dist "$publish_dir" origin/dist
-          else
-            git worktree add --detach "$publish_dir" "$GITHUB_SHA"
-            git -C "$publish_dir" switch --orphan dist
-            git -C "$publish_dir" rm -rf --ignore-unmatch .
-          fi
+          # A write deploy key scoped to the installable repo alone — not a PAT,
+          # which would carry account-wide reach and an expiry date that turns
+          # into a silently failing publish on some future afternoon.
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DIST_PUBLISH_KEY" > ~/.ssh/dist_publish_key
+          chmod 600 ~/.ssh/dist_publish_key
+          ssh-keyscan -t ed25519 github.com >> ~/.ssh/known_hosts 2>/dev/null
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/dist_publish_key -o IdentitiesOnly=yes"
 
+          git clone "$DIST_REPO" "$publish_dir"
           rsync -a --delete --exclude=.git "$payload_dir/" "$publish_dir/"
 
           git -C "$publish_dir" add --all
@@ -150,5 +172,5 @@ jobs:
           git -C "$publish_dir" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "$publish_dir" commit \
             -m "build: publish ${GITHUB_SHA::12}" \
-            -m "Published from main@${GITHUB_SHA}."
-          git -C "$publish_dir" push origin HEAD:dist
+            -m "Published from blance714/SillyLounge@${GITHUB_SHA}."
+          git -C "$publish_dir" push origin HEAD:main

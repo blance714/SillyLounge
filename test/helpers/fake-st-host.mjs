@@ -11,7 +11,7 @@
 // dist/runtime/**/*.js to a *relative* path, computed as if the file were
 // deployed at:
 //
-//   <stRoot>/public/scripts/extensions/third-party/SillyLounge/<relPath>
+//   <stRoot>/public/scripts/extensions/third-party/SillyLounge-dist/<relPath>
 //
 // (scripts/runtime.mjs confirms this: it copies the *contents* of
 // dist/runtime straight into the extension root, and dist/root-app.mjs to
@@ -23,8 +23,8 @@
 //                          st-context,utils,bookmarks,RossAscends-mods,
 //                          itemized-prompts}.js
 //   <tmp>/public/scripts/extensions/regex/engine.js
-//   <tmp>/public/scripts/extensions/third-party/SillyLounge/   <- dist/runtime, copied (not symlinked)
-//   <tmp>/public/scripts/extensions/third-party/SillyLounge/dist/root-app.mjs
+//   <tmp>/public/scripts/extensions/third-party/SillyLounge-dist/   <- dist/runtime, copied (not symlinked)
+//   <tmp>/public/scripts/extensions/third-party/SillyLounge-dist/dist/root-app.mjs
 //   <tmp>/package.json                                         <- {"type":"module"}, so the
 //                                                                  copied .js files parse as ESM
 //
@@ -38,7 +38,7 @@
 // getCurrentChatDetails, deleteMessage, ...) is a thin call-through into a
 // single mutable `registry` object that lives in a per-host "bridge"
 // module written alongside the copied runtime
-// (SillyLounge/__fake_host_bridge__.mjs). Tests assign implementations
+// (SillyLounge-dist/__fake_host_bridge__.mjs). Tests assign implementations
 // directly onto `host.registry`:
 //
 //   host.registry.getCurrentChatDetails = () => ({ sessionName: 'a.jsonl' });
@@ -83,12 +83,12 @@ const DEFAULT_MAX_TIMER_INVOCATIONS = 1000;
 // Relative path from every public/scripts/*.js stub sibling to the bridge
 // module. (public/script.js needs one extra "scripts/" hop — handled
 // separately below.)
-const BRIDGE_FROM_SCRIPTS_SIBLING = './extensions/third-party/SillyLounge/' + BRIDGE_FILENAME;
-const BRIDGE_FROM_PUBLIC_ROOT = './scripts/extensions/third-party/SillyLounge/' + BRIDGE_FILENAME;
+const BRIDGE_FROM_SCRIPTS_SIBLING = './extensions/third-party/SillyLounge-dist/' + BRIDGE_FILENAME;
+const BRIDGE_FROM_PUBLIC_ROOT = './scripts/extensions/third-party/SillyLounge-dist/' + BRIDGE_FILENAME;
 // public/scripts/extensions/regex/engine.js sits one level deeper than the
 // public/scripts/*.js siblings above (@st/regex-engine, scripts/build.mjs's
 // `{ up: 3, file: 'extensions/regex/engine.js' }` mapping).
-const BRIDGE_FROM_REGEX_ENGINE = '../third-party/SillyLounge/' + BRIDGE_FILENAME;
+const BRIDGE_FROM_REGEX_ENGINE = '../third-party/SillyLounge-dist/' + BRIDGE_FILENAME;
 
 // The full set of `stEventKeys` names dist/runtime/adapter/internals.js
 // resolves through `event_types`, plus APP_READY (the one event index.js
@@ -799,7 +799,7 @@ function createFetchController() {
  * @typedef {object} FakeStHost
  * @property {string} dir Root of the mkdtemp scratch tree (dispose() removes it).
  * @property {string} extensionDir Absolute path to the copied
- *   `.../scripts/extensions/third-party/SillyLounge` directory (= dist/runtime, flattened).
+ *   `.../scripts/extensions/third-party/SillyLounge-dist` directory (= dist/runtime, flattened).
  * @property {Record<string, Function>} registry Mutable call-through
  *   registry backing every plain host *function* stub (isGenerating,
  *   getCurrentChatDetails, deleteMessage, getRequestHeaders, ...). Assign
@@ -869,7 +869,7 @@ export async function createFakeStHost(options = {}) {
     const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sillylounge-fake-st-host-'));
     const publicDir = path.join(rootDir, 'public');
     const scriptsDir = path.join(publicDir, 'scripts');
-    const extensionDir = path.join(scriptsDir, 'extensions', 'third-party', 'SillyLounge');
+    const extensionDir = path.join(scriptsDir, 'extensions', 'third-party', 'SillyLounge-dist');
 
     await fs.mkdir(extensionDir, { recursive: true });
 

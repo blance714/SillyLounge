@@ -32,7 +32,7 @@ async function makeRuntime(t, overrides = {}) {
         'scripts',
         'extensions',
         'third-party',
-        'SillyLounge',
+        'SillyLounge-dist',
     );
     t.after(() => fs.rm(tempDir, { recursive: true, force: true }));
 

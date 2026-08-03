@@ -2,32 +2,25 @@
 
 一套为 SillyTavern 设计、带有手稿与手记气质的替代聊天界面。
 
-## 安装
+**这个仓库是源码。要安装请去
+[blance714/SillyLounge-dist](https://github.com/blance714/SillyLounge-dist)** ——
+把那个地址粘进 SillyTavern 的「安装扩展」框即可，分支栏留空。
 
-1. 打开 SillyTavern，进入 **扩展 → 安装扩展**。
-2. 复制下面的 Git 仓库地址，粘贴到安装框中：
+## 两个仓库
 
-   ```text
-   https://github.com/blance714/SillyLounge
-   ```
+| 仓库 | 内容 | 默认分支 |
+| --- | --- | --- |
+| `SillyLounge`（这里） | TypeScript/TSX 源码、构建脚本、文档、测试 | `main` |
+| `SillyLounge-dist` | 编译好的运行时，由 CI 自动推送 | `main` |
 
-3. 点击安装并等待 SillyTavern 完成下载。
-4. 按照 SillyTavern 的提示刷新页面，即可使用 SillyLounge。
+拆成两个仓库而不是「一个仓库两条分支」，是因为 **SillyTavern 装的是默认分支**：
+安装弹窗虽然有可选的分支输入框，但绝大多数扩展都不需要填，所以绝大多数人不会填。
+把编译产物放在默认分支能让安装一次就成，代价是 GitHub 上这个项目的门面变成生成
+代码——PR 的默认 base、clone 拿到的东西、语言统计全都跟着错。两个仓库两边都要得到。
 
-仓库的默认分支是已经编译完成的 `dist`，所以安装时不需要 Node.js、pnpm，
-也不需要在本地执行构建。
-
-> GitHub 默认打开用于安装的 `dist` 分支。项目源码和开发历史位于
-> [`main`](https://github.com/blance714/SillyLounge/tree/main)；如果要阅读源码、
-> 修改项目或参与开发，请先切换到 `main`。
-
-## 分支结构
-
-- `dist`：默认安装分支，只包含经过验证的运行时文件和这份 README。
-- `main`：开发分支，包含 TypeScript/TSX 源码、构建脚本、项目文档与本地工具。
-
-SillyTavern 安装扩展时不会替仓库执行构建，因此默认安装分支必须提前包含可由
-浏览器直接加载的完整产物。
+> **`SillyLounge-dist` 永远不能改名。** SillyTavern 用仓库名决定扩展的安装目录名
+> （`sanitize(path.basename(parsedUrl.pathname, '.git'))`），改名会让所有已有安装
+> 失联，同时也会改掉 e2e 固件里的 `EXTENSION_FOLDER`。
 
 ## 本地开发
 
@@ -117,27 +110,30 @@ pnpm run dev
 `dev` 只轮询 Vite/运行时源码输入，不监听 `node_modules`。每次重建都会经过与
 `runtime` 相同的组装、验证和原子发布路径；损坏的中间构建不会覆盖 live 版本。
 
-## 自动发布 `dist`
+## 自动发布到 `SillyLounge-dist`
 
-SillyTavern 的扩展安装器不会运行本仓库的构建工具，所以 `dist` 分支根目录必须
-直接包含经过验证的运行时树：`manifest.json`、`style.css`、`index.js`、编译后的
-模块目录（包括 `chunks/vendor/`），以及 `dist/root-app.mjs`。
+SillyTavern 的扩展安装器不会替仓库执行构建，所以安装仓的根目录必须直接包含
+经过验证的运行时树：`manifest.json`、`style.css`、`index.js`、编译后的模块目录
+（含 `chunks/vendor/`），以及 `dist/root-app.mjs`。
 
-不要直接发布开发分支里的 `dist/` 目录：它有意不包含 manifest、样式表和完整的
-扩展根目录结构。
+不要直接发布本仓库里的 `dist/` 目录：它有意不包含 manifest、样式表和完整的扩展
+根目录结构。
 
 每次向 `main` 推送提交都会触发 `.github/workflows/publish-dist.yml`。流水线会：
 
 1. 使用锁定的 Node.js 与 pnpm 工具链安装依赖；
-2. 执行完整验证门；
-3. 检出 `test/e2e/st-version.json` 固定的 SillyTavern 版本，并在 Chromium 中加载合成测试用户；
-4. 同时核对宿主状态、SillyLounge 可见 DOM 与楼层导航；保留截图、trace 和宿主日志；
-5. 组装并验证 `.runtime/SillyTavern-ChatUI`；
-6. 从 `main` 原样复制这份 README；
-7. 将精确的可安装文件树提交到 `dist`。
+2. 执行完整验证门（typecheck / 分层 / 不变量 / 单测 / 构建契约）；
+3. 检出 `test/e2e/st-version.json` 固定的 SillyTavern 版本；
+4. 在 **Chromium 与 Firefox 双引擎**下跑真宿主 e2e，再跑三个独立验收脚本
+   （切换性能、截断守卫、删最后一条对话）；保留截图、trace 和宿主日志；
+5. 组装并验证运行时树；
+6. 复制 `dist-README.md` 作为安装仓的 `README.md`；
+7. 用一个**只对安装仓有写权限的 deploy key**（secret `DIST_PUBLISH_KEY`）把文件树
+   推到 `SillyLounge-dist` 的 `main`。
 
-不要手动修改 `dist`。自动发布会维护普通的线性 Git 历史，以便已经安装的
-SillyTavern 扩展可以正常更新。
+载荷没有变化时流水线会跳过提交，所以纯文档/测试改动不会在安装仓里留下空提交。
+
+**不要手动修改 `SillyLounge-dist`。** 下一次发布会用 `rsync --delete` 覆盖它。
 
 ## HTML 卡片信任模型
 

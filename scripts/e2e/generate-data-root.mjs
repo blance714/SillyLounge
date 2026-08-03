@@ -14,7 +14,13 @@ const DEFAULT_FIXTURE_PATH = path.join(PROJECT_ROOT, 'test', 'e2e', 'fixtures', 
 const DEFAULT_RUNTIME_ROOT = path.join(PROJECT_ROOT, '.runtime', 'SillyTavern-ChatUI');
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const USER_HANDLE = 'default-user';
-const EXTENSION_FOLDER = 'SillyLounge';
+// The directory a real install lands in, which SillyTavern names after the
+// *repo* it cloned from (`sanitize(path.basename(parsedUrl.pathname, '.git'))`,
+// its endpoints/extensions.js) — so this tracks the installable repo,
+// blance714/SillyLounge-dist, not the source repo this file lives in. A fixture
+// that used the source repo's name would be simulating a directory no real
+// install has.
+const EXTENSION_FOLDER = 'SillyLounge-dist';
 const FIXTURE_MANIFEST_FILE = '_sillylounge-fixture.json';
 const EXTENSION_MODES = new Set(['disabled', 'bootstrap', 'active']);
 const REGEX_MODES = new Set(['active', 'disabled']);
@@ -255,7 +261,7 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions, exten
         ...disabled.filter(value => (
             typeof value !== 'string' || !value.toLowerCase().includes('sillylounge')
         )),
-        ...globalExtensions.filter(value => value.toLowerCase() !== 'third-party/sillylounge'),
+        ...globalExtensions.filter(value => value.toLowerCase() !== 'third-party/sillylounge-dist'),
     ]));
     if (extensionMode === 'disabled') disabledExtensions.push(`third-party/${EXTENSION_FOLDER}`);
     settings.extension_settings.disabledExtensions = disabledExtensions;
