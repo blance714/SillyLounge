@@ -41,7 +41,6 @@ export {
 export {
     deleteChatuiChat,
     getChatuiCurrentChatHeader,
-    getChatuiPendingDraftQuarantineCharacter,
     listChatuiCharacters,
     listChatuiChatsForCharacterAvatar,
     listChatuiRecentCharacterChatRows,
@@ -107,14 +106,10 @@ export type {
     ChatuiSimpleMenuId,
 } from '../store/menu-store.js';
 
-/* All the UI still asks the quarantine is *who holds a lease*, and only so the
-   spine can seat a character whose boot-time `chat_size` snapshot is stale
-   (spine-cast.ts). Nothing renders a draft any more: a new chat is an ordinary
-   conversation and gets an ordinary card. */
 export {
-    getTempChats,
-    subscribeTempChatStore,
-} from '../store/temp-chat-store.js';
+    getSessionCharacterConversations,
+    subscribeSessionCharacters,
+} from '../store/session-characters.js';
 
 export {
     beginComposerSend as beginChatuiComposerSend,

@@ -184,13 +184,6 @@ export async function listChatsForCharacterAvatar(
     };
 }
 
-/** Raw filename existence check; unlike chat search, this cannot invent a greeting. */
-export async function hasCharacterChatFile(avatar: string, fileName: string): Promise<boolean> {
-    const bareName = stripChatExt(fileName);
-    if (typeof avatar !== 'string' || !avatar || !bareName) return false;
-    return (await listRawCharacterChatNames(avatar)).includes(bareName);
-}
-
 export function listCharacters(): CharacterSummaryDto[] {
     const ctx = getStContext();
     const characters = getCharacters(ctx);

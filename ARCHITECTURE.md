@@ -198,34 +198,38 @@ unsaved replacement for legacy chats, so that field is not a conversation id.
 ChatUI-owned ephemeral state migrates on confirmed chat rename and
 `CHARACTER_RENAMED` events.
 
-> **Being dismantled (2026-08-02, DESIGN §4.2).** The reader-facing half of this
-> is already gone: a new chat is an ordinary conversation, listed like any other,
-> with no draft card, no filtering, no ＋新对话 highlight and no one-at-a-time
-> rule. What follows describes the store layer, which is still in place and still
-> correct but now has exactly one consumer left — the spine's `leasedAvatars`,
-> compensating for `chat_size` being a boot-time disk snapshot. A second pass
-> re-homes that and removes the rest; see ROADMAP.md.
+ST materializes a real JSONL as soon as `doNewChat()` runs, and its delete
+endpoint has no server-side revision CAS — a client-side read/hash followed by
+DELETE cannot prove another tab did not save user content between the two
+requests. ChatUI therefore does not auto-delete anything. Until 2026-08-02 it
+answered that by *withholding*: every unadopted new chat was a persisted
+quarantine lease, kept out of ordinary history until a user mutation adopted it
+or the reader discarded it by hand. The owner retired that tier outright
+(DESIGN §4.2) — a new chat is an ordinary conversation, and an abandoned empty
+one stays in the list for the reader to delete, which is ST's own behaviour.
+The lease store, its ABA version stamps and its `storage`-event merge went with
+it.
 
-ST materializes a real JSONL as soon as `doNewChat()` runs, but its delete
-endpoint has no server-side revision CAS. A client-side read/hash followed by
-DELETE therefore cannot prove that another tab did not save user content between
-the two requests. ChatUI does not auto-delete abandoned drafts. Instead, every
-unadopted `{avatar,fileName}` is a persisted quarantine lease and remains filtered
-from ordinary conversation history. Successful navigation captures the active
-lease only after it owns the host lane—after any still-materializing new-chat task
-has committed—then deactivates but retains that lease. Composer text, pending send,
-and staged attachments are checked before ST's `CHAT_CHANGED` listeners can reset
-them; local work adopts the chat rather than quarantining it.
+Two things the quarantine had been carrying survive it, re-homed onto what they
+were actually about:
 
-Quarantine uses one localStorage key per conversation instead of one global slot,
-so different tabs can add drafts without last-writer-wins loss; `storage` events
-merge additions/removals into each live page. Send, edit, swipe,
-delete, attachment/reasoning mutation, and generation-start events remove the
-current lease and publish the conversation normally; prompt dry-runs and quiet
-background probes explicitly do not. Restore first checks the raw filename list,
-so a stale lease cannot make ST recreate a missing file from the greeting. An
-uncertain rename quarantines both old and server-confirmed new identities until
-raw state resolves the conflict. Physical deletion remains an
+- **The spine's membership.** ST's `chat_size` is a boot-time disk snapshot
+  (`calculateChatSize`), never refreshed in-page, so a character whose first
+  conversation ChatUI itself creates is invisible to it — and the spine is the
+  only way to change character. `store/session-characters.ts` is an in-memory,
+  page-scoped ledger of exactly those characters. It is deliberately not
+  persisted: it papers over one stale snapshot, and the next boot's scan is
+  authoritative on its own.
+- **The post-delete landing.** Deleting a character's last chat moves the
+  durable pointer to a fabricated name and forces a reload;
+  `adapter/chats/deletion-finalization.ts` keeps a one-slot `sessionStorage`
+  credential across it carrying *who* the reader was in the middle of. The boot
+  spends it on the ledger entry and, on a stock `auto_load_chat: false` host,
+  on seating them — otherwise the forced reload lands on nobody at all. Arming
+  bounds it to the page it belongs to. It no longer carries a file name, and
+  there is no longer any watch for that file to become live.
+
+Physical deletion remains an
 explicit user action using the hardened adapter protocol: carry stable avatar +
 file name across every await, use the raw filename endpoint as existence truth,
 cancel both save timers, and recheck generation/save state. Character-card pointer
@@ -314,11 +318,10 @@ serialized, but plugin-owned work after the click is not claimed as lane-owned.
 
 Async draft state uses explicit ownership rather than timing assumptions:
 
-- temp pointer and optimistic new-chat draft snapshots carry independent
-  versions; abandon/cancel/commit operations compare-and-set before changing
-  state. Concrete pointers form a persisted quarantine set; leaving deactivates
-  one lease without publishing it, while adoption or confirmed explicit deletion
-  removes only the matching identity;
+- (retired 2026-08-02) new-chat drafts used to carry independent version stamps
+  over a persisted quarantine lease set, with compare-and-set on every
+  abandon/cancel/commit. That machinery went with the tier it protected — see
+  §3.2's note above for what replaced the two facts it was also carrying;
 - composer drafts live in `composer-draft-store.ts`, keyed by `chatKey`, so a
   settings unmount or chat switch cannot lose or leak text;
 - a send token captures `chatKey + text + draftRevision + lifecycleEpoch`,
