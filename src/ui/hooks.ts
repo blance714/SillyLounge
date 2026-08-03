@@ -17,14 +17,13 @@ import {
     closeChatuiMenu,
     getChatuiCurrentChatHeader,
     getChatuiComposerDraftStoreSnapshot,
-    getChatuiPendingDraftQuarantineCharacter,
-    getTempChats,
+    getSessionCharacterConversations,
     listChatuiCharacters,
     notifyChatui,
     setChatuiComposerDraft,
     stopChatuiGeneration,
     subscribeChatuiComposerDraftStore,
-    subscribeTempChatStore,
+    subscribeSessionCharacters,
 } from './actions.js';
 import { renderCardEmbeds } from './card-embed.js';
 import { resolveEscapeIntent } from './escape-ladder.js';
@@ -228,20 +227,18 @@ export function useCaretOnMount<T extends HTMLInputElement | HTMLTextAreaElement
  * playbill already pays for and the book spine has no use for.
  *
  * The membership rule itself lives in ui/spine-cast.ts (pure, unit-tested);
- * everything here is the wiring that hands it the three things ChatUI knows
- * and ST's boot-time `chat_size` snapshot does not. Two of the three are
- * reactive stores, so the rail follows them: the on-stage avatar arrives
- * through `useSidebarBasics`'s `isCurrent` (which already honours the group
- * case), and the leases through `useTempChats`. The third — the pending
- * draft-quarantine credential — is a `sessionStorage` record with no change
- * notification, and needs none, but only because of where the boot settles it:
- * `finalizeChatuiDraftQuarantine()` runs before this tree mounts (index.ts), so
- * by the first render the credential has already been either claimed for this
- * page or expired. After that the only thing that ever clears it is the commit
- * that puts a lease in its place, so the lease store's own update is exactly
- * when this is re-read. Read it any earlier than that boot step and an expired
- * credential would seat a character for the rest of the session, since nothing
- * would ever invalidate this memo again.
+ * everything here is the wiring that hands it the two things ChatUI knows and
+ * ST's boot-time `chat_size` snapshot does not. Both are reactive stores, so
+ * the rail follows them without any of its own bookkeeping: the on-stage
+ * avatar arrives through `useSidebarBasics`'s `isCurrent` (which already
+ * honours the group case), and the session ledger through
+ * `useSessionCharacters`.
+ *
+ * That second source used to be a pair — the quarantine lease set plus a
+ * `sessionStorage` credential read with no change notification at all, whose
+ * correctness rested on a chain of reasoning about when the boot settled it
+ * relative to this tree's first render. The ledger is one store that updates
+ * when the fact it reports changes, so the timing argument is simply gone.
  *
  * `isGroupActive` is the whole of ChatUI's group knowledge today: the header
  * says whether the open chat is a group, and there is no adapter query that
@@ -251,13 +248,16 @@ export function useCaretOnMount<T extends HTMLInputElement | HTMLTextAreaElement
  */
 export function useSpineCharacters(): { characters: CharacterSummary[]; isGroupActive: boolean } {
     const { characters, header } = useSidebarBasics();
-    const tempChats = useTempChats();
+    const sessionAvatars = useSessionCharacters();
     const cast = useMemo(() => orderSpineCast(characters, {
         onStageAvatar: characters.find((character: CharacterSummary) => character.isCurrent)?.avatar ?? null,
-        leasedAvatars: tempChats.map(pointer => pointer.avatar),
-        pendingDraftAvatar: getChatuiPendingDraftQuarantineCharacter(),
-    }), [characters, tempChats]);
+        sessionAvatars,
+    }), [characters, sessionAvatars]);
     return { characters: cast, isGroupActive: header.isGroup };
+}
+
+export function useSessionCharacters(): ReturnType<typeof getSessionCharacterConversations> {
+    return useSyncExternalStore(subscribeSessionCharacters, getSessionCharacterConversations);
 }
 
 export function useSidebarData(): ChatuiSidebarState {
@@ -529,10 +529,6 @@ export function useChatuiMessage(messageId: number): ChatuiMessage | null {
     );
     const getSnapshot = useCallback(() => getMessageDtoById(messageId), [messageId]);
     return useSyncExternalStore(subscribe, getSnapshot);
-}
-
-export function useTempChats(): ReturnType<typeof getTempChats> {
-    return useSyncExternalStore(subscribeTempChatStore, getTempChats);
 }
 
 export function useRootDomEnhancements(

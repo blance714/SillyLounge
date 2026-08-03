@@ -152,7 +152,7 @@ src/
     chat-store.ts / chat-actions.ts
     sidebar-actions.ts    Query-facing reads + serialized navigation/chat mutations
     host-operation-queue.ts shared host mutation lane + last-intent-wins navigation
-    temp-chat-store.ts    persisted quarantine set + active/draft CAS state
+    session-characters.ts characters ChatUI gave a conversation this session
     composer-draft-store.ts per-chatKey drafts + send-token CAS gate
     config-store.ts       persisted per-feature config (via adapter/config.ts)
     ui-store.ts           ephemeral session UI state (settings mode / drawer selection)
@@ -272,109 +272,63 @@ its first and last user-turn numbers, then fade after input stops. Touch/mobile
 deliberately remains unchanged until a separate mis-touch-resistant interaction
 is designed.
 
-**2026-08-02: the reader-facing half of everything in this section is gone.** The
-owner retired the 「未完成草稿」 tier outright (DESIGN §4.2): ＋新对话 makes an
-ordinary conversation, listed in the playbill like any other, and the three things
-that only existed to prop up a withheld chat went with it — the draft cards, the
-button highlight, and the one-new-chat-at-a-time rule. The store described below
-is still in place and still correct, with one consumer left (the spine's
-`leasedAvatars`); a second pass removes it. Read the rest as store-layer history.
+**2026-08-02/03: this whole section describes something that no longer exists.**
+The owner retired the 「未完成草稿」 tier outright (DESIGN §4.2), and the machinery
+below went with it over two passes: the reader-facing layer first (draft cards,
+the filter that withheld a new chat from the playbill, the ＋新对话 highlight, the
+one-new-chat-at-a-time rule, the character picker), then `temp-chat-store.ts`
+(548 lines), `temp-chat-navigation.ts`, and most of the sessionStorage credential
+in `deletion-finalization.ts`. ＋新对话 makes an ordinary conversation; an
+abandoned empty one stays in the list for the reader to delete, which is ST's own
+behaviour.
 
-New-chat drafts now use per-conversation quarantine leases in localStorage instead
-of `chat_metadata.chatui_isNewChat` / message-count heuristics. A leased draft is
-replaced only
-through guarded `doNewChat`, and becomes a normal kept conversation when the user
-sends, edits, swipes, generates, or otherwise mutates it. After successful
-navigation, ChatUI keeps an untouched file in a persisted quarantine set instead
-of releasing it into ordinary history. Navigation captures the active lease only
-after older queued creation has completed, so the quick “new → old chat” path
-cannot miss the concrete filename. Dormant drafts do not block another new chat.
-ST still
-lacks an atomic server-side conditional DELETE, so physical deletion remains an
-explicit user action rather than unsafe background GC — the card's 删除 is
-that explicit action, and it goes through the same checked delete transaction
-and the same confirm dialog as any other conversation. Restore first checks the raw file
-list; prompt dry-runs and quiet background generation do not adopt a draft; an
-uncertain rename keeps both possible filenames quarantined until raw state
-settles.
+Kept here as a record of what the quarantine *was*, because the reasoning is
+still the reasoning for why ChatUI does not auto-delete anything: ST materializes
+a real JSONL as soon as `doNewChat()` runs, and its delete endpoint has no
+server-side revision CAS, so a client-side read-then-DELETE cannot prove another
+tab did not save user content in between. The old answer was to withhold the file
+from history behind a per-conversation lease with ABA version stamps, adopted on
+the reader's first mutation. The new answer is not to withhold it at all.
 
-Deleting a character's *last* chat (pr9 third baton, rewritten by the fourth)
-also lands on a quarantined draft rather than a permanent history entry,
-closing the one gap in "never leave a character selected with no conversation"
-(DESIGN §3, evaluation §5 3.6). `delete-transaction.ts` already had to move the
-durable chat pointer somewhere when no real chat survives to replace the
-deleted one; it now reports that fabricated name back
-(`fallbackChatFileName`) instead of letting it become an anonymous entry.
-`sidebar-actions.ts` queues a tombstone (`deletion-finalization.ts`'s
-`queueCharacterChatDraftQuarantine`, a `sessionStorage` sibling of the existing
-`CHAT_DELETED` replay tombstone) right before the mandatory reload the
-current-chat delete path already requires.
+Two facts the lease set had also been carrying were re-homed rather than dropped:
 
-The next boot does *not* check whether ST has materialized that file — it
-cannot. ST does so on a fire-and-forget chain APP_READY does not wait for
-(`initRossMods()` at script.js:772 never awaits `RA_autoloadchat()`), so the
-first version of this handoff asked the chat directory too early on every
-single boot, found nothing, and destroyed the intent; measured on a real
-1.18.0 host, the listing came back at t≈848ms and the file was only saved at
-t≈949ms. What replaced it keeps one condition — the fabricated name is this
-character's live current chat. `finalizeChatuiDraftQuarantine` arms the intent
-for this page load and watches: immediately, in case ST's autoload got there
-first, then on CHAT_CHANGED. A chat change that is not the fallback file leaves
-the tombstone alone (its meaning is "if this name goes live, it is a draft",
-and landing elsewhere is no evidence against that); an intent the page never
-resolves is expired by the next boot, so nothing dangles and no wall-clock
-timeout was invented. Once it fires, the file folds into the same quarantine
-set `newChatuiChat()` uses — same lease rules, and since 2026-08-02 the same
-ordinary card, since that is now the only kind there is. The whole boot half is
-request-free. The decision lives in the
-adapter (read-only over live identity) and the store owns the actual quarantine
-write, keeping the adapter/store boundary intact. Deleting down to a
+- **which characters ChatUI knows have a conversation**, for the spine's
+  membership rule — now `store/session-characters.ts`, an in-memory page-scoped
+  ledger, because ST's `chat_size` is a boot-time disk snapshot and that is the
+  entire problem it solves;
+- **who to put the reader back on** after the reload a last-chat delete forces —
+  now all the sessionStorage credential carries, spent at boot on the ledger entry
+  and (on a stock `auto_load_chat: false` host) on seating them. Gated end to end
+  on a real host by `scripts/e2e/verify-last-chat-delete.mjs`.
+
+Deleting a character's *last* chat (pr9 third baton, rewritten by the fourth,
+simplified again 2026-08-03) still gets its own handoff, because
+`delete-transaction.ts` has to move the durable chat pointer somewhere when no
+real chat survives to replace the deleted one, and it moves it to a fabricated
+name nothing has written yet (`fallbackChatFileName`). `sidebar-actions.ts`
+queues a `sessionStorage` credential — a sibling of the existing `CHAT_DELETED`
+replay tombstone — right before the mandatory reload that path already requires.
+
+What the next boot does with it is now one thing: put the reader back on that
+character. It does *not* wait for ST to materialize the file, and no longer needs
+to. Earlier versions did, because the file had to be folded into the quarantine
+before it could be shown, and getting that observation's timing right was the
+hardest thing in the module: ST writes it on a fire-and-forget chain APP_READY
+does not wait for (`initRossMods()` at script.js:772 never awaits
+`RA_autoloadchat()`), so the first implementation asked the chat directory too
+early on every single boot, found nothing, and destroyed the intent. With nothing
+being withheld, the file needs no identity guard at all — it is simply this
+character's conversation, which is what ST would have produced on its own.
+
+The boot spends the credential on the session ledger (so the spine can show a
+character whose `chat_size` snapshot predates its own boot) and, on a stock
+`auto_load_chat: false` host, on `selectCharacterIfNobodyIsOnStage` — otherwise
+the forced reload lands on nobody at all, which is worse than the state this
+transaction exists to prevent. Arming bounds the credential to the page it
+belongs to; a page that never redeems it leaves nothing for a later boot to act
+on. Deleting down to a
 *remaining* real chat is unaffected — that path already worked and queues
 nothing new.
-
-Be precise about what that condition proves, because the two branches differ
-and this document previously claimed the stronger fact for both. On the
-CHAT_CHANGED branch the file really is saved already — `getChatResult()` awaits
-`saveChatConditional()` before emitting, so the event cannot arrive early. The
-*immediate* branch — the one a real boot actually takes, since autoload
-finishes before APP_READY — reads `getCurrentChatDetails().sessionName`, which
-is `characters[this_chid].chat`: the durable pointer ChatUI itself wrote before
-forcing the reload. It proves identity, not a file on disk; measured on the
-same host, the lease was written at t=843ms and `POST /api/chats/save` only
-went out at t=985ms. Two consequences are accepted rather than overlooked: a
-`saveChatConditional()` that fails outright leaves a lease pointing at a file
-that never appears (recoverable through the *dormant* card — restoring checks
-the raw listing and drops the lease, and discarding now reports `absent` and
-drops it too; while the reader is still standing in that chat the conversation
-is alive and merely unsaved, so the delete transaction withholds `absent` there
-and the lease survives the next save that writes the file back), and a 丢弃
-inside that ~142ms window would send DELETE before ST's CREATE, leaving the
-file unleased. The window is not humanly reachable — the card must render, be
-found, be clicked and its confirm accepted within a tenth of a second of the
-page appearing — and closing it properly would mean waiting for a CHAT_CHANGED
-that a real boot has already emitted before this code first runs, which would
-strand every ordinary autoload boot instead.
-
-ST's `power_user.auto_load_chat` is **false** by default (power-user.js:335),
-and this repo's e2e fixture forces it true — which is why every earlier
-real-machine result for this rule came from a non-default setting. On a stock
-install the mandatory reload comes back with *no character selected at all*:
-ST never loads the deleted character, never writes the fallback file, and the
-credential waits for a signal that will never be sent. So when a credential is
-still pending and nothing at all holds the stage,
-`finalizeChatuiDraftQuarantine` selects the character that credential names.
-That is the closing move of a transaction the reader committed to (they
-confirmed the delete; the reload is ChatUI's own doing), not a vote on their
-autoload preference — the adapter refuses the moment ST landed anywhere, group
-or character (`selectCharacterIfNobodyIsOnStage`), and the credential then
-keeps its ordinary meaning. It runs at most once per page load, is never
-retried, and never toasts, and it goes through the shared serialized host lane
-like every other host mutation rather than beside it. In bootstrap mode
-(`settings.enabled === false`) it is the one part of the handoff that is
-switched off — ST's own interface is the only one on screen, and an extension
-the reader turned off must not pick a character in it; arming and the fold keep
-running, because they are what bound the credential to this page and keep a
-fallback file ST does write a recoverable draft.
 
 The character a delete like that empties is also on the spine now, which is
 what makes any of it reachable by hand at all. The spine's membership rule
@@ -382,8 +336,9 @@ what makes any of it reachable by hand at all. The spine's membership rule
 「`chat_size > 0`」 alone, and `chat_size` is a per-boot disk snapshot that is
 never refreshed inside the page — so the character you were standing on
 vanished from the only rail that can change character. Membership is now the
-union of four sources: conversations on disk, on stage now, holding a
-quarantine lease, or named by a pending draft-quarantine credential. The
+union of three sources: conversations on disk, on stage now, or in the session
+ledger (`store/session-characters.ts` — characters ChatUI itself gave a
+conversation this session, by ＋新对话 or by a post-delete landing). The
 original purpose of the filter (a character nobody ever opened is not on the
 bill) is kept. Ordering gains one band in front — the characters ChatUI knows
 are live while the snapshot still reports nothing, whose recency key is absent
@@ -406,12 +361,11 @@ same reasoning `index.ts`'s disable path already documents).
 The committed 2026-07-10/11 hardening closes the main correctness gaps found in
 the architecture review:
 
-- abandoned temp state is a per-conversation quarantine set, not one replaceable
-  pointer. Queued navigation captures after prior creation commits, local
-  draft/send/attachment work adopts before ST resets UI state, and stale departure
-  can deactivate only its exact active generation. Per-pointer localStorage keys
-  plus `storage` synchronization prevent different tabs from overwriting unrelated
-  quarantines;
+- ~~abandoned temp state is a per-conversation quarantine set~~ — **retired
+  2026-08-03** with the 「未完成草稿」 tier it protected (DESIGN §4.2). The lease
+  set, its ABA version stamps, the per-pointer localStorage keys and the
+  `storage` cross-tab merge are all gone; see this document's temp-quarantine
+  section above for what replaced the two facts they were also carrying;
 - explicit user deletion is keyed by stable avatar + file name and checks the raw
   directory listing both before and after DELETE (not lossy chat search). Both
   chat-save and metadata-save timers are cancelled and generation/save state is

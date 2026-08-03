@@ -21,23 +21,26 @@
  *   claims to show exactly this, and it dropped it whenever the snapshot said
  *   zero (delete a character's last conversation, reload, and the character
  *   you are reading vanishes from the rail);
- * - a character holding a temp-chat quarantine lease — ChatUI is deliberately
- *   keeping an unadopted draft file for it;
- * - the character a queued-but-unresolved draft-quarantine credential names —
- *   the delete transaction is mid-flight and ST has not made its fallback file
- *   live yet (adapter/chats/deletion-finalization.ts).
+ * - every character ChatUI itself gave a conversation this session, whether by
+ *   ＋新对话 or by the reload that follows deleting a character's last one
+ *   (store/session-characters.ts, which is where the argument for why an
+ *   in-memory ledger is the right shape lives).
  *
- * Membership is therefore the union of the four, and the union is over the
+ * Membership is therefore the union of the three, and the union is over the
  * cast list itself (a filter, not a concatenation), so a character named by
  * several sources still occupies exactly one seat.
+ *
+ * That second source used to be two — a temp-chat quarantine lease and a
+ * pending draft-quarantine credential — because the retired 「未完成草稿」 tier
+ * happened to be tracking the same characters for an unrelated reason. Both
+ * were answering this question by accident; the ledger answers it on purpose.
  *
  * ## Order
  *
  * Two bands, then recency inside each:
  *
  * 1. characters ChatUI knows are live while the disk snapshot still reports
- *    nothing (`chatSize <= 0`, i.e. enrolled *only* by one of the three
- *    session sources);
+ *    nothing (`chatSize <= 0`, i.e. enrolled *only* by a session source);
  * 2. everyone else, i.e. the ordinary cast the snapshot can speak for.
  *
  * Inside a band: `dateLastChatTs` descending, which is the order the spine has
@@ -67,17 +70,15 @@ export type SpineCastCandidate = {
 };
 
 /**
- * The three things ChatUI knows that a boot-time disk snapshot cannot. All
- * optional: passing none reproduces the plain 「has conversations on disk」
+ * The two things ChatUI knows that a boot-time disk snapshot cannot. Both
+ * optional: passing neither reproduces the plain 「has conversations on disk」
  * cast.
  */
 export type SpineCastSources = {
     /** The character holding the stage, or null (nobody, or a group chat). */
     onStageAvatar?: string | null;
-    /** Every character holding a temp-chat quarantine lease. */
-    leasedAvatars?: readonly string[];
-    /** The character a pending draft-quarantine credential names, if any. */
-    pendingDraftAvatar?: string | null;
+    /** Characters ChatUI itself gave a conversation this session. */
+    sessionAvatars?: readonly string[];
 };
 
 function finiteNumber(value: unknown): number {
@@ -88,10 +89,9 @@ function finiteNumber(value: unknown): number {
 function sessionKnownAvatars(sources: SpineCastSources): Set<string> {
     const known = new Set<string>();
     if (sources.onStageAvatar) known.add(sources.onStageAvatar);
-    for (const avatar of sources.leasedAvatars ?? []) {
+    for (const avatar of sources.sessionAvatars ?? []) {
         if (avatar) known.add(avatar);
     }
-    if (sources.pendingDraftAvatar) known.add(sources.pendingDraftAvatar);
     return known;
 }
 

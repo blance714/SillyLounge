@@ -498,22 +498,20 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
   兜底。后果是**跨引擎缺陷的本地反馈环是断的**——只能靠推 PR 等 CI,或者请维护者在
   Zen 的 Console 里跑只读快照脚本(2026-08-02 定位 rails 宽度缺陷用的就是后者)。
   值得找的出路:换 Playwright 版本/Firefox 通道,或给这台机器找到能跑的图形后端。
-- **临时会话隔离区正在拆除,第二棍未做。** 2026-08-02 拍板取消「未完成草稿」这一档
-  (DESIGN §4.2):第一棍已经把面向读者的那层全部拆掉——草稿卡、把新会话挡在列表外的
-  过滤、＋新对话按钮高亮、「同时只能有一个新对话」的再入拦截、舞台底部的新对话选角条。
-  **留在原地的是底下那套 store**:`store/temp-chat-store.ts`(548 行)+
-  `temp-chat-navigation.ts`,以及 `adapter/chats/deletion-finalization.ts` 里为它
-  服务的整套 sessionStorage 凭证子系统(queue/arm/peek/resolve +
-  `finalizeChatuiDraftQuarantine`)。它现在只剩一个真消费者:书脊入列的
-  `leasedAvatars`(`ui/spine-cast.ts`),用来补 `chat_size` 这个启动期磁盘快照的滞后。
-  第二棍要做的:
-  1. 把 `leasedAvatars` 换成一个不依赖隔离概念的来源——「本会话里 ChatUI 自己给谁
-     建过对话」,这才是那个补偿真正要表达的东西;
-  2. 删 store、删凭证子系统、删 INVARIANTS §5 与 §3 里随之退场的约 25 条不变量及其
-     单测;
-  3. **必须保住**「删掉某角色最后一条对话 → 强制刷新 → 启动时把读者送回该角色」这条
-     行为(INVARIANTS 第 208/210/211 条),它和隔离区在同一个函数里但不是同一件事;
-  4. 上真机 e2e 验删最后一条对话那条路径——它有真机 bug 前科(danglinglease 格)。
+- ~~**临时会话隔离区正在拆除,第二棍未做。**~~ —— **2026-08-03 两棍全部完成**。
+  第一棍拆读者可见层(草稿卡、列表过滤、按钮高亮、只能有一个、选角条),第二棍拆掉
+  `store/temp-chat-store.ts`(548 行)+ `temp-chat-navigation.ts`,以及
+  `adapter/chats/deletion-finalization.ts` 里为它服务的凭证子系统的大半。
+  - 书脊那个补偿改由 `store/session-characters.ts` 回答——**进程内、页级的一个 Set**,
+    记「本会话里 ChatUI 自己给谁建过对话」;这才是「ST 的 `chat_size` 是启动期磁盘快照」
+    这个问题该有的形状,而不是持久化租约的副产品。
+  - 凭证只剩「刷新之后把读者送回哪个角色」一件事:丢掉了文件名、身份守卫、
+    resolve/waiting/settled 协议和那个 CHAT_CHANGED 监听,连带丢掉它们文档里
+    「接受」的那个 ~142ms 竞态窗口。存储键刻意沿用旧名,好让升级当口正在事务里的读者
+    仍被送回去(有单测)。
+  - INVARIANTS §5 整节退场(13 条),§3 的凭证条目换成落地版;新增会话台账 5 条 + 落地
+    凭证 6 条 + 真机验收 `scripts/e2e/verify-last-chat-delete.mjs`(自带一次性宿主,
+    因为它对固件是不可逆破坏性的)。
 - **`scripts/e2e/*.mjs` 仍是 Chromium 独占。** 引擎矩阵目前只覆盖 `e2e/*.spec.mjs`;
   `measure-chat-switch` / `verify-truncation-guard` / `measure-long-chat` 都直接
   `chromium.launch()`。前者是性能基线,换引擎会让数字失去可比性,先不动;但**截断
