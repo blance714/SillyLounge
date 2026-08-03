@@ -140,14 +140,14 @@ CHAT_CHANGED（autoload 关掉、读者自己点开该角色，或由下面那�
 早约 142ms。两条已知边界如实记在这里，并且是**接受**而不是遗漏：
 
 - 若那次 `saveChatConditional()` 直接失败，会留下一条指向永不出现的文件的草稿租约。
-  这是可恢复态而非坏态，而且恢复刻意走**休眠卡**而不是活着的那一条：读者还站在这场
+  这是可恢复态而非坏态，而且恢复刻意走**读者离开之后那一条**而不是活着的那一条：读者还站在这场
   对话里时，它只是「没落盘」而不是「不存在」，删除事务因此拒绝把它判成 `absent`，好
   让租约撑过下一次把文件写回来的保存；读者离开之后，恢复它会先查原始目录并清掉租约
   （`openChatuiChatForCharacter`），丢弃它会拿到 `absent` 同样清掉租约
   （`delete-transaction.ts`），两条路都不卡住。
-- 那约 142ms 窗口内点「丢弃」，DELETE 会跑在 ST 的 CREATE 前面，文件随后被创建却不再
+- 那约 142ms 窗口内点「删除」，DELETE 会跑在 ST 的 CREATE 前面，文件随后被创建却不再
   被租约持有——正是这条规则要防的「兜底文件变普通历史」。接受的理由是这个窗口人手
-  不可达：草稿卡要渲染出来、被找到、被点开、确认框还要被按下，全部发生在页面出现后的
+  不可达：那张卡要渲染出来、被找到、被点开、确认框还要被按下，全部发生在页面出现后的
   十分之一秒内。真要封死它，只能把立即判定挪到一个保证晚于落盘的信号上——那就是
   CHAT_CHANGED，而真机上那一次在本段代码首次运行前就已经发过了；改等下一次会让所有
   正常 autoload 启动全部落空。
@@ -263,6 +263,15 @@ ST 自己的处理器不会踩到，是因为 `$(this).attr('data-chid')` 是 DO
 新建但尚未被采纳的会话被隔离在版本戳保护的隔离区里；所有清理/移动/采纳操作都要
 通过版本比对拒绝 ABA 竞态。
 
+> **正在拆除（2026-08-02 拍板，DESIGN §4.2）。** 隔离区面向读者的那一层已经拆掉：
+> 新对话就是普通对话，没有草稿卡、没有「未完成草稿」标签、没有把新会话挡在列表外的
+> 过滤，＋新对话按钮不再高亮，也不再限制同时只能有一个。本节以下的不变量描述的是
+> **store 层**，它们此刻仍然全部成立，但已经只剩一个消费者（书脊入列的
+> `leasedAvatars`，用来补 `chat_size` 这个启动期磁盘快照的滞后）。第二棍会把 store
+> 连同 `adapter/chats/deletion-finalization.ts` 的凭证子系统一起收掉，届时本节整体
+> 退场；下面凡是用「草稿卡」「休眠卡」这类措辞描述读者动作的地方，读作「那条对话
+> 在场刊里的普通卡片」。
+
 | 不变量 | 验证 |
 | --- | --- |
 | 指针与乐观草稿拒绝过期的 ABA 清理 | `test/state-contracts.test.mjs :: temp-chat pointer and optimistic draft reject stale ABA cleanup` |
@@ -278,6 +287,7 @@ ST 自己的处理器不会踩到，是因为 `$(this).attr('data-chid')` 是 DO
 | 本地工作先于导航采纳临时会话，导航不能重置未决 UI 状态 | `test/state-contracts.test.mjs :: local work adopts a temp before navigation can reset pending UI state` |
 | 空操作导航保持当前临时会话活跃以待采纳 | `test/state-contracts.test.mjs :: a no-op navigation keeps the current temp active for later adoption` |
 | dry-run 与 quiet 生成探针不采纳未被触碰的临时会话 | `test/state-contracts.test.mjs :: dry-run and quiet generation probes do not adopt an untouched temp chat` |
+| 站在一场未落笔的新对话上再按 ＋新对话，必须再建一场并两场都被追踪——**不是**静默空操作（旧的「同时只能有一个新对话」拦截随草稿卡一起退场，2026-08-02） | `test/sidebar-actions.test.mjs :: a second ＋新对话 press creates a second chat instead of silently doing nothing` |
 
 ## 6. 输入框与编辑草稿
 
@@ -648,6 +658,37 @@ spine 是 ChatUI 唯一的换角色入口（ST 原生列表在遮罩之下），
 | 畸形的 size/recency 值一律读作 0，不污染排序 | `test/spine-cast.test.mjs :: malformed recency and size values are read as zero instead of poisoning the order` |
 | 绝不就地改动传入的 cast 数组（它属于查询缓存，原地排序会改掉所有读者看到的顺序） | `test/spine-cast.test.mjs :: the source list is never mutated` |
 
+### 未落笔的对话（ui/blank-conversation.ts）
+
+场刊里「还没人写过」的那张卡画成虚线（DESIGN §4.2，2026-08-02 拍板）。**纯呈现**：
+它在其它每一方面都是普通对话——照常列出、打开、改名、删除，不被扣下，也不限制数量。
+这正是它与同日退场的「未完成草稿」档的全部区别：后者是一张**租约**，决定读者能看见
+什么。
+
+规则之所以长这样，是因为 **ST 的对话列表不说消息是谁写的**：撑起场刊的两个端点
+（`/api/characters/chats` 与 `/api/chats/search`，都经 `getChatInfo`，
+src/endpoints/chats.js）只报消息**条数**、最后一条正文、时间戳和文件大小。所以
+「唯一一条是角色消息」在列表上直接读不出来；要精确回答就得每渲染一次场刊就打开每个
+对话文件——为一个边框样式付一个请求每行。
+
+改为推导，依据是 ST 只在一处给新对话播种（script.js 的 `getChatResult`）：
+`if (chat.length === 0) { const m = getFirstMessage(); if (m.mes) chat.push(m); }`。
+于是**有开场白的角色**开局必然停在 1 条角色消息，其 1 条对话就只能是那条开场白（读者
+自己写的第一句会是第 2 条）；**没有开场白的角色**开局是 0 条，其 1 条对话就必然是读者
+写的。两个分支都精确，且都只用页面已有的数据。`hasGreeting` 在 adapter 侧算
+（`chats/queries.ts`，紧挨 `chat_size`）——宿主字段是什么意思归 adapter 管，卡片长什么
+样归 ui 管。
+
+唯一能骗过它的状态只能手工构造：把某条对话里的开场白删掉，再写恰好一句且从未收到
+回复。代价是一个边框样式，直到回复落地为止——这是**接受**，不是遗漏。
+
+| 不变量 | 验证 |
+| --- | --- |
+| 0 条消息一律算未落笔，与该角色有没有开场白无关 | `test/blank-conversation.test.mjs :: an empty conversation is blank whether or not the character has a greeting` |
+| 恰好 1 条：有开场白的角色算未落笔（那条只能是开场白），没开场白的角色**不算**（那条只能是读者写的） | `test/blank-conversation.test.mjs :: one message means the greeting alone for a character who has one, and the reader's own line for one who does not` |
+| 已经有回复的对话任何情况下都不算未落笔 | `test/blank-conversation.test.mjs :: a conversation with a reply in it is never blank` |
+| 列表没给出可用条数时判为「不是未落笔」，绝不猜——虚线是对文件的一个断言，没证据就不断言，且反过来会把真实历史标成未写过 | `test/blank-conversation.test.mjs :: a count the listing could not supply is read as "not blank" rather than guessed` |
+
 ### Topbar 改名与分支门禁（ui/topbar-menu-logic.ts）
 
 pr7：topbar 标题改成就地改名（README §7 / DESIGN §4.1 铅笔钮 + 输入框），⋯ 菜单
@@ -776,6 +817,23 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   仍是 `position: static`、且穿的是 ST 桌面版皮肤（10px 圆角）而非移动抽屉皮肤。守的是
   `.cui-settings-host` 整平选择器必须带 `#chatui-root` 祖先才压得过 ST 用 ID
   加 `!important` 写的移动端规则（c745053）。
+- **`e2e/new-chat-is-ordinary.spec.mjs`**（CI 门禁，两个引擎各跑一遍）：＋新对话
+  建出来的会话必须**以普通卡片列在场刊里**——按一次卡片数 +1 且新卡带 `is-current`，
+  再按一次 +2（旧的「同时只能有一个新对话」拦截若复活，这一步就停在 2）；全程断言
+  `.cui-root-draft-card`、`.cui-picker`、`.cui-root-newchat.is-active` 三者计数为
+  0，即三样退场的东西都不得回来（DESIGN §4.2，2026-08-02）。另断言**未落笔虚线**：
+  读**计算样式**而非类名——两张新卡 `border-top-style` 为 `dashed`/`1px`，四条消息的
+  固件会话仍为 `solid`（只断类名的话，「全画虚线」和「全不画」都能蒙混过关；读计算样式
+  还顺带让两个引擎各自表态）。单测只能证明各自的零件（`sidebar-actions.test.mjs` 那条
+  证明第二次按下真进了宿主，`blank-conversation.test.mjs` 证明判据本身对）；「读者在
+  列表里看得见它」只有真宿主答得了。再断言**两个状态只在「线断没断」上分高下**：普通
+  卡的静息边框颜色必须**恒等于** `--cui-color-border-strong` 解析出的那个色（而不是更淡的
+  `--cui-color-border`），且 `--cui-color-border-hover` 解析出的色与前两者都不同。写成
+  token 恒等而不是字面色值，是因为这套调色板已经两次发出引用未定义变量的颜色声明——那种
+  声明在计算值阶段被静默丢弃，表现得和设计回归一模一样，而 code review 看不出来。
+  **对共享宿主幂等**：结束前先切回固件会话（好让两次
+  删除都不是「删当前对话」——那条路会强制整页刷新，是另一个场景），再把自己建的两条
+  逐一删掉并断言列表回到固件原状；已用 `--repeat-each=3` 实测连跑不互相污染。
 - **`scripts/e2e/measure-chat-switch.mjs`**（CI 门禁，publish-dist 的显式步骤）：双
   400 楼会话经真实侧栏 A→B→A 切换；断言 chatId 一致、无跨会话标记残留、虚拟列表
   声明 800 条但只挂载有界窗口、Home/End 可从未挂载楼层跳转、iframe 几何不重叠、

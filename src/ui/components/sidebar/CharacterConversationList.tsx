@@ -1,10 +1,10 @@
 import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { openChatuiChatForCharacter, deleteChatuiChat, renameChatuiChat } from '../../actions.js';
+import { isBlankConversation } from '../../blank-conversation.js';
 import { formatConversationMeta } from '../../format.js';
 import { useCaretOnMount } from '../../hooks.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
-import { QuarantinedDrafts } from './QuarantinedDrafts.js';
 import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '../../types.js';
 
 /**
@@ -21,9 +21,12 @@ import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '..
 function ConversationCard({
     chat,
     charAvatar,
+    isBlank,
 }: {
     chat: ChatListItem;
     charAvatar: string;
+    /** Nobody has written here yet — drawn dashed, and nothing else. */
+    isBlank: boolean;
 }): ComponentChild {
     const [confirmingDelete, setConfirmingDelete] = useState(false);
     const [renameDraft, setRenameDraft] = useState<string | null>(null);
@@ -50,7 +53,7 @@ function ConversationCard({
 
     return (
         <li
-            className={`cui-root-playbill-card cui-root-nested-chat-row${chat.isCurrent ? ' is-current' : ''}`}
+            className={`cui-root-playbill-card cui-root-nested-chat-row${chat.isCurrent ? ' is-current' : ''}${isBlank ? ' is-blank' : ''}`}
             role="button"
             tabIndex={0}
             onClick={open}
@@ -125,12 +128,10 @@ function ConversationCard({
 
 function ConversationCards({
     group,
-    onNavigate,
     loadMoreCharacterChats,
     retryCharacterChats,
 }: {
     group: CharConversationGroup;
-    onNavigate: () => void;
     loadMoreCharacterChats: (avatar: string) => Promise<void>;
     retryCharacterChats: (avatar: string) => Promise<void>;
 }): ComponentChild {
@@ -143,7 +144,6 @@ function ConversationCards({
         || (!group.chatsLoaded && group.pending !== 'error');
     const showMore = group.chatsLoaded && !group.fullyLoaded;
     const isEmpty = group.chats.length === 0
-        && group.draftChats.length === 0
         && !showLoading
         && group.pending !== 'error';
 
@@ -151,17 +151,15 @@ function ConversationCards({
 
     return (
         <ul className="cui-root-playbill-cards">
-            <QuarantinedDrafts
-                drafts={group.draftChats}
-                avatar={group.avatar}
-                characterName={group.name}
-                onNavigate={onNavigate}
-            />
             {group.chats.map(chat => (
                 <ConversationCard
                     key={chat.fileName}
                     chat={chat}
                     charAvatar={group.avatar}
+                    isBlank={isBlankConversation({
+                        messageCount: chat.messageCount,
+                        hasGreeting: group.hasGreeting,
+                    })}
                 />
             ))}
             {showLoading && (
@@ -214,10 +212,8 @@ function ConversationCards({
  */
 export function CharacterConversationList({
     sidebar,
-    onNavigate,
 }: {
     sidebar: ChatuiSidebarState;
-    onNavigate: () => void;
 }): ComponentChild {
     const { charGroups, charGroupsError, characters, header, loadMoreCharacterChats, retryCharacterChats } = sidebar;
     const group = charGroups[0];
@@ -233,7 +229,6 @@ export function CharacterConversationList({
                     : (
                         <ConversationCards
                             group={group}
-                            onNavigate={onNavigate}
                             loadMoreCharacterChats={loadMoreCharacterChats}
                             retryCharacterChats={retryCharacterChats}
                         />

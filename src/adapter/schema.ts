@@ -19,6 +19,12 @@ const FiniteNumberFieldSchema = z.catch(
 
 const FavoriteFieldSchema = z.transform((value: unknown) => value === true || value === 'true');
 
+/** Only the greeting fields; everything else on a v2 card is somebody else's business. */
+const StCharacterDataFieldSchema = z.catch(
+    z.catchall(z.object({ alternate_greetings: StringArrayFieldSchema }), z.unknown()),
+    () => ({ alternate_greetings: [] as string[] }),
+);
+
 export const StCharacterSchema = z.catchall(z.object({
     avatar: StringFieldSchema,
     name: StringFieldSchema,
@@ -26,6 +32,13 @@ export const StCharacterSchema = z.catchall(z.object({
     chat_size: FiniteNumberFieldSchema,
     date_last_chat: FiniteNumberFieldSchema,
     fav: FavoriteFieldSchema,
+    // The greeting, and the alternates ST falls back to when it is empty
+    // (script.js's getFirstMessage). Read so the playbill can tell a
+    // conversation nobody has written in yet from one that merely starts with
+    // the character speaking — see ui/blank-conversation.ts for why this is
+    // the cheapest exact answer available.
+    first_mes: StringFieldSchema,
+    data: StCharacterDataFieldSchema,
 }), z.unknown());
 export type StCharacter = z.infer<typeof StCharacterSchema>;
 
