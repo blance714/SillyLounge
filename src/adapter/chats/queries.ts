@@ -6,6 +6,7 @@ import {
 } from '@st/script';
 import { timestampToMoment } from '@st/utils';
 import {
+    type StCharacter,
     type StChatRow,
     parseChatRows,
 } from '../schema.js';
@@ -84,6 +85,20 @@ export async function listCharacterChats(): Promise<ChatListItemDto[]> {
     return items;
 }
 
+/**
+ * Whether ST would seed a new chat for this character with a greeting — i.e.
+ * whether `getFirstMessage()` (script.js) produces a message at all. `first_mes`
+ * wins; an empty one falls through to the first non-empty alternate greeting.
+ * The playbill turns this into 「nobody has written here yet」 — the argument
+ * for why that derivation is exact lives in ui/blank-conversation.ts.
+ */
+function characterHasGreeting(entry: StCharacter): boolean {
+    if (entry.first_mes.trim() !== '') return true;
+    const alternates = entry.data?.alternate_greetings;
+    return Array.isArray(alternates)
+        && alternates.some(greeting => typeof greeting === 'string' && greeting.trim() !== '');
+}
+
 export function listCharacterConversationHeaders(): CharConversationGroupDto[] {
     const ctx = getStContext();
     const rawChars = getCharacters(ctx);
@@ -103,6 +118,7 @@ export function listCharacterConversationHeaders(): CharConversationGroupDto[] {
                 isCurrent: currentCharId !== null && index === currentCharId,
                 dateLastChatTs,
                 chatSize,
+                hasGreeting: characterHasGreeting(entry),
                 chats: [],
                 visibleCount: 0,
                 chatsLoaded: false,
@@ -192,6 +208,7 @@ export function listCharacters(): CharacterSummaryDto[] {
             isCurrent: hasCurrent && !ctx.groupId && String(index) === String(currentId),
             dateLastChatTs: entry.date_last_chat,
             chatSize: entry.chat_size,
+            hasGreeting: characterHasGreeting(entry),
         };
     });
 }

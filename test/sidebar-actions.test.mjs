@@ -749,3 +749,58 @@ test('both of openChatuiChatForCharacter\'s "it is not there" exits announce the
         await host.dispose();
     }
 });
+
+test('a second ＋新对话 press creates a second chat instead of silently doing nothing', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.fetch.setHandler(() => {
+            throw new Error('creating a new chat must go through the host, not the chat API');
+        });
+
+        // ST's own doNewChat: materialize a fresh file and make it live. It has
+        // no opinion about how many empty chats a character may hold — the cap
+        // this test is about was ChatUI's, not the host's.
+        const created = [];
+        host.registry.doNewChat = async (options) => {
+            assert.deepEqual(options, { deleteCurrentChat: false });
+            const fileName = `Bob - new-${created.length + 1}`;
+            created.push(fileName);
+            liveChat(host, fileName);
+        };
+
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        const tempChatStore = await host.importModule('store/temp-chat-store.js');
+
+        // First press: this always worked.
+        await sidebarActions.newChatuiChat();
+        await sidebarActions.waitForChatuiSidebarActionsIdle();
+        assert.deepEqual(created, ['Bob - new-1']);
+
+        // Second press, from the unadopted chat the first one produced. This is
+        // the regression under gate: _createTempDraft used to return here
+        // without touching the host, because the ＋新对话 button was doubling
+        // as that chat's own row and a second one had nowhere to be drawn
+        // (DESIGN §4.2, 2026-08-02). Nothing renders a draft any more, so a
+        // second press is an ordinary request.
+        await sidebarActions.newChatuiChat();
+        await sidebarActions.waitForChatuiSidebarActionsIdle();
+        assert.deepEqual(
+            created,
+            ['Bob - new-1', 'Bob - new-2'],
+            'pressing ＋新对话 again must reach the host a second time',
+        );
+        assert.deepEqual(
+            tempChatStore.getTempChats().map(pointer => pointer.fileName),
+            ['Bob - new-1', 'Bob - new-2'],
+            'and both files must be tracked — the first is not silently forgotten',
+        );
+        assert.deepEqual(
+            tempChatStore.getTempChat(),
+            { avatar: 'bob.png', fileName: 'Bob - new-2' },
+            'the newest one is the one the reader is standing in',
+        );
+    } finally {
+        await host.dispose();
+    }
+});

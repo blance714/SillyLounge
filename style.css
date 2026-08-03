@@ -93,6 +93,22 @@
     --cui-color-spine: #0f0d0a;
     --cui-color-border-strong: #3f372c;
 
+    /* One step brighter than --cui-color-border-strong, on the same rule the
+       two accents already follow (#c9a06a → #e0bc85, #96633f → #a8734c) —
+       derived from the mix rather than typed as a hex, so the palette stays
+       one decision.
+
+       It exists because the playbill card's resting edge moved up to
+       border-strong on 2026-08-02: at the old --cui-color-border it was so
+       close to the surface that an empty card's *dashes* read louder than a
+       written-in card's solid edge (owner call, from a four-state render).
+       border-strong was already what hover spent, so raising the resting edge
+       to it would have left hover with no edge of its own to change — the
+       cursor would stop saying which card it is on. This is that step. It is
+       deliberately neutral, not warm: warm belongs to 「当前对话」, and a hover
+       that drifted toward rust would say the wrong thing. */
+    --cui-color-border-hover: color-mix(in srgb, var(--cui-color-text) 15%, var(--cui-color-border-strong));
+
     /* Referenced by the floor rail's two numeric labels since they were
        written, but never defined — so both `color` declarations were invalid
        at computed-value time and silently dropped, leaving the labels on
@@ -1474,10 +1490,16 @@ body.chatui-active .cui-root-playbill-cards {
    so it is a low mix of its own instead of a step on the --cui-tint-* scale;
    hover and "this is the night you are reading" are the states, and those do
    read the scale and the accent rule. */
+/* The resting edge is border-strong, not the fainter --cui-color-border it
+   started on: at that value the edge all but vanished into the surface, and an
+   empty card's dashes — the *same* colour, merely broken — read louder than a
+   written-in card's solid one. Two states that carry different meanings must
+   not differ in loudness for a reason unrelated to either (owner call,
+   2026-08-02, decided off a four-state render). */
 body.chatui-active .cui-root-playbill-card {
     position: relative;
     box-sizing: border-box;
-    border: 1px solid var(--cui-color-border);
+    border: 1px solid var(--cui-color-border-strong);
     border-radius: var(--cui-radius-card);
     background-color: color-mix(in srgb, var(--cui-color-text) 4%, transparent);
     padding: 11px 13px 9px;
@@ -1492,7 +1514,7 @@ body.chatui-active .cui-root-playbill-card {
 body.chatui-active .cui-root-playbill-card:hover,
 body.chatui-active .cui-root-playbill-card:focus-visible,
 body.chatui-active .cui-root-playbill-card:focus-within {
-    border-color: var(--cui-color-border-strong);
+    border-color: var(--cui-color-border-hover);
     background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
     opacity: 1;
     outline: none;
@@ -1549,8 +1571,7 @@ body.chatui-active .cui-root-playbill-card-meta {
    call, 2026-08-01, overriding README §1's two-line clamp — one line reads
    cleaner in the column, and the meta row still carries the timestamp that
    tells two nights apart). */
-body.chatui-active .cui-root-nested-chat-row-preview,
-body.chatui-active .cui-root-draft-card-preview {
+body.chatui-active .cui-root-nested-chat-row-preview {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
@@ -1605,6 +1626,25 @@ body.chatui-active .cui-root-nested-chat-row.is-current .cui-root-playbill-card-
     color: color-mix(in srgb, var(--cui-color-accent) 70%, transparent);
 }
 
+/* A conversation nobody has written in yet keeps the retired draft card's one
+   surviving idea: the outline is drawn but not yet inked (owner call,
+   2026-08-02, ui/blank-conversation.ts decides which those are). Only the
+   border *style* changes — title, preview, meta, dock and every colour stay
+   exactly what they are for an ordinary card, so this composes with
+   `.is-current` rather than competing with it: the current conversation is
+   still rust, it is merely rust-and-dashed while it is empty.
+
+   Deliberately not the old draft card: no tag, no tinted fill, no italic
+   preview. Those said 「this is a different kind of thing」, and it is not one
+   any more — it is the same conversation, one state earlier.
+
+   The binding gutter needs no rule here: its edge is already 1px dashed on
+   every card — that is the leaf motif, not a state — so a blank card is simply
+   dashed on all four sides, which is what the retired draft card looked like. */
+body.chatui-active .cui-root-nested-chat-row.is-blank {
+    border-style: dashed;
+}
+
 /* In-place rename (DESIGN §4.2): the title becomes an input where it stands,
    so it keeps the title's own type and only gains the rust outline that says
    it is now being written in. */
@@ -1619,52 +1659,6 @@ body.chatui-active .cui-root-nested-chat-row-rename {
     font-size: var(--cui-font-card);
     padding: 2px 6px;
     outline: none;
-}
-
-/* ── Draft card ──────────────────────────────────────────────────────────── */
-
-/* A quarantined new chat is the same leaf drawn in an unfinished hand: dashed
-   all the way round, so it never passes for ordinary history at a glance. */
-body.chatui-active .cui-root-draft-card {
-    border: 1px dashed color-mix(in srgb, var(--cui-color-user-mark) 55%, transparent);
-    background-color: color-mix(in srgb, var(--cui-color-user-mark) 5%, transparent);
-}
-
-body.chatui-active .cui-root-draft-card:hover,
-body.chatui-active .cui-root-draft-card:focus-visible,
-body.chatui-active .cui-root-draft-card:focus-within {
-    border-color: var(--cui-color-user-mark);
-    background-color: color-mix(in srgb, var(--cui-color-user-mark) 12%, transparent);
-}
-
-body.chatui-active .cui-root-draft-card .cui-root-playbill-card-binding {
-    border-right-color: color-mix(in srgb, var(--cui-color-user-mark) 40%, transparent);
-}
-
-body.chatui-active .cui-root-draft-card-tag {
-    color: var(--cui-color-user-voice);
-    font-family: var(--cui-font-family);
-    font-size: var(--cui-font-2xs);
-    letter-spacing: var(--cui-tracking-label);
-}
-
-body.chatui-active .cui-root-draft-card-name {
-    margin-top: 4px;
-    overflow: hidden;
-    color: color-mix(in srgb, var(--cui-color-text) 72%, transparent);
-    font-family: var(--cui-font-display);
-    font-size: var(--cui-font-menu);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-body.chatui-active .cui-root-draft-card-preview {
-    margin-top: 5px;
-    color: color-mix(in srgb, var(--cui-color-text) 65%, transparent);
-    font-family: var(--cui-font-display);
-    font-size: var(--cui-font-tight);
-    font-style: italic;
-    line-height: 1.7;
 }
 
 /* ── Card action dock ────────────────────────────────────────────────────── */
@@ -1834,20 +1828,6 @@ body.chatui-active .cui-root-newchat:focus-visible {
     background-color: color-mix(in srgb, var(--cui-color-user-mark) 8%, transparent);
     color: var(--cui-color-accent);
     outline: none;
-}
-
-/* A leased draft is this slot's own state, not a row somewhere else: the
-   outline stops being a dashed placeholder and becomes the rust rule. */
-body.chatui-active .cui-root-newchat.is-active {
-    border-style: solid;
-    border-color: var(--cui-rule-accent);
-    background-color: color-mix(in srgb, var(--cui-color-user-mark) 12%, transparent);
-    color: var(--cui-color-accent);
-}
-
-body.chatui-active .cui-root-newchat.is-active:hover:not(:disabled),
-body.chatui-active .cui-root-newchat.is-active:focus-visible {
-    border-color: var(--cui-rule-accent-hover);
 }
 
 body.chatui-active .cui-root-newchat:disabled {
@@ -3959,121 +3939,6 @@ body.chatui-active .cui-root-toast-close:hover,
 body.chatui-active .cui-root-toast-close:focus-visible {
     opacity: 1;
     background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
-}
-
-/* ── New-chat character picker (fresh-chat) ──────────────────────────────── */
-
-body.chatui-active .cui-picker {
-    /* Aligns with composer width and vertical position */
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    width: min(100%, var(--cui-content-max-width));
-    margin: 0 auto;
-    padding: 0.35rem 0 0.15rem;
-    box-sizing: border-box;
-}
-
-body.chatui-active .cui-picker-label {
-    /* Matches the section label style used in the sidebar */
-    display: block;
-    padding: 0 0.15rem 0.1rem;
-    font-size: var(--cui-font-2xs);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: var(--cui-tracking-caption);
-    opacity: 0.5;
-}
-
-body.chatui-active .cui-picker-scroll {
-    display: flex;
-    flex-direction: row;
-    gap: 0.5rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 0.2rem;
-    /* Hide scrollbar on all platforms — the strip has visual overflow affordance */
-    scrollbar-width: none;
-}
-
-body.chatui-active .cui-picker-scroll::-webkit-scrollbar {
-    display: none;
-}
-
-body.chatui-active .cui-picker-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-    flex: 0 0 auto;
-    width: 4rem;
-    padding: 0.4rem 0.3rem;
-    border: none;
-    border-radius: var(--cui-radius-lg);
-    background: none;
-    color: var(--cui-color-text);
-    cursor: pointer;
-    font-family: var(--cui-font-family);
-    text-align: center;
-    /* Reset button styles so text-align works */
-    -webkit-appearance: none;
-}
-
-body.chatui-active .cui-picker-item:hover:not(:disabled),
-body.chatui-active .cui-picker-item:focus-visible:not(:disabled) {
-    background-color: color-mix(in srgb, var(--cui-color-text) var(--cui-tint-hover), transparent);
-    outline: none;
-}
-
-body.chatui-active .cui-picker-item:disabled {
-    cursor: default;
-    opacity: 0.45;
-}
-
-body.chatui-active .cui-picker-item-avatar {
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    object-fit: cover;
-    flex: 0 0 auto;
-}
-
-body.chatui-active .cui-picker-item-avatar-fallback {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2.5rem;
-    height: 2.5rem;
-    border-radius: 50%;
-    background-color: color-mix(in srgb, var(--cui-color-text) 12%, transparent);
-    font-size: var(--cui-font-card);
-    flex: 0 0 auto;
-}
-
-body.chatui-active .cui-picker-item-name {
-    font-family: var(--cui-font-display);
-    font-size: var(--cui-font-2xs);
-    line-height: 1.2;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    opacity: 0.85;
-}
-
-body.chatui-active .cui-picker-item-mark {
-    width: 1.4rem;
-    height: 2px;
-    border-radius: var(--cui-radius-pill);
-    background: var(--cui-color-border);
-    opacity: 0.6;
-}
-
-body.chatui-active .cui-picker-item.is-current .cui-picker-item-mark {
-    background: var(--cui-color-accent);
-    opacity: 1;
-    width: 2rem;
 }
 
 /* ---------------------------------------------------------------------------

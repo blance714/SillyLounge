@@ -18,10 +18,7 @@ import {
     getChatuiCurrentChatHeader,
     getChatuiComposerDraftStoreSnapshot,
     getChatuiPendingDraftQuarantineCharacter,
-    getTempChat,
     getTempChats,
-    getTempChatDraft,
-    isTempChatDraft,
     listChatuiCharacters,
     notifyChatui,
     setChatuiComposerDraft,
@@ -141,9 +138,7 @@ export function useCurrentChatIdentity(): ChatuiState['chat']['currentChat'] {
 export function useSidebarBasics(): {
     header: ChatuiSidebarState['header'];
     characters: CharacterSummary[];
-    getDraftSnapshot: (avatar: string) => { fileNames: string[]; complete: boolean };
 } {
-    const queryClient = useQueryClient();
     const currentChat = useCurrentChatIdentity();
     const headerQuery = useQuery({
         ...sidebarQueryOptions.header(),
@@ -159,27 +154,9 @@ export function useSidebarBasics(): {
         isCurrent: !header.isGroup && currentChat?.avatar === character.avatar,
     })), [charactersQuery.data, currentChat?.avatar, header.isGroup]);
 
-    const getDraftSnapshot = useCallback((avatar: string) => {
-        const full = queryClient.getQueryData(sidebarQueryOptions.byCharacter(avatar).queryKey) as
-            { chats: ChatListItem[] } | undefined;
-        if (full) {
-            return { fileNames: dedupeSortChats(full.chats).map(chat => chat.fileName), complete: true };
-        }
-
-        const rows = (queryClient.getQueryData(
-            sidebarQueryOptions.recents(SIDEBAR_RECENTS_MAX).queryKey,
-        ) as Array<{ avatar: string; chat: ChatListItem }> | undefined) ?? [];
-        const recents = rows.filter(row => row.avatar === avatar).map(row => row.chat);
-        return {
-            fileNames: dedupeSortChats(recents, INITIAL_VISIBLE_COUNT).map(chat => chat.fileName),
-            complete: false,
-        };
-    }, [queryClient]);
-
     return {
         header,
         characters,
-        getDraftSnapshot,
     };
 }
 
@@ -286,8 +263,6 @@ export function useSpineCharacters(): { characters: CharacterSummary[]; isGroupA
 export function useSidebarData(): ChatuiSidebarState {
     const queryClient = useQueryClient();
     const currentChat = useCurrentChatIdentity();
-    const tempChats = useTempChats();
-    const tempDraft = useTempChatDraft();
     const headerQuery = useQuery({
         ...sidebarQueryOptions.header(),
         initialData: getChatuiCurrentChatHeader,
@@ -423,18 +398,6 @@ export function useSidebarData(): ChatuiSidebarState {
         return () => { cancelled = true; };
     }, [backfillNeededAvatarKey, queryClient]);
 
-    const shouldHideChat = useCallback((avatar: string, chat: ChatListItem): boolean => {
-        if (tempChats.some(pointer => (
-            pointer.avatar === avatar && pointer.fileName === normalizeFileName(chat.fileName)
-        ))) return true;
-        if (tempDraft?.avatar !== avatar) return false;
-        return isTempChatDraft(avatar, chat.fileName);
-    }, [
-        tempChats,
-        tempDraft?.avatar,
-        tempDraft?.knownFileNames,
-    ]);
-
     const loadMoreCharacterChats = useCallback(async (avatar: string): Promise<void> => {
         if (!avatar) return;
         setPendingMoreAvatars(prev => withSetValue(prev, avatar, true));
@@ -475,39 +438,11 @@ export function useSidebarData(): ChatuiSidebarState {
         const full = byCharacterQuery?.data as CharacterChatsResult | undefined;
         const visibleCount = Math.max(visibleCounts[group.avatar] ?? INITIAL_VISIBLE_COUNT, INITIAL_VISIBLE_COUNT);
         const recentChats = recentsByAvatar.get(group.avatar) ?? [];
-        const draftActive = tempDraft?.avatar === group.avatar;
-        const sourceChats = (draftActive && tempDraft && !tempDraft.complete)
-            ? recentChats
-            : (full?.chats ?? recentChats);
-        // Raw listing size, drafts included — only ever compared against the
-        // source list to decide whether more pages exist. The count the header
-        // prints is the ordinary-conversation one further down.
+        const sourceChats = full?.chats ?? recentChats;
+        // Raw listing size — only ever compared against the source list to
+        // decide whether more pages exist.
         const sourceTotalCount = full?.totalCount ?? Math.max(finiteNumber(group.chatSize), sourceChats.length);
-        const dedupedSourceChats = dedupeSortChats(sourceChats);
-        const visibleSourceChats = dedupedSourceChats
-            .filter(chat => !shouldHideChat(group.avatar, chat));
-        // Draft cards are driven by the lease set, not by the chat listing:
-        // the quarantine is what makes a file a draft, and it is authoritative
-        // even when the listing has not caught up. The listing only decorates
-        // (title/preview/time); an undecorated draft still gets a card, which
-        // is why the fallback below is a bare pointer rather than a skip.
-        const draftChats = tempChats
-            .filter(pointer => pointer.avatar === group.avatar && !(
-                currentChat?.avatar === pointer.avatar && currentChat.fileName === pointer.fileName
-            ))
-            .map(pointer => dedupedSourceChats.find(
-                chat => normalizeFileName(chat.fileName) === pointer.fileName,
-            ) ?? {
-                fileName: pointer.fileName,
-                displayName: pointer.fileName,
-                messageCount: 0,
-                preview: '',
-                fileSize: '',
-                lastMesTs: 0,
-                lastMesLabel: '',
-                isCurrent: false,
-            })
-            .sort((a, b) => chatRecencyTs(b) - chatRecencyTs(a));
+        const visibleSourceChats = dedupeSortChats(sourceChats);
         const displayChats = visibleSourceChats
             .slice(0, full ? visibleCount : INITIAL_VISIBLE_COUNT)
             .map(chat => ({
@@ -515,8 +450,7 @@ export function useSidebarData(): ChatuiSidebarState {
                 isCurrent: !!currentChat
                     && currentChat.avatar === group.avatar
                     && currentChat.fileName === normalizeFileName(chat.fileName),
-            }))
-            .filter(chat => !shouldHideChat(group.avatar, chat));
+            }));
         const isLoadingFull = byCharacterQuery?.isFetching === true;
         const pending: CharConversationGroup['pending'] = pendingMoreAvatars.has(group.avatar)
             ? 'more'
@@ -536,8 +470,8 @@ export function useSidebarData(): ChatuiSidebarState {
             isCurrent: !!currentChat && currentChat.avatar === group.avatar,
             dateLastChatTs: finiteNumber(group.dateLastChatTs),
             chatSize: finiteNumber(group.chatSize),
+            hasGreeting: group.hasGreeting,
             chats: displayChats,
-            draftChats,
             // Honest only once the full per-character listing has landed: until
             // then `sourceChats` is the recents page, capped at five, and
             // `chatSize` is a byte count. Null means "unknown", and the header
@@ -558,9 +492,6 @@ export function useSidebarData(): ChatuiSidebarState {
         pendingBackfillAvatars,
         pendingMoreAvatars,
         recentsByAvatar,
-        shouldHideChat,
-        tempChats,
-        tempDraft,
         visibleCounts,
     ]);
 
@@ -600,27 +531,8 @@ export function useChatuiMessage(messageId: number): ChatuiMessage | null {
     return useSyncExternalStore(subscribe, getSnapshot);
 }
 
-export function useTempChat(): ReturnType<typeof getTempChat> {
-    return useSyncExternalStore(subscribeTempChatStore, getTempChat);
-}
-
 export function useTempChats(): ReturnType<typeof getTempChats> {
     return useSyncExternalStore(subscribeTempChatStore, getTempChats);
-}
-
-export function useTempChatDraft(): ReturnType<typeof getTempChatDraft> {
-    return useSyncExternalStore(subscribeTempChatStore, getTempChatDraft);
-}
-
-export function useIsTempChatActive(): boolean {
-    const current = useCurrentChatIdentity();
-    const tempChats = useTempChats();
-    const tempDraft = useTempChatDraft();
-    if (tempDraft) return true;
-    if (current && tempChats.some(pointer => (
-        pointer.avatar === current.avatar && pointer.fileName === current.fileName
-    ))) return true;
-    return false;
 }
 
 export function useRootDomEnhancements(

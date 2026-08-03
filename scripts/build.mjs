@@ -26,6 +26,7 @@ const RUNTIME_ENTRY_FILES = Object.freeze([
     // Pure ui/ modules are bundled into root-app.mjs like everything else; they
     // are named here as well so `dist/runtime/ui/*.js` carries a standalone,
     // importable copy for the Node unit tests.
+    'ui/blank-conversation.ts',
     'ui/escape-ladder.ts',
     'ui/floor-rail-math.ts',
     'ui/follow-scroll-math.ts',

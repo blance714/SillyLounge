@@ -325,10 +325,13 @@ owner 就单行更适合这一列这一点明确推翻)。两个类名现在都�
 `overflow:hidden; text-overflow:ellipsis; white-space:nowrap`,截断方式已经一致。
 **照本条原落点再把它们并回两行 clamp,会推翻这次 owner 决定,不要重做。**
 
-**B4「复制」与「复制原文」的语义待 owner 拍板。**
+**~~B4「复制」与「复制原文」的语义待 owner 拍板。~~ 已拍板(2026-08-02):默认那一枚
+就是去标记的「复制」,维持现状,不动代码。**
 pr5 把一个动作拆成两个:「复制」= 这一行真正渲染出来的文本(对已缓存 HTML 做归
 约),「复制原文」= ST 存的 `chat[id].mes`(含标记)。实现按「读到的 vs 写下的」这
-条线分,但**默认那一枚该是哪个**是产品选择,不是实现选择。要 owner 一句话。
+条线分,owner 选了「读到的」那一枚作默认——`⋯` 菜单里 `复制` 在前、`复制原文` 在后
+(`ui/message-menu-rows.ts`),两者的落点各是 `chat-actions.ts` 的
+`copyRenderedChatuiMessage` 与 adapter 的 `triggerMessageActionById`。
 
 ### C · 死代码与查询清理(低风险,落点明确)
 
@@ -495,6 +498,22 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
   兜底。后果是**跨引擎缺陷的本地反馈环是断的**——只能靠推 PR 等 CI,或者请维护者在
   Zen 的 Console 里跑只读快照脚本(2026-08-02 定位 rails 宽度缺陷用的就是后者)。
   值得找的出路:换 Playwright 版本/Firefox 通道,或给这台机器找到能跑的图形后端。
+- **临时会话隔离区正在拆除,第二棍未做。** 2026-08-02 拍板取消「未完成草稿」这一档
+  (DESIGN §4.2):第一棍已经把面向读者的那层全部拆掉——草稿卡、把新会话挡在列表外的
+  过滤、＋新对话按钮高亮、「同时只能有一个新对话」的再入拦截、舞台底部的新对话选角条。
+  **留在原地的是底下那套 store**:`store/temp-chat-store.ts`(548 行)+
+  `temp-chat-navigation.ts`,以及 `adapter/chats/deletion-finalization.ts` 里为它
+  服务的整套 sessionStorage 凭证子系统(queue/arm/peek/resolve +
+  `finalizeChatuiDraftQuarantine`)。它现在只剩一个真消费者:书脊入列的
+  `leasedAvatars`(`ui/spine-cast.ts`),用来补 `chat_size` 这个启动期磁盘快照的滞后。
+  第二棍要做的:
+  1. 把 `leasedAvatars` 换成一个不依赖隔离概念的来源——「本会话里 ChatUI 自己给谁
+     建过对话」,这才是那个补偿真正要表达的东西;
+  2. 删 store、删凭证子系统、删 INVARIANTS §5 与 §3 里随之退场的约 25 条不变量及其
+     单测;
+  3. **必须保住**「删掉某角色最后一条对话 → 强制刷新 → 启动时把读者送回该角色」这条
+     行为(INVARIANTS 第 208/210/211 条),它和隔离区在同一个函数里但不是同一件事;
+  4. 上真机 e2e 验删最后一条对话那条路径——它有真机 bug 前科(danglinglease 格)。
 - **`scripts/e2e/*.mjs` 仍是 Chromium 独占。** 引擎矩阵目前只覆盖 `e2e/*.spec.mjs`;
   `measure-chat-switch` / `verify-truncation-guard` / `measure-long-chat` 都直接
   `chromium.launch()`。前者是性能基线,换引擎会让数字失去可比性,先不动;但**截断
