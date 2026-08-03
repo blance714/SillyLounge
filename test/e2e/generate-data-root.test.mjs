@@ -34,7 +34,7 @@ async function makeInputs(t) {
             user_avatar: 'user-default.png',
             power_user: {},
             extension_settings: {
-                disabledExtensions: ['third-party/SillyLounge', 'other-extension'],
+                disabledExtensions: ['third-party/SillyLounge-dist', 'other-extension'],
             },
         })}\n`,
         'utf8',
@@ -121,7 +121,7 @@ test('extension modes isolate native, bootstrap, and active performance baseline
     assert.equal(disabled.manifest.extensionMode, 'disabled');
     assert.equal(disabledSettings.extension_settings.chatui_composer.enabled, false);
     assert.equal(
-        disabledSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge'),
+        disabledSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-dist'),
         true,
     );
 
@@ -130,7 +130,7 @@ test('extension modes isolate native, bootstrap, and active performance baseline
     assert.equal(bootstrap.manifest.extensionMode, 'bootstrap');
     assert.equal(bootstrapSettings.extension_settings.chatui_composer.enabled, false);
     assert.equal(
-        bootstrapSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge'),
+        bootstrapSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-dist'),
         false,
     );
 });

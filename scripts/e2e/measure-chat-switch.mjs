@@ -16,8 +16,8 @@ const PROJECT_ROOT = path.resolve(import.meta.dirname, '../..');
 const RUNTIME_ROOT = path.join(PROJECT_ROOT, '.runtime', 'SillyTavern-ChatUI');
 const FIXTURE_ROOT = path.join(PROJECT_ROOT, 'test', 'e2e', 'fixtures');
 const DEFAULT_FIXTURE = 'long-rich-switch';
-const CHAT_STORE_BROWSER_MODULE = '/scripts/extensions/third-party/SillyLounge/store/chat-store.js';
-const MESSAGE_EDIT_DRAFT_BROWSER_MODULE = '/scripts/extensions/third-party/SillyLounge/store/message-edit-draft-store.js';
+const CHAT_STORE_BROWSER_MODULE = '/scripts/extensions/third-party/SillyLounge-dist/store/chat-store.js';
+const MESSAGE_EDIT_DRAFT_BROWSER_MODULE = '/scripts/extensions/third-party/SillyLounge-dist/store/message-edit-draft-store.js';
 
 function defaultOutput(fixture, suffix = '') {
     return path.join(PROJECT_ROOT, 'test-results', 'performance', `${fixture}${suffix}.json`);

@@ -103,12 +103,29 @@ a real Chromium contract over both host state and the visible ChatUI projection.
 The 400-floor comparative harness and its current diagnosis live in
 `PERFORMANCE.md`; its absolute timings are report-only rather than CI budgets.
 
-The preferred repository layout is a single ChatUI repository with two branch
-roles:
+The repository layout is **two repositories**, not one repository with two
+branch roles (changed 2026-08-03):
 
-- `main`: development branch with TSX source, scripts, and docs.
-- `dist`: default installation branch with only SillyTavern-loadable runtime
-  files.
+- `blance714/SillyLounge`: the source — TSX, scripts, docs, tests. Default
+  branch `main`.
+- `blance714/SillyLounge-dist`: only SillyTavern-loadable runtime files, pushed
+  by CI on every green `main`. Default branch `main`. **This is the URL readers
+  install.**
+
+The forcing constraint is that SillyTavern installs a repository's *default
+branch* — its install dialog does expose an optional branch field, but almost
+no extension needs it, so almost nobody fills it in. One repository therefore
+had to choose between an install URL that works on the first try and a GitHub
+landing page that shows source; this project had chosen the former, and its
+default branch was build output. Two repositories give both.
+
+SillyTavern also names the installed directory after the repository
+(`sanitize(path.basename(parsedUrl.pathname, '.git'))`, its
+`endpoints/extensions.js`), so **`SillyLounge-dist` must never be renamed**: the
+name is the install path, and `EXTENSION_FOLDER` in the e2e fixture tracks it.
+Publishing crosses the repository boundary over a write deploy key scoped to
+`SillyLounge-dist` alone (`DIST_PUBLISH_KEY`), because a workflow's built-in
+`GITHUB_TOKEN` cannot reach another repository.
 
 For local development, `pnpm run dev` keeps `.runtime/SillyTavern-ChatUI`
 validated and current. The SillyTavern checkout should symlink its
