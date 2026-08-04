@@ -117,7 +117,13 @@ async function readStanding(page) {
             cards: Array.from(
                 root?.querySelectorAll('.cui-root-playbill-cards .cui-root-nested-chat-row-name') ?? [],
             ).map(node => node.textContent.trim()),
-            spineSlots: root?.querySelectorAll('.cui-root-spine-slot').length ?? 0,
+            // The character seats specifically, by the name each one is
+            // labelled with — *not* `.cui-root-spine-slot`, which the rail's
+            // always-present 「角色管理」 ＋ button carries too (Spine.tsx). A
+            // count over that class can never reach zero, so it cannot fail.
+            spineCharacters: Array.from(
+                root?.querySelectorAll('.cui-root-spine-char') ?? [],
+            ).map(node => node.getAttribute('aria-label')),
             composer: Boolean(root?.querySelector('.cui-root-composer')),
         };
     });
@@ -207,8 +213,18 @@ async function runScenario({ stRoot, fixture, evidenceRoot }) {
         record('the character is still on the spine, whose chat_size snapshot predates its own boot', () => {
             // The failure this guards is not cosmetic: the spine is ChatUI's
             // only way to change character, so a character missing from it
-            // cannot be walked back to at all.
-            assert.ok(after.spineSlots >= 1);
+            // cannot be walked back to at all. Assert *this* character's own
+            // seat rather than a slot count, and note honestly what that does
+            // and does not prove: this fixture forces `auto_load_chat: true`,
+            // so the character is also on stage, and either source would seat
+            // it. What is pinned here is the reader-facing outcome. Which
+            // source answers when — and the stock-host case where only the
+            // ledger can — is pinned by spine-cast.test.mjs and by
+            // sidebar-actions.test.mjs's boot-that-lands-on-nobody test.
+            assert.ok(
+                after.spineCharacters.includes(characterName),
+                `the spine must still seat ${characterName}: ${JSON.stringify(after.spineCharacters)}`,
+            );
         });
         record('and ChatUI raised no page errors across the whole transaction', () => {
             assert.deepEqual(pageErrors, []);

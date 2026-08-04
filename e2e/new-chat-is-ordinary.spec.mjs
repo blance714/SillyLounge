@@ -132,10 +132,22 @@ test('＋新对话 lands an ordinary card in the playbill, dashed while empty, a
             probe.style.borderColor = value;
             return getComputedStyle(probe).borderTopColor;
         };
+        const declared = (name) => getComputedStyle(document.documentElement)
+            .getPropertyValue(name)
+            .trim();
         const out = {
             faint: resolve('var(--cui-color-border)'),
             strong: resolve('var(--cui-color-border-strong)'),
             hover: resolve('var(--cui-color-border-hover)'),
+            // The custom property as such. `resolve()` above cannot answer
+            // this: a `var()` naming an undefined property is invalid at
+            // computed-value time, and a non-inherited property that is
+            // invalid there falls back to its initial value — `currentColor`
+            // for a border. So a dropped token resolves to the ivory text
+            // colour, which is neither `strong` nor `faint` and sails through
+            // both distinctness checks below. Reading the declaration itself
+            // is the only unambiguous answer.
+            hoverDeclared: declared('--cui-color-border-hover'),
             resting: getComputedStyle(
                 document.querySelector('.cui-root-nested-chat-row:not(.is-current)'),
             ).borderTopColor,
@@ -145,9 +157,11 @@ test('＋新对话 lands an ordinary card in the playbill, dashed while empty, a
     });
     expect(palette.resting, 'a resting card edge is border-strong, not the faint hairline')
         .toBe(palette.strong);
+    expect(palette.hoverDeclared, '--cui-color-border-hover is declared at all')
+        .not.toBe('');
     expect(palette.hover, 'and hover keeps a step of its own above it')
         .not.toBe(palette.strong);
-    expect(palette.hover, 'which has to be a real colour, not a dropped declaration')
+    expect(palette.hover, 'a step above the faint hairline too')
         .not.toBe(palette.faint);
 
     // Evidence, the same way smoke.spec.mjs keeps one: the assertions above say

@@ -756,6 +756,8 @@ TopbarTitle.tsx/TopbarMenu.tsx 两处渲染分别单测。`resolveTopbarRenameCo
 | 运行时 Zod 门面覆盖 adapter schema 用到的每个值级 z 成员 | `test/check-runtime.test.mjs :: runtime Zod facade covers every value-level z member used by adapter schema` |
 | style.css 里不存在提前闭合的注释：注释终止符只能出现在注释里，否则其后的整条规则块会被 CSS 解析器静默丢弃 | `test/stylesheet-integrity.test.mjs :: style.css has no comment terminator that lands in code, so no rule block is silently dropped` |
 | 该扫描确实能识别它要防的那次真实回归（pr4 topbar 规则被注释吃掉），修好后不再误报 | `test/stylesheet-integrity.test.mjs :: the stray-terminator scan actually detects the pr4 topbar regression it exists to prevent` |
+| 不带兜底的 `var(--cui-…)` 引用的 token 必须在本文件里有声明——引用一个没人声明的 token 是**合法语法**，不在解析期出错，而在计算值阶段把整条声明丢掉、回落到 inherit/initial（边框因此画成 `currentColor`，看起来就像一次设计回归）；本调色板已经出过两次 | `test/stylesheet-integrity.test.mjs :: every --cui token style.css reads without a fallback is a token style.css declares` |
+| 该扫描能识别「声明改名、引用没跟着改」，且不误报两种不是缺陷的写法：自带兜底的引用、只在注释里被提到的 token | `test/stylesheet-integrity.test.mjs :: the undeclared-token scan catches a renamed token and ignores the two cases that are not bugs` |
 
 另有两个源码级静态校验（无对应测试文件，由脚本直接接入 `verify`）：
 `scripts/check-boundaries.mjs`（分层规则：`@st/*` 仅 adapter 与 index.ts 可导入、
@@ -858,6 +860,12 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   `--cui-color-border`），且 `--cui-color-border-hover` 解析出的色与前两者都不同。写成
   token 恒等而不是字面色值，是因为这套调色板已经两次发出引用未定义变量的颜色声明——那种
   声明在计算值阶段被静默丢弃，表现得和设计回归一模一样，而 code review 看不出来。
+  **「与前两者都不同」本身抓不到那件事**（2026-08-05 补）：`var()` 引用一个没人声明的
+  token 时，整条声明在计算值阶段作废，非继承属性回落到 initial，边框色于是变成
+  `currentColor`——一个既不等于 strong 也不等于 faint 的第三种颜色，两条 `not.toBe` 全部
+  照过。所以这里另读一次 `--cui-color-border-hover` 这个自定义属性**本身**在
+  `document.documentElement` 上解析出的值、断言它非空；这是唯一不含糊的答案。整类问题的
+  根治在 `test/stylesheet-integrity.test.mjs`（静态扫全表），本条只钉这一个 token。
   **对共享宿主幂等**：结束前先切回固件会话（好让两次
   删除都不是「删当前对话」——那条路会强制整页刷新，是另一个场景），再把自己建的两条
   逐一删掉并断言列表回到固件原状；已用 `--repeat-each=3` 实测连跑不互相污染。
@@ -865,7 +873,12 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   显式步骤）：**删掉某角色唯一一条对话**这条路，端到端跑在真宿主上——读者从场刊删除 →
   `delete-transaction.ts` 把角色的持久指针挪到一个尚未写出的兜底名 → 排队落地凭证 →
   强制整页刷新 → ST 启动写出该文件 → 断言读者回到**同一个角色**、手里有一场**能写的**
-  对话、被删的那条不在列表里且恰好有一条替代、角色仍在书脊上、全程零 page error。
+  对话、被删的那条不在列表里且恰好有一条替代、**该角色自己那个书脊座位**还在、全程零
+  page error。「书脊座位」这条 2026-08-05 才真正成立：先前断的是
+  `.cui-root-spine-slot` 计数 `>= 1`，而书脊常驻的「角色管理」＋ 按钮也带这个类
+  （`Spine.tsx`），计数的下限本就是 1，这条断言**永远不可能变红**——正是它要守的那次
+  回归也不能。现在读的是 `.cui-root-spine-char` 各自的 `aria-label`，断言里面有这个
+  角色的名字。
   它**自带一次性数据根与一次性 ST**（照 `verify-truncation-guard.mjs` 的样子），不跑在
   共享宿主上——因为它对固件是不可逆破坏性的：删掉的正是固件唯一那条对话，替代它的是 ST
   在刷新里新写的文件，放进共享套件会让其后每个 spec 面对一个和它们所写时不同的宿主。
