@@ -67,6 +67,21 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
         contentType: 'application/json',
     });
 
+    // Before any of the rest means anything: the extension the browser loaded
+    // has to be the one this run built. It was not, on the maintainer's own
+    // machine, for as long as a same-named folder sat in the checkout's
+    // `public/` — SillyTavern's static mount answers before its per-user
+    // extension route, so the entire suite went green against an installed
+    // build while the tree under test was never read
+    // (scripts/e2e/generate-data-root.mjs's assertExtensionIsNotShadowed).
+    // That guard rules out the one mechanism; this rules out the outcome, and
+    // it reads the stamp back through `getExtensionManifest` — the same fetch
+    // SillyTavern itself makes, down the same shadowed route.
+    expect(
+        hostState.manifest?.sillylounge_e2e_stamp,
+        'the loaded extension is this run\'s copy, not one that shadowed it',
+    ).toBe(process.env.SILLYLOUNGE_E2E_STAMP);
+
     expect(hostState).toMatchObject({
         characterName: 'Lounge Test Character',
         characterAvatar: 'Lounge Test Character.png',
@@ -90,6 +105,14 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
         expect(hostState.disabledExtensions).toContain(extensionName);
     }
 
+    // Before anything else: the files the browser is being served have to be
+    // the ones this run put on disk. They were not, on the maintainer's own
+    // machine, for as long as a same-named extension sat in the checkout's
+    // `public/` — SillyTavern's static mount answers before its per-user
+    // extension route, so the whole suite went green against an installed
+    // build while the tree under test was never read
+    // (scripts/e2e/generate-data-root.mjs's assertExtensionIsNotShadowed).
+    // That guard rules out the mechanism; this rules out the outcome.
     const root = page.locator('#chatui-root[data-cui-root-mounted="1"]');
     await expect(root).toBeVisible();
     await expect(page.locator('body')).toHaveClass(/\bchatui-active\b/);
