@@ -279,7 +279,7 @@ test("a boot that lands on nobody finishes the delete transaction itself: ChatUI
     }
 });
 
-test('a boot that landed on somebody else is never overridden: the credential simply keeps waiting', async () => {
+test('a boot that landed on somebody else keeps its stage, and the credential is spent on the ledger instead', async () => {
     const host = await createFakeStHost();
     try {
         configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });

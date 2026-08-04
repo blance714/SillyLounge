@@ -52,7 +52,7 @@
  * anything a boot-time snapshot can describe, so they lead.
  *
  * This changes nothing for the ordinary spine: a character with conversations
- * on disk is in band 2 whether or not it is also on stage or leased, so the
+ * on disk is in band 2 whether or not it is also on stage or in the ledger, so the
  * existing order is untouched and only otherwise-absent entries gain a
  * position.
  *

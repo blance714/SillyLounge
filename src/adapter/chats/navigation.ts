@@ -137,18 +137,19 @@ export async function switchCharacter(avatar: string): Promise<CharacterSwitchSt
  * this repo's e2e fixture is the reason that was easy to miss — it forces the
  * flag on (scripts/e2e/generate-data-root.mjs). On a stock install, the reload
  * a current-chat delete forces comes back with no character selected at all,
- * so the fallback file ST was supposed to materialize is never written, the
- * draft-quarantine credential waits forever, and the reader is left standing
- * in front of nothing with the transaction they started half-applied.
+ * so the fallback file ST was supposed to materialize is never written and
+ * the reader is left standing in front of nothing with the transaction they
+ * started half-applied.
  *
  * Finishing it is this function's whole purpose, and the guard is what keeps it
  * from being something else. It refuses the moment anybody already holds the
  * stage — a group, or the character the reader's own `auto_load_chat` setting
- * brought back — because in that case ST *did* express a preference and the
- * pending credential's ordinary semantics ("if this file goes live, it is a
- * draft") still apply, unchanged, whenever the reader walks over. Completing a
- * transaction the reader committed to is not the same as overriding the
- * autoload preference they chose, and this refusal is the difference.
+ * brought back — because in that case ST *did* express a preference, and the
+ * half of the credential that matters has already been spent: the character is
+ * in the session ledger, so the spine can show it and the reader can walk over
+ * whenever they like. Completing a transaction the reader committed to is not
+ * the same as overriding the autoload preference they chose, and this refusal
+ * is the difference.
  *
  * `characters` is fully loaded well before the only caller runs: ST awaits
  * `getCharacters()` in `firstLoadInit` (script.js:757) many steps before it

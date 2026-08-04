@@ -4,16 +4,16 @@
  * One ChatUI-owned fact the host will never announce: a conversation ChatUI
  * just proved is not there. ST emits CHAT_DELETED when *ST* deleted a file; a
  * file that went missing behind its back — a save that never happened, an
- * external delete, a quarantine lease outliving its file — produces no event at
- * all, and ChatUI only ever finds out while settling something else: discarding
- * a draft whose file is already gone (sidebar-actions.ts's `absent` branch), or
- * trying to open one and being told it does not exist.
+ * external delete — produces no event at all, and ChatUI only ever finds out
+ * while settling something else: deleting a conversation whose file is already
+ * gone (sidebar-actions.ts's `absent` branch), or trying to open one and being
+ * told it does not exist.
  *
  * Left unsaid, that discovery strands the row instead of removing it. The
  * sidebar's per-character listing is cached server state (ui/query-client.ts)
- * that still holds the missing file, so the card whose lease was just dropped
- * does not disappear — it *turns into* an ordinary history row pointing at a
- * file nothing can open (真机 danglinglease 格实测).
+ * that still holds the missing file, so the card the reader just deleted does
+ * not disappear — it *turns into* an ordinary history row pointing at a file
+ * nothing can open (真机 danglinglease 格实测).
  *
  * That cache lives in ui/ and this layer may not reach into it
  * (scripts/check-boundaries.mjs), nor should it: which queries a vanished file

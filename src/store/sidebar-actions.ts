@@ -300,12 +300,12 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
  * preference: the adapter refuses the moment ST landed anywhere, group or
  * character (adapter/chats/navigation.ts's selectCharacterIfNobodyIsOnStage).
  *
- * Exactly once per page: `armPendingCharacterChatDraftQuarantine` stamps the
- * credential, so a second `finalizeChatuiDraftQuarantine` in the same load
- * finds nothing to arm and never reaches here. A landing that does not happen
- * is not retried and never toasts — the credential simply keeps its ordinary
- * meaning and the reader can now walk to the character by hand, because the
- * spine shows it (ui/spine-cast.ts).
+ * Exactly once per page: `armPendingCharacterChatLanding` consumes the
+ * credential as it reads it, so a second `finalizeChatuiChatTransaction` in the
+ * same load finds nothing and never reaches here. A landing that does not
+ * happen is not retried and never toasts — the reader can walk to the character
+ * by hand, because the session ledger the same credential fed keeps the spine
+ * able to show it (ui/spine-cast.ts).
  *
  * Runs on the shared serialized lane like every other host mutation in this
  * module — `selectCharacterById` mutates the one live chat context, so being
@@ -324,11 +324,15 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
  *    teardown *would* cancel it — correctly: a reader who switched ChatUI off
  *    in that window must not have a character selected for them afterwards,
  *    which is exactly what the un-queued version did.
- * 3. Queueing can only delay this call, never advance it, so the one ordering
- *    constraint the handoff has — the CHAT_CHANGED watch is registered before
- *    the landing, because the event that resolves the credential is emitted
- *    from inside `selectCharacterById` — is strengthened rather than lost. The
- *    watch is registered synchronously below, before this is enqueued.
+ * 3. Queueing can only delay this call, never advance it, and there is no
+ *    longer anything for a delay to miss. The handoff used to have an ordering
+ *    constraint — a CHAT_CHANGED watch had to be registered before the landing,
+ *    because the event that resolved the credential came from inside
+ *    `selectCharacterById` — and that watch went with the quarantine. The
+ *    credential is spent synchronously by the caller before this is ever
+ *    enqueued, so the queue can only move *when* the reader is seated, never
+ *    whether. index.ts's own comment carries the current version of this
+ *    argument, which is about the mount rather than about a listener.
  */
 async function _completePendingChatTransactionLanding(avatar: string): Promise<void> {
     try {
