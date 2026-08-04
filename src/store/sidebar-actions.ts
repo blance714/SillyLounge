@@ -187,6 +187,19 @@ export function renameChatuiChat(avatar: string, oldFileName: string, newName: s
                 newName,
             );
             if (!result.renamed) {
+                // A rename that did not move the file can still leave the live
+                // buffer at risk, and the adapter says so: its forward-rename
+                // 「outcome unknowable」 branch reports `renamed: false` with
+                // `reloadRequired` set, because the file *may* have moved while
+                // the live record still names the old one. `reloadRequired` is
+                // a statement about the runtime, not about whether the rename
+                // succeeded, so it has to be answered before this bail — the
+                // toast below asks the reader to do the very repair this branch
+                // can perform, and the other two ambiguous exits do not ask.
+                if (result.reloadRequired) {
+                    await _reloadForChatTransaction();
+                    return;
+                }
                 pushToast('error', result.uncertain
                     ? '无法确认重命名结果；请刷新页面后再操作'
                     : '重命名失败');
@@ -289,9 +302,9 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
  *
  * `power_user.auto_load_chat` is false by default, so a stock install answers
  * the mandatory reload with an empty stage: the fallback file ST was going to
- * write is never written, the credential above waits forever, and the reader
- * is left in the "character selected, no conversation" state pr9 exists to
- * abolish — one worse, in fact, with no character selected either.
+ * write is never written, and the reader is left in the "character selected,
+ * no conversation" state pr9 exists to abolish — one worse, in fact, with no
+ * character selected either.
  *
  * So when — and only when — a credential is still pending and nothing at all
  * holds the stage, ChatUI selects the character that credential names. This is

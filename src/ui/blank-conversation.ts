@@ -23,8 +23,8 @@
  * place (script.js's getChatResult):
  *
  *     if (chat.length === 0) {
- *         const message = getFirstMessage();      // first_mes, or the first
- *         if (message.mes) chat.push(message);    // non-empty alternate
+ *         const message = getFirstMessage();      // first_mes, or — when that
+ *         if (message.mes) chat.push(message);    // is empty — alternate[0]
  *     }
  *
  * A character with a greeting therefore *always* starts a chat at one
