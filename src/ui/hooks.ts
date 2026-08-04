@@ -496,16 +496,10 @@ export function useSidebarData(): ChatuiSidebarState {
         visibleCounts,
     ]);
 
-    const currentGroup = charGroups.find((group: CharConversationGroup) => currentChat?.avatar === group.avatar);
-
     return {
         header,
         characters,
-        chats: currentGroup?.chats ?? [],
-        loading: headerQuery.isLoading || charactersQuery.isLoading || recentsQuery.isLoading,
-        error: headerQuery.isError || charactersQuery.isError || recentsQuery.isError ? 'load-failed' : null,
         charGroups,
-        charGroupsLoading: charactersQuery.isLoading || recentsQuery.isLoading,
         // Only a failed *character* list is a column-wide failure. The recents
         // page is a first-paint shortcut the playbill can do without now that
         // it fetches the current character's own listing unconditionally, and

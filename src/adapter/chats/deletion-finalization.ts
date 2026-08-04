@@ -7,7 +7,7 @@ import {
     stringValue,
 } from '../schema.js';
 import { listRawCharacterChatNames } from './selection-protocol.js';
-import { getCurrentChatIdentity, stripChatExt } from './state.js';
+import { stripChatExt } from './state.js';
 
 const PENDING_CHAT_DELETED_KEY = 'chatui:pendingChatDeleted';
 

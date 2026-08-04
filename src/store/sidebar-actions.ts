@@ -22,7 +22,6 @@ import { rememberCharacterConversation } from './session-characters.js';
 import { pushToast } from './toast-store.js';
 import { publishVanishedChat } from './vanished-chat-store.js';
 
-type ChatIdentity = { avatar: string; fileName: string } | null | undefined;
 type RecentRowsOptions = { max?: number; signal?: AbortSignal };
 type CharacterChatsOptions = { limit?: number | null; signal?: AbortSignal };
 
