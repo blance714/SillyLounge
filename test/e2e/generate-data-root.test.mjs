@@ -406,14 +406,38 @@ test('generated files contain no private paths, secrets, or real-user identifier
         '/home/',
         '\\Users\\',
         'blance_714@',
-        'sk-',
     ];
+    // API keys are matched by shape rather than by their `sk-` prefix alone.
+    // A bare substring scan fires on any English word ending in "sk" before a
+    // hyphen — "disk-backed", "risk-free", "task-based" — and a guard that
+    // cries wolf on prose is a guard somebody eventually deletes. Real keys
+    // are a long run of key characters after the prefix; nothing this repo
+    // writes looks like that.
+    const apiKeyShape = /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}/;
     for (const filePath of await walkFiles(result.targetRoot)) {
         const content = (await fs.readFile(filePath)).toString('utf8');
         for (const marker of forbidden) {
             assert.equal(content.includes(marker), false, `${path.relative(result.targetRoot, filePath)} contains ${marker}`);
         }
+        const key = apiKeyShape.exec(content);
+        assert.equal(
+            key,
+            null,
+            `${path.relative(result.targetRoot, filePath)} contains something shaped like an API key`,
+        );
     }
+});
+
+test('the API-key scan reads shape, not the bare prefix that ordinary prose keeps hitting', () => {
+    // Written as its own case because the scan above can only ever prove the
+    // absence of keys in one generated tree; this proves it would still find
+    // one, and that the wording change it forced is not a hole.
+    const apiKeyShape = /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}/;
+    assert.match('OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345', apiKeyShape);
+    assert.match('pk-0123456789012345678901234567890123', apiKeyShape);
+    assert.doesNotMatch('the fileName half is not disk-backed, it is the card pointer', apiKeyShape);
+    assert.doesNotMatch('a risk-free refactor of the task-based queue', apiKeyShape);
+    assert.doesNotMatch('sk-short', apiKeyShape);
 });
 
 test('generator rejects a non-empty target instead of touching existing data', async t => {
