@@ -102,6 +102,25 @@ test('＋新对话 lands an ordinary card in the playbill, dashed while empty, a
     expect(created, 'the two new chats are distinct files').toHaveLength(2);
     expect(new Set(created).size).toBe(2);
 
+    // ── The preview line reads as prose, not as source ───────────────────────
+    // The fixture character's greeting carries `**` on purpose, and each of
+    // these new chats holds exactly that one message — so the card's preview
+    // is the one place in the app where a raw-markdown regression would be
+    // visible. format.ts's unit tests pin the reduction itself; this is the
+    // only thing that proves the card is actually calling it (ROADMAP B2).
+    const previews = root.locator('.cui-root-nested-chat-row-preview');
+    for (const name of created) {
+        const preview = root
+            .locator('.cui-root-nested-chat-row', { hasText: name })
+            .locator('.cui-root-nested-chat-row-preview');
+        await expect(preview, `${name}'s preview is the greeting, de-marked`)
+            .toHaveText('测试角色已就绪。');
+    }
+    expect(
+        (await previews.allTextContents()).join(''),
+        'no card anywhere is printing markdown at the reader',
+    ).not.toContain('**');
+
     // ── Blank conversations are drawn dashed, and only that ──────────────────
     // The fixture character has a first_mes, so each of these holds exactly one
     // message — the greeting — which is what ui/blank-conversation.ts reads as

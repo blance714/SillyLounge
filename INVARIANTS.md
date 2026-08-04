@@ -788,6 +788,7 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 | 切换固件生成两个相互隔离的 400 楼会话 | `test/e2e/generate-data-root.test.mjs :: long-rich switch fixture generates two isolated 400-floor conversations` |
 | 10 楼对照固件保持富文本画像 | `test/e2e/generate-data-root.test.mjs :: long-rich 10-floor switch fixture preserves the rich profile for a small control pair` |
 | 生成的扩展是已验证运行时的完整拷贝 | `test/e2e/generate-data-root.test.mjs :: generated extension is a complete copy of the validated runtime` |
+| **宿主 checkout 的 `public/` 里已装同名扩展时直接拒跑**：ST 的 `express.static(public/)` 挂在 per-user 扩展路由**之前**，那份拷贝会顶掉固件的拷贝去应答浏览器的每一次文件请求，而门禁照样启动、照样断言——断的是维护者机器上装着的那个版本 | `test/e2e/generate-data-root.test.mjs :: generator refuses a checkout whose public/ already carries this extension, because that copy would be served instead` |
 | 生成文件不含私有路径、密钥或真实用户标识 | `test/e2e/generate-data-root.test.mjs :: generated files contain no private paths, secrets, or real-user identifiers` |
 | 密钥按**形状**匹配而不是只看 `sk-` 前缀：裸子串会被 `disk-backed` / `risk-free` 这类英文散文命中，一个会对散文狂叫的守卫最后会被人删掉 | `test/e2e/generate-data-root.test.mjs :: the API-key scan reads shape, not the bare prefix that ordinary prose keeps hitting` |
 | 生成器拒绝写入非空目标 | `test/e2e/generate-data-root.test.mjs :: generator rejects a non-empty target instead of touching existing data` |

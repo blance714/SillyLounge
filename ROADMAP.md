@@ -539,6 +539,19 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
   - INVARIANTS §5 整节退场(13 条),§3 的凭证条目换成落地版;新增会话台账 5 条 + 落地
     凭证 6 条 + 真机验收 `scripts/e2e/verify-last-chat-delete.mjs`(自带一次性宿主,
     因为它对固件是不可逆破坏性的)。
+- ~~**本机跑浏览器门禁时，宿主 checkout 里已装的同名扩展会顶掉被测产物。**~~ ——
+  **2026-08-05 已加拒跑闸**。ST 把 `express.static(public/)` 挂在 per-user 扩展路由
+  之前（`src/server-main.js:242` vs `src/users.js:1219`），所以只要
+  `public/scripts/extensions/third-party/SillyLounge-dist` 存在——而维护者自己就装着
+  它——浏览器拿到的每一个文件都来自那份，固件写进一次性 dataRoot 的拷贝一次都没被读。
+  门禁照常启动、照常全绿，断言的却是上一次发布的构建。CI 上不会发生（新 checkout 那
+  里只有 `.gitkeep`），这恰恰是最坏的分布：**本地这条快反馈环在回答另一棵树的问题**。
+  发现方式是一条怎么都过不去的卡片断言，而磁盘上的树明明是对的。现在
+  `generate-data-root.mjs` 检出这种情况就直接报错，并给出把它挪开再挪回来的两行命令。
+  **仍待改进**：拒跑是诚实但麻烦的做法（维护者每次跑 e2e 都要挪一次自己的安装）。
+  想做得更好，得让固件那份拷贝落在 `express.static` 够不到的地方，而那要么改 ST，要么
+  给固件换一个不会撞名的安装目录——后者会让门禁不再复现真实安装的目录名，而目录名正是
+  2026-08-03 咬过一次的东西。
 - **`scripts/e2e/*.mjs` 仍是 Chromium 独占。** 引擎矩阵目前只覆盖 `e2e/*.spec.mjs`;
   `measure-chat-switch` / `verify-truncation-guard` / `measure-long-chat` 都直接
   `chromium.launch()`。前者是性能基线,换引擎会让数字失去可比性,先不动;但**截断

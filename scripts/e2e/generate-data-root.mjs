@@ -216,6 +216,50 @@ async function discoverGlobalExtensionNames(stRoot) {
     return discovered.sort((left, right) => left.localeCompare(right));
 }
 
+/**
+ * Refuse to run against a checkout that already has *this* extension installed
+ * globally.
+ *
+ * SillyTavern serves `public/` through `express.static` (src/server-main.js)
+ * **before** it mounts the per-user extensions route (src/users.js's
+ * `/scripts/extensions/third-party/*`). So when a folder of the same name
+ * exists in the checkout's own `public/scripts/extensions/third-party/`, every
+ * file request the browser makes is answered from *there* — the fixture's copy
+ * is on disk, is what `/api/extensions/discover` reports, and is never read.
+ *
+ * The failure is silent and total: the gate boots, mounts, and asserts happily
+ * against whatever build the maintainer happens to have installed. It was found
+ * on 2026-08-05 by a card assertion that could not be made to pass — the DOM
+ * kept showing a build from the previous day, while the tree under test on disk
+ * was correct. Every DOM-level assertion in the suite had been running against
+ * the installed copy on this machine for as long as that install existed.
+ *
+ * CI never sees it (a fresh checkout has nothing but `.gitkeep` there), which is
+ * exactly what makes it worth failing loudly here: the local run is the fast
+ * feedback loop, and a fast loop that answers about the wrong artifact is worse
+ * than no loop at all.
+ */
+async function assertExtensionIsNotShadowed(stRoot) {
+    const shadowPath = path.join(
+        stRoot, 'public', 'scripts', 'extensions', 'third-party', EXTENSION_FOLDER,
+    );
+    try {
+        await fs.stat(shadowPath);
+    } catch (error) {
+        if (error?.code === 'ENOENT') return;
+        throw error;
+    }
+    throw new Error(
+        `${EXTENSION_FOLDER} is installed globally in the SillyTavern checkout, at\n`
+        + `  ${shadowPath}\n`
+        + 'SillyTavern serves public/ before its per-user extension route, so that copy would be\n'
+        + 'served to the browser instead of the runtime under test, and every assertion would\n'
+        + 'silently describe it. Move it aside for the run:\n'
+        + `  mv "${shadowPath}" "${shadowPath}.off"\n`
+        + `  mv "${shadowPath}.off" "${shadowPath}"   # afterwards`,
+    );
+}
+
 function patchSettings(baseSettings, fixture, stVersion, globalExtensions, extensionMode, regexMode, truncationGuard = {}) {
     const settings = structuredClone(baseSettings);
     settings.firstRun = false;
@@ -729,6 +773,7 @@ export async function generateStDataRoot({
     const characterCard = materializeCharacterCard(fixture, await readJson(characterCardPath));
     validateCharacterCard(characterCard);
     await validateRuntimeTree(resolvedRuntimeRoot);
+    await assertExtensionIsNotShadowed(resolvedStRoot);
     await assertEmptyTarget(resolvedTarget);
 
     const userRoot = fixturePath(resolvedTarget, USER_HANDLE);
