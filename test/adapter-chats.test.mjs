@@ -578,6 +578,91 @@ test('reconcileCurrentRenameSafety gives up and reports uncertain+reloadRequired
     }
 });
 
+// The *other* ambiguous exit from a current-chat rename: the file moved
+// cleanly, and it is the pointer write whose outcome nobody can determine.
+// Same danger as the branch above and the same answer — the live record still
+// names a file that is no longer on disk, so the next save writes it back as a
+// second file. This branch returned reloadRequired:false until 2026-08-05,
+// alone among the module's three ambiguous exits, and left the reader with a
+// toast asking them to reload a page the transaction could reload itself.
+test('a current-chat rename whose pointer write cannot be resolved forces the reload, like every other ambiguous exit', async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a', 'chat-b'),           // pre-rename existence check
+            rawListing('chat-z', 'chat-b'),            // forward-rename readback: clean move
+        );
+        router.queue('/api/chats/rename', renameResponse('chat-z'));
+        // The pointer write is transport-ambiguous and stays that way: every
+        // readback throws, so persistCharacterChatSelection can never prove
+        // whether the card moved, and surrenders the lane as 'unknown'.
+        router.queue('/api/characters/merge-attributes', networkThrow('offline'));
+        router.queue('/api/characters/get', networkThrow('offline'));
+
+        const selection = await host.importModule('adapter/chats/selection-protocol.js');
+        selection.RECONCILIATION_RETRY_BUDGET.maxAttempts = 3;
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        let renamedEmitted = false;
+        host.eventSource.on(host.event_types.CHAT_RENAMED, () => { renamedEmitted = true; });
+
+        const result = await rename.renameCharacterChat('bob.png', 'chat-a', 'chat-z');
+
+        assert.deepEqual(result, {
+            renamed: true,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: true,
+            avatar: 'bob.png',
+            oldFileName: 'chat-a',
+            newFileName: 'chat-z',
+            oldChatKey: chatKey('bob.png', 'chat-a'),
+            newChatKey: chatKey('bob.png', 'chat-z'),
+        });
+        assert.equal(renamedEmitted, false, 'an unresolved pointer is not a clean rename');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('the same unresolved pointer write on a chat nobody is standing in does not force a reload', async () => {
+    // Nothing live is misnamed, so there is no divergence for a reload to
+    // repair — the honest report is uncertain-but-no-reload, and forcing one
+    // would throw away the reader's unrelated open conversation.
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-b.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a', 'chat-b'),
+            rawListing('chat-z', 'chat-b'),
+        );
+        router.queue('/api/chats/rename', renameResponse('chat-z'));
+        router.queue('/api/characters/merge-attributes', networkThrow('offline'));
+        router.queue('/api/characters/get', networkThrow('offline'));
+
+        const selection = await host.importModule('adapter/chats/selection-protocol.js');
+        selection.RECONCILIATION_RETRY_BUDGET.maxAttempts = 3;
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        const result = await rename.renameCharacterChat('bob.png', 'chat-a', 'chat-z');
+
+        assert.equal(result.renamed, true);
+        assert.equal(result.uncertain, true);
+        assert.equal(result.reloadRequired, false);
+    } finally {
+        await host.dispose();
+    }
+});
+
 // -----------------------------------------------------------------------
 // Gap 4: rename response is HTTP ok but its JSON body is unparseable
 // (confirmedName stays ''). renameCharacterChatFile must fall back to

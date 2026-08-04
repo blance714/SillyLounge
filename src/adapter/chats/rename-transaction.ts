@@ -233,7 +233,33 @@ export async function renameCharacterChat(
                 setLiveCharacterChatIfMatches(avatar, oldBare, pointerWrite.fileName);
             }
         } else if (pointerWrite.status === 'unknown') {
-            return renameResult(avatar, oldBare, actualName, true, false, true);
+            // Same reasoning as the forward-rename 'unknown' branch above and
+            // the rollback one below, and it has to be spelled the same way:
+            // only force a reload when the live buffer is the one at risk.
+            //
+            // It is at risk here whenever the file actually moved. The card
+            // pointer still names `oldBare`, the write that was supposed to
+            // move it has an outcome nobody can determine, and the live record
+            // was deliberately left alone — so a current-chat rename walks away
+            // with the runtime still calling itself a file that is no longer on
+            // disk, and the next `saveChatConditional()` writes that name back
+            // as a second file. The toast the caller shows asks the reader to
+            // reload; asking is not the same as doing, and this module's other
+            // two ambiguous branches do not ask.
+            //
+            // `fileConflict` is the exception: on a conflict both `oldBare` and
+            // `actualName` exist on disk, so the untouched live name still
+            // resolves to a real file and there is nothing for a reload to
+            // repair.
+            return renameResult(
+                avatar,
+                oldBare,
+                actualName,
+                true,
+                false,
+                true,
+                renamingCurrent && !fileConflict,
+            );
         } else {
             // The file move committed but the selected-chat pointer did not.
             // Roll the file back rather than leave a durable ghost selection.

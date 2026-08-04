@@ -80,6 +80,8 @@
 | 回滚撞上文件名冲突时整体报 uncertain，绝不出现虚假的 renamed+reconciled | `test/adapter-chats.test.mjs :: a rename rollback that lands in a file conflict is reported uncertain, never a false clean success` |
 | 正向重命名在回读持续失败耗尽预算后报 uncertain+reloadRequired | `test/adapter-chats.test.mjs :: a current-chat forward rename gives up and reports uncertain+reloadRequired once the retry budget is exhausted by a sustained readback outage` |
 | 重命名安全对账在持续故障下最终放弃并要求刷新，不永久占用串行通道 | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety gives up and reports uncertain+reloadRequired once the retry budget is exhausted by a sustained outage` |
+| **当前会话**重命名的三个「结果不可判定」出口必须一致要求刷新：文件已干净移动而指针写入判不出时同样强制刷新，绝不只弹一句「请自行刷新」——活缓冲仍叫着一个盘上已不存在的名字，下一次保存会把它当第二个文件写回来 | `test/adapter-chats.test.mjs :: a current-chat rename whose pointer write cannot be resolved forces the reload, like every other ambiguous exit` |
+| 同一格若改的不是读者正站着的会话则**不**刷新：没有活缓冲被叫错名字，强制刷新只会白白丢掉读者手上那场无关的对话 | `test/adapter-chats.test.mjs :: the same unresolved pointer write on a chat nobody is standing in does not force a reload` |
 | 删除请求缺参时不发任何网络请求，直接返回未变更 | `test/adapter-chats.test.mjs :: deleting with a missing avatar or filename resolves unchanged without contacting the host at all` |
 | 待删文件不存在时只做一次存在性检查、绝不发出破坏性请求，并如实上报 `absent`（供调用方清掉自己那条已无文件可指的租约） | `test/adapter-chats.test.mjs :: deleting a chat absent from the raw directory listing reports it as absent after one existence check, without issuing the destructive request` |
 | 目录读取失败绝不冒充「文件不存在」：读不到不等于不在，否则会丢掉仍持有真实文件的隔离租约 | `test/adapter-chats.test.mjs :: a directory listing that could not be read is never reported as absence` |
