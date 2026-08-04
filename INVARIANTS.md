@@ -657,8 +657,26 @@ src/endpoints/chats.js）只报消息**条数**、最后一条正文、时间戳
 （`chats/queries.ts`，紧挨 `chat_size`）——宿主字段是什么意思归 adapter 管，卡片长什么
 样归 ui 管。
 
-唯一能骗过它的状态只能手工构造：把某条对话里的开场白删掉，再写恰好一句且从未收到
-回复。代价是一个边框样式，直到回复落地为止——这是**接受**，不是遗漏。
+「有开场白」必须**照抄** `getFirstMessage()` 而不是转述它，两者差在两处，每一处都反着
+标错一张真卡（2026-08-05 订正）：ST 在 `first_mes` 为假值时**盲取
+`alternate_greetings[0]`**（`swipes.shift()` 之后 `swipes[0]`，不看内容），所以首条
+alternate 为空的角色其实**一条都不播**，问「有没有某条 alternate 非空」会答反；ST 又用
+的是**真值判断而非非空白判断**，所以纯空格的开场白照样被推进对话、照样被列表数进去，
+在这里 `trim()` 会把一场真正没人写过的新对话说成写过了。
+
+两个能骗过它的状态，都是**接受**而不是遗漏：
+
+- 把某条对话里的开场白删掉，再写恰好一句且从未收到回复——只能手工构造，代价是一个
+  边框样式直到回复落地。
+- 用 AI_OUTPUT 位置的正则脚本把开场白改成空：`getFirstMessage()` 先过
+  `getRegexedString()` 再由 `getChatResult()` 决定推不推，于是角色卡上写着开场白、实际
+  一条都不播。角色卡本身读不出这件事，而在这里跑一遍正则正是「复制」当初改成归约缓存
+  HTML 所要躲开的非确定宏问题。
+
+`hasGreeting` 读的还是角色卡**此刻**的样子，而判据问的是那个文件**当初**是怎么被播种
+的：读者改角色卡（加/删开场白）会连带把已存在的 1 条对话重新标一遍。这条同样是接受
+——修它要么每行一个请求，要么拿列表的 `preview` 去比对开场白，而后者在正则脚本、
+alternate 变 swipe、读者改过首条消息这三种情况下都会答错。
 
 | 不变量 | 验证 |
 | --- | --- |
@@ -666,6 +684,13 @@ src/endpoints/chats.js）只报消息**条数**、最后一条正文、时间戳
 | 恰好 1 条：有开场白的角色算未落笔（那条只能是开场白），没开场白的角色**不算**（那条只能是读者写的） | `test/blank-conversation.test.mjs :: one message means the greeting alone for a character who has one, and the reader's own line for one who does not` |
 | 已经有回复的对话任何情况下都不算未落笔 | `test/blank-conversation.test.mjs :: a conversation with a reply in it is never blank` |
 | 列表没给出可用条数时判为「不是未落笔」，绝不猜——虚线是对文件的一个断言，没证据就不断言，且反过来会把真实历史标成未写过 | `test/blank-conversation.test.mjs :: a count the listing could not supply is read as "not blank" rather than guessed` |
+| 该判据只有在 adapter 如实把「列表没说」传上来时才成立：缺条数的行报 `null` 而**不是** `0`（`0` 不是「没有证据」，恰恰是「没人写过」的最强证据） | `test/adapter-chat-listing.test.mjs :: a listing row that names no message count reports null, not zero` |
+| 两个端点对条数字段命名不同，只有一个字段有值时用有值的那个，不被另一个的空值压掉 | `test/adapter-chat-listing.test.mjs :: a row that names one count field and blanks the other still uses the one it has` |
+| `first_mes` 非空即算有开场白，此时根本不看 alternates | `test/adapter-chat-listing.test.mjs :: a character with any first_mes greets, whatever its alternates say` |
+| 没有任何可播内容的角色不算有开场白（无字段、空数组、首条为空串） | `test/adapter-chat-listing.test.mjs :: a character with nothing to greet with does not greet` |
+| **首条 alternate 为空即算没有开场白**，哪怕后面某条有字——ST 盲取第 0 条 | `test/adapter-chat-listing.test.mjs :: an empty first alternate means ST seeds nothing, even with a later alternate full of text` |
+| **纯空格的开场白仍算开场白**——ST 用真值判断，它会被推进对话也会被数进条数 | `test/adapter-chat-listing.test.mjs :: a greeting of only spaces is still a greeting, because ST pushes it and the listing counts it` |
+| 开场白字段缺失或类型不对时一律算没有开场白（schema 先兜住，判据再取安全答案） | `test/adapter-chat-listing.test.mjs :: a card whose greeting fields are missing or malformed is read as not greeting` |
 
 ### 会话角色台账（store/session-characters.ts）
 

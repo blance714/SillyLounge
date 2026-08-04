@@ -10,7 +10,17 @@ import {
 export type ChatListItemDto = {
     fileName: string;
     displayName: string;
-    messageCount: number;
+    /**
+     * How many messages the listing counted, or null when it did not say.
+     *
+     * Null is not decoration. Both consumers treat a count as evidence about
+     * the file — the card meta prints 「N 条」, and ui/blank-conversation.ts
+     * draws a dashed border on the strength of it — and `0` is not the absence
+     * of that evidence, it is the strongest possible form of it (「nobody has
+     * written here」). Collapsing an unanswered count into `0` therefore does
+     * not lose information, it fabricates the opposite of it.
+     */
+    messageCount: number | null;
     preview: string;
     fileSize: string;
     lastMesTs: number;

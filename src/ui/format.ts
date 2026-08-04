@@ -96,8 +96,10 @@ export function formatDuration(duration: string | number | null): string {
  * listing row has not arrived), and neither placeholder is invented: an absent
  * half drops itself and the separator with it.
  */
-export function formatConversationMeta(messageCount: number, timeLabel: string): string {
-    const count = Number.isFinite(messageCount) && messageCount > 0 ? `${messageCount} 条` : '';
+export function formatConversationMeta(messageCount: number | null, timeLabel: string): string {
+    const count = messageCount !== null && Number.isFinite(messageCount) && messageCount > 0
+        ? `${messageCount} 条`
+        : '';
     const time = typeof timeLabel === 'string' ? timeLabel.trim() : '';
     return [count, time].filter(Boolean).join(' · ');
 }
