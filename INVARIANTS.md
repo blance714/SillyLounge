@@ -520,6 +520,13 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 标头时间戳把 ST 写过的每种 `send_date`（ISO 8601 / `humanizedDateTime` / epoch 毫秒数与数字串）都渲染成时钟时间，无法辨认的原样透出而不臆造 | `test/format.test.mjs :: formatTimestamp renders every send_date shape SillyTavern writes as a clock time, and never invents one it cannot read` |
 | 时长与体积格式化保持中文口径，且「没有数值」不被四舍五入成「零」 | `test/format.test.mjs :: formatDuration and formatBytes stay in the language the rest of the UI speaks and refuse to round a non-quantity into one` |
 | 场刊卡片元信息按「N 条」计消息数、绝不写成「N 楼」（楼＝用户回合，会话列表只有 `chat_items` 总条数，写成楼就与楼层轨自相矛盾），缺失的一半连同分隔点一起消失 | `test/format.test.mjs :: the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator` |
+| 场刊卡片的预览行印散文而不是源码：markdown 强调/标题/引用/列表/围栏、链接与图片的地址、HTML 标签与实体一律归约掉 | `test/format.test.mjs :: the preview line prints prose, not the markdown the model wrote` |
+| 链接只留读者本来会读到的那几个字，地址不上卡 | `test/format.test.mjs :: a link keeps the words the reader would have read, and drops the address` |
+| HTML 按标记删掉，实体按文本读出来（先删标签再解实体，否则解出来的 `&lt;` 会被当成标签把后半行吃掉） | `test/format.test.mjs :: HTML is removed as markup and its entities are read as text` |
+| 预览是**尾巴不是开头**（ST 只留最后 400 字），所以从语法中间断开的输入不得留下残渣 | `test/format.test.mjs :: a preview cut mid-syntax leaves no debris, because the input is a tail and not a head` |
+| 卡片只有一行：换行一律变空格而不是消失，否则两句话会黏成一个词 | `test/format.test.mjs :: the line is one line: every newline becomes a space rather than vanishing` |
+| **不是标记的分隔符原样保留**——`2 * 3`、`snake_case`、`5 < 7`、`他说 5 > 3` 都不能被吃掉；这是本函数唯一不可接受的方向：删掉作者真写的字 | `test/format.test.mjs :: a delimiter that is not markup is left where it is` |
+| 读不出的预览归约成空串，不编占位符 | `test/format.test.mjs :: an unusable preview reduces to the empty string rather than to a placeholder` |
 | 只剥 ST 自己写的那个精确前缀「角色名 + 空格短横空格」，形近串（无空格短横、串中出现、空角色名下的裸「 - 」）一律不动 | `test/format.test.mjs :: stripChatNameCharacterPrefix drops the host-repeated cast name and nothing that merely resembles it` |
 | 顶栏题名的回退判据是「这名字是宿主起的还是读者起的」而非「是否为空」：剥完只剩裸 `humanizedDateTime()` 戳（单聊「角色名 - 戳」、群聊裸戳）即视为无名，回退到角色/群名，再回退 `ChatUI`；读者起的名（含检查点后缀）原样呈现，且宿主戳绝不出现在题名里 | `test/format.test.mjs :: resolveConversationTitle treats a name ST generated as no name at all, and never repeats the eyebrow` |
 
