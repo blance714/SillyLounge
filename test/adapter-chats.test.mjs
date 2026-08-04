@@ -1461,6 +1461,48 @@ test('the post-delete existence poll gives up and reports uncertain, without rol
     }
 });
 
+// …and the same outage while deleting a character's *only* chat must still
+// report the fabricated fallback. That is the one shape where the reader needs
+// carrying across the forced reload, and this branch is precisely the one that
+// cannot rule it out: if the DELETE committed, the boot comes back on a
+// character whose chat_size snapshot reads zero — on a stock host, on nobody at
+// all — and without the credential nothing puts the reader back.
+test("an ambiguous delete of a character's only chat still reports the fallback, because this is the branch that cannot rule out needing it", async () => {
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a', characterName: 'Bob' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a'), // pre-delete existence check: this is the only one
+            notOk(503),            // existence poll: never succeeds again
+        );
+        router.queue('/api/chats/search', okJson([]));
+        router.queue('/api/characters/merge-attributes', okJson({}));
+        router.queue('/api/characters/get', pointerResponse('Bob - 2026-01-01 @00h00'));
+        router.queue('/api/chats/delete', { ok: true });
+
+        const selection = await host.importModule('adapter/chats/selection-protocol.js');
+        selection.RECONCILIATION_RETRY_BUDGET.maxAttempts = 3;
+
+        const del = await host.importModule('adapter/chats/delete-transaction.js');
+        const result = await del.deleteCharacterChat('bob.png', 'chat-a');
+
+        assert.deepEqual(result, {
+            deleted: false,
+            reconciled: false,
+            uncertain: true,
+            reloadRequired: true,
+            absent: false,
+            fallbackChatFileName: 'Bob - 2026-01-01 @00h00',
+        });
+    } finally {
+        await host.dispose();
+    }
+});
+
 // -----------------------------------------------------------------------
 // Gap 3: persistCharacterChatSelection resolving 'different' (a concurrent
 // writer won the character-card pointer before deleteCharacterChat could

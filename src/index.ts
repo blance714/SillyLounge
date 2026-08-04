@@ -168,11 +168,16 @@ function teardown() {
  * polling across a real disable-reload: disk settings never moved off their
  * pre-disable values for the entire observation window, and `#chat` stayed
  * stuck at the sentinel count.) Awaiting the real save turns "the reload
- * usually beats the debounce" into "the reload only ever runs once the write
- * actually landed" — the same guarantee this codebase's other reload paths
- * already get for free from their own awaited server round trip (e.g.
- * store/sidebar-actions.ts's current-chat delete awaits the delete API call
- * before reloading). Boot self-heal (selfHealNativeTruncation(), called
+ * usually beats the debounce" into "the reload runs after the save call
+ * returned" — which is what this layer can get, and is not the same as "after
+ * the write landed": `saveSettings()` has two states where it returns having
+ * saved nothing and merely re-arms the debounce, and adapter/config.ts's
+ * flushSettings records both, why neither is reachable from a settled page,
+ * and why it still cannot tell them from a real save. This codebase's other
+ * reload paths get the stronger guarantee for free from their own awaited
+ * server round trip (e.g. store/sidebar-actions.ts's current-chat delete
+ * awaits the delete API call before reloading). Boot self-heal
+ * (selfHealNativeTruncation(), called
  * unconditionally at the top of init()) remains as a defense-in-depth
  * backstop for cases the awaited save itself can't cover (e.g. the tab
  * crashing mid-request), not as the primary mechanism for the ordinary click
