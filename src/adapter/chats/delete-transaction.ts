@@ -222,16 +222,28 @@ export async function deleteCharacterChat(
         // Attempting the usual rollback below would be actively wrong if the
         // delete actually committed: it would durably repoint the character
         // card at a file that no longer exists. Leave any already-moved
-        // pointer exactly where it is (it was moved to a real replacement
-        // file before DELETE was even sent, so it stays valid either way) and
-        // report the honest uncertain outcome instead of guessing.
+        // pointer exactly where it is and report the honest uncertain outcome
+        // instead of guessing.
+        //
+        // The fallback name is still reported, because the reader has to be
+        // carried across the reload in exactly the case where nobody can say
+        // whether they need carrying. When `nextName` is the fabricated name,
+        // this character had no other conversation to fall back to: if the
+        // DELETE did commit, the boot lands on a character whose `chat_size`
+        // snapshot reads zero and — on a stock host, where `auto_load_chat` is
+        // false — on nobody at all, which is the exact state the landing
+        // credential exists to prevent. If it did not commit, the credential
+        // costs nothing: it records a character who is on the spine anyway and
+        // seats the reader on the character they were already in. Withholding
+        // it is only right if the delete definitely failed, and that is the one
+        // thing this branch knows it cannot say.
         return {
             deleted: false,
             reconciled: false,
             uncertain: true,
             reloadRequired: deletingCurrent,
             absent: false,
-            fallbackChatFileName: null,
+            fallbackChatFileName: deletingCurrent && nextName === fallbackName ? nextName : null,
         };
     }
 
