@@ -576,11 +576,15 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 同一行再次按 ⋯ 并带来新 rect 是一次更新而非无操作——两次按之间行可能已经移动 | `test/menu-store.test.mjs :: re-pressing the message ⋯ on the same row with a fresh rect is an update, not a no-op — the row may have moved under the reader` |
 | teardown 清空槽位，重挂载后不会留着上一世的菜单 | `test/menu-store.test.mjs :: resetChatuiMenuStore empties the slot so teardown cannot leave a menu open across a remount` |
 
-### 9.2 Escape 三级梯（ui/escape-ladder.ts）
+### 9.2 Escape 四级梯（ui/escape-ladder.ts）
 
-Escape 在本应用有三种含义，分三处结算：获焦的编辑器/改名框在**自己的元素上**
+Escape 在本应用有四种含义，分两处结算：获焦的编辑器/改名框在**自己的元素上**
 `stopPropagation` 抢先（这一级由焦点在哪里决定，是对「这次 Escape 是干什么的」的真回
-答）；剩下两级都是全局的，因此由同一个纯函数按值决出、同一个 window 监听器派发。
+答）；剩下三级都是全局的，因此由同一个纯函数按值决出、同一个 window 监听器派发。
+
+次序按「读者多晚把它放上屏幕」排：**关菜单 → 退设置 → 停生成**。菜单是最后被放上来的
+那层，也最便宜（关早了再开一次就是）；退设置同样是读者自己开的、离开完全可逆；停生成
+排最后，因为它是三者里唯一**再按一次也回不来**的。
 
 不能改成「再加一个 window 监听器」：同一个 target 上的两个监听器按注册顺序跑，彼此之间
 `stopPropagation()` 不起作用（它拦的是事件在树上的上下行，而两者都已在树顶）。于是生成
@@ -588,11 +592,17 @@ Escape 在本应用有三种含义，分三处结算：获焦的编辑器/改名
 `stopImmediatePropagation` 加一个有保证的注册顺序、或捕获阶段拦截——两者都把优先级编码
 进「监听器碰巧何时安装」，正是本项目拒绝的那种靠时序运气的写法。
 
+**这条不是假想**：`SettingsContent.tsx` 直到 2026-08-05 一直挂着第二个 window keydown
+监听器无条件 `closeChatuiSettings()`，正是上面那段禁止的形状。生成中开着设置时，一次
+Escape 既退出设置又中断回复；「退设置」因此从一个独立监听器变成本梯的一级。
+
 | 不变量 | 验证 |
 | --- | --- |
 | 菜单开着时 Escape 只关菜单：与生成中重叠的那一格必须解出**唯一**意图，关菜单绝不顺带中断回复 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: an open menu answers the key before a running generation does, and answers it alone` |
-| 无菜单时才落到停止生成 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with no menu on stage the key falls through to stopping the generation` |
-| 两者都没有时判 `ignore`，调用方据此**不**调用 preventDefault——Escape 仍属于宿主与浏览器 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with nothing of ChatUI's on screen the keystroke is not ours to take` |
+| 设置模式里开的菜单同样归菜单：它才是读者最后放上屏幕的那层，不能连带把设置也退掉 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: a menu opened inside settings mode is still what the key answers` |
+| 无菜单但在设置模式时判「退设置」，且**只**退设置——生成绝不被顺带中断 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: settings mode answers the key before a running generation does` |
+| 菜单与设置都没有时才落到停止生成 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with no menu and no settings on stage the key falls through to stopping the generation` |
+| 三者都没有时判 `ignore`，调用方据此**不**调用 preventDefault——Escape 仍属于宿主与浏览器 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with nothing of ChatUI's on screen the keystroke is not ours to take` |
 
 ### 9.3 消息 ⋯ 菜单的行清单（ui/message-menu-rows.ts）
 

@@ -34,27 +34,41 @@
 
 /**
  * - `close-menu`: a floating menu is on stage; Escape dismisses it and nothing else.
- * - `stop-generation`: nothing is on stage, but a reply is being written.
+ * - `close-settings`: no menu, but the reader is in settings mode; Escape leaves it.
+ * - `stop-generation`: nothing of ChatUI's is on stage, but a reply is being written.
  * - `ignore`: none of ChatUI's business — do not even `preventDefault()`, or
  *   Escape would stop meaning what it means to the host and the browser.
  */
-export type EscapeIntent = 'close-menu' | 'stop-generation' | 'ignore';
+export type EscapeIntent = 'close-menu' | 'close-settings' | 'stop-generation' | 'ignore';
 
 /**
- * The menu wins over the generation for the same reason a dialog wins over a
- * page: it is the thing the reader just put on screen, so it is the thing they
- * are answering. Stopping a reply is also the more expensive mistake of the
- * two — it cannot be undone by pressing the key again, while a menu that closed
- * one press early can simply be reopened.
+ * The order is by how recently the reader put the thing there, and the ladder
+ * is strict: exactly one rung answers a keystroke.
+ *
+ * The menu wins over everything for the same reason a dialog wins over a page:
+ * it is the thing the reader just put on screen, so it is the thing they are
+ * answering. Settings mode is next — also something they opened, and leaving it
+ * is free and instantly reversible. Stopping a reply is last because it is the
+ * one mistake of the three that cannot be undone by pressing the key again.
+ *
+ * `close-settings` was a second `window` listener in SettingsContent.tsx until
+ * 2026-08-05, which is the failure this module's header describes rather than a
+ * hypothetical: with a reply streaming and settings open, one Escape ran both
+ * listeners and the reader left settings *and* lost the generation. Putting the
+ * rung here is what makes "one keystroke, one action" a property of the state
+ * rather than of who registered first.
  */
 export function resolveEscapeIntent({
     hasOpenMenu,
+    isSettingsOpen,
     isGenerating,
 }: {
     hasOpenMenu: boolean;
+    isSettingsOpen: boolean;
     isGenerating: boolean;
 }): EscapeIntent {
     if (hasOpenMenu) return 'close-menu';
+    if (isSettingsOpen) return 'close-settings';
     if (isGenerating) return 'stop-generation';
     return 'ignore';
 }

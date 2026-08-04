@@ -15,6 +15,7 @@ import { getActiveChatuiMenu, subscribeChatuiMenu } from '../store/menu-store.js
 import type { ChatuiActiveMenu } from '../store/menu-store.js';
 import {
     closeChatuiMenu,
+    closeChatuiSettings,
     getChatuiCurrentChatHeader,
     getChatuiComposerDraftStoreSnapshot,
     getSessionCharacterConversations,
@@ -708,11 +709,13 @@ export function useAutoScroll(
  * CSS-clip hiding, but permanently false once #send_form is display:none.
  * Mirrors ST's own IME-composing guard.
  *
- * It is *one* listener on purpose. Both globally-meaningful uses of the key —
- * dismiss the open floating menu (DESIGN §6) and stop a running generation —
- * are decided together by resolveEscapeIntent(), because two listeners on
- * window cannot express a precedence between themselves without leaning on
- * registration order; ui/escape-ladder.ts's module doc has the long version.
+ * It is *one* listener on purpose. All three globally-meaningful uses of the
+ * key — dismiss the open floating menu (DESIGN §6), leave settings mode, stop a
+ * running generation — are decided together by resolveEscapeIntent(), because
+ * two listeners on window cannot express a precedence between themselves
+ * without leaning on registration order; ui/escape-ladder.ts's module doc has
+ * the long version, and the settings rung is there because it *was* a second
+ * listener and did cost a reader their generation.
  *
  * The third rung, 「退出编辑」, settles itself: MessageEditor and the two
  * in-place rename inputs handle Escape on their own element and call
@@ -722,20 +725,26 @@ export function useAutoScroll(
  */
 export function useChatuiEscapeKey(isGenerating: boolean): void {
     const hasOpenMenu = useActiveChatuiMenu() !== null;
+    const { settingsOpen } = useSettings();
 
     useEffect(() => {
-        if (!hasOpenMenu && !isGenerating) return;
+        if (!hasOpenMenu && !settingsOpen && !isGenerating) return;
 
         const onKeyDown = (event: KeyboardEvent) => {
             if (event.key !== 'Escape' || event.isComposing) return;
-            const intent = resolveEscapeIntent({ hasOpenMenu, isGenerating });
+            const intent = resolveEscapeIntent({
+                hasOpenMenu,
+                isSettingsOpen: settingsOpen,
+                isGenerating,
+            });
             if (intent === 'ignore') return;
             event.preventDefault();
             if (intent === 'close-menu') closeChatuiMenu();
+            else if (intent === 'close-settings') closeChatuiSettings();
             else stopChatuiGeneration();
         };
 
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [hasOpenMenu, isGenerating]);
+    }, [hasOpenMenu, settingsOpen, isGenerating]);
 }
