@@ -28,8 +28,8 @@ test('an empty conversation is blank whether or not the character has a greeting
 
 test('one message means the greeting alone for a character who has one, and the reader\'s own line for one who does not', () => {
     // ST pushed the greeting into a fresh chat — first_mes, or the first
-    // alternate when first_mes is empty (test/character-greeting.test.mjs pins
-    // which). Nothing the reader wrote can be message one: theirs would be two.
+    // alternate when first_mes is empty (test/adapter-chat-listing.test.mjs
+    // pins which). Nothing the reader wrote can be message one: theirs is two.
     assert.equal(isBlankConversation({ messageCount: 1, hasGreeting: true }), true);
 
     // No greeting to push, so ST left the chat empty and the single message is

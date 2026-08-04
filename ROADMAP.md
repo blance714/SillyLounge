@@ -345,7 +345,8 @@ pr5 把一个动作拆成两个:「复制」= 这一行真正渲染出来的文�
 
 **~~C1.5 五个只剩门面的 adapter 导出~~ 已删(2026-08-05,本轮夜审补出)。**
 `listCharacterChats` 与 `listCharacterConversationHeaders` 自侧栏迁到 TanStack Query
-之后就没有任何消费者(实现共 40 余行,还各自复制了一份 `hasGreeting` 判定);
+之后就没有任何消费者(实现共 40 余行,其中 `listCharacterConversationHeaders` 还带着
+一份与 `listCharacters` 重复的 `hasGreeting` 投影);
 `clearAttachmentPickerRestore` 与 `triggerWandAction` 只在 `adapter/menu.ts` 内部被调用,
 挂在冻结门面上白白放宽了 adapter 的对外契约;`--noUnusedLocals` 另照出三处拆除遗留的
 死导入/死类型。**注意**:`openDeleteMessageMode` 虽然同样零调用,**故意保留**——它是

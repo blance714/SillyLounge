@@ -199,7 +199,19 @@ export function getCurrentChatHeader(): CurrentChatHeaderDto {
     };
 }
 
-/** Current single-character chat identity, or null when no character chat is active. */
+/**
+ * Current single-character chat identity, or null when no character chat is
+ * active.
+ *
+ * The `fileName` half is **never read from disk**, and every caller reasoning
+ * about whether a file exists has to know that:
+ * `getCurrentChatDetails().sessionName`
+ * returns `characters[this_chid].chat` verbatim (script.js:8478), i.e. the
+ * character card's own pointer. So this answers 「what does the runtime call
+ * the conversation it is in」, never 「what is on disk」 — a name this reports
+ * may have been written a moment ago and not yet saved, which is exactly why
+ * delete-transaction.ts refuses to call the live chat `absent`.
+ */
 export function getCurrentChatIdentity(): CurrentChatIdentityDto | null {
     const ctx = getStContext();
     if (ctx.groupId) return null;

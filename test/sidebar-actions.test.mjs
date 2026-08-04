@@ -215,6 +215,73 @@ test("a chat transaction's mandatory reload lands ST's pending settings write fi
     }
 });
 
+test('a rename that could not move the file still reloads when the adapter says the live buffer is at risk', async () => {
+    // The adapter's forward-rename 「outcome unknowable」 branch reports
+    // `renamed: false` *with* reloadRequired: the file may have moved while the
+    // live record still names the old one, and the next save would write that
+    // name back as a second file. `renamed: false` is about the rename;
+    // `reloadRequired` is about the runtime, and the store used to answer the
+    // first and drop the second — leaving a toast that asks the reader to
+    // perform the repair this path can perform itself.
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'other-chat' });
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+
+        let reloads = 0;
+        host.window.location.reload = () => { reloads += 1; };
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a', 'chat-b'), // pre-rename existence check
+            { ok: false, status: 503 },      // forward-rename readback: never succeeds again
+        );
+        // Accepted, but its body is unreadable — so there is no confirmed name
+        // to fall back on, and the readback that would settle the question is
+        // the one that is down. That combination is the only way to reach
+        // 「the file may or may not have moved」.
+        router.queue('/api/chats/rename', {
+            ok: true,
+            status: 200,
+            json: async () => { throw new Error('body lost in transit'); },
+        });
+
+        const selection = await host.importModule('adapter/chats/selection-protocol.js');
+        selection.RECONCILIATION_RETRY_BUDGET.maxAttempts = 1;
+
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        await sidebarActions.renameChatuiChat('bob.png', 'chat-a', 'chat-z');
+
+        assert.equal(reloads, 1, 'the transaction performs its own repair instead of asking for it');
+    } finally {
+        await host.dispose();
+    }
+});
+
+test('a rename that simply failed, with nothing live at risk, reloads nothing', async () => {
+    // The counterpart: `renamed: false` with reloadRequired false is an
+    // ordinary failure, and throwing away the reader's page for it would be
+    // the opposite mistake.
+    const host = await createFakeStHost();
+    try {
+        configureHost(host, { avatar: 'bob.png', cardChatName: 'other-chat' });
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'other-chat.jsonl' });
+
+        let reloads = 0;
+        host.window.location.reload = () => { reloads += 1; };
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats', rawListing('chat-a', 'chat-b'));
+
+        const sidebarActions = await host.importModule('store/sidebar-actions.js');
+        await sidebarActions.renameChatuiChat('bob.png', 'not-a-chat', 'chat-z');
+
+        assert.equal(reloads, 0);
+    } finally {
+        await host.dispose();
+    }
+});
+
 // ---------------------------------------------------------------------
 // Finishing the transaction on a stock host (auto_load_chat: false)
 //

@@ -630,6 +630,40 @@ test('a current-chat rename whose pointer write cannot be resolved forces the re
     }
 });
 
+test('a conflict leaves both names on disk, so the same unresolved pointer write needs no reload', async () => {
+    // The carve-out on that reload. When the forward move ends in a conflict,
+    // `chat-a` and `chat-z` both exist: the live record still names `chat-a`,
+    // and `chat-a` is still a real file, so nothing is misnamed and a reload
+    // would only cost the reader their page.
+    const host = await createFakeStHost();
+    try {
+        configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
+        host.context.characterId = 0;
+        host.registry.getCurrentChatDetails = () => ({ sessionName: 'chat-a.jsonl' });
+
+        const router = createRouter(host);
+        router.queue('/api/characters/chats',
+            rawListing('chat-a', 'chat-b'),           // pre-rename existence check
+            rawListing('chat-a', 'chat-z', 'chat-b'), // both names present: a conflict
+        );
+        router.queue('/api/chats/rename', renameResponse('chat-z'));
+        router.queue('/api/characters/merge-attributes', networkThrow('offline'));
+        router.queue('/api/characters/get', networkThrow('offline'));
+
+        const selection = await host.importModule('adapter/chats/selection-protocol.js');
+        selection.RECONCILIATION_RETRY_BUDGET.maxAttempts = 3;
+
+        const rename = await host.importModule('adapter/chats/rename-transaction.js');
+        const result = await rename.renameCharacterChat('bob.png', 'chat-a', 'chat-z');
+
+        assert.equal(result.renamed, true);
+        assert.equal(result.uncertain, true);
+        assert.equal(result.reloadRequired, false, 'both names resolve to real files');
+    } finally {
+        await host.dispose();
+    }
+});
+
 test('the same unresolved pointer write on a chat nobody is standing in does not force a reload', async () => {
     // Nothing live is misnamed, so there is no divergence for a reload to
     // repair — the honest report is uncertain-but-no-reload, and forcing one
@@ -1214,7 +1248,7 @@ test('deleting a chat absent from the raw directory listing reports it as absent
 // drops the quarantine lease, so the file ST re-materializes a moment later is
 // permanent history nobody is holding, which is exactly the outcome the draft
 // quarantine exists to prevent.
-test('a missing file that is still the live chat is not absence: the conversation is alive and unsaved, so the lease must survive', async () => {
+test('a missing file that is still the live chat is not absence: the conversation is alive and unsaved, and the next save writes it back', async () => {
     const host = await createFakeStHost();
     try {
         configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'ghost-chat' });
@@ -1384,8 +1418,10 @@ test('deleting the current chat persists the replacement pointer before deleting
 // file left to rank as a replacement, so the durable pointer is moved to the
 // fabricated `fallbackName` (character name + humanizedDateTime()) instead —
 // `fallbackChatFileName` on the result is how the caller (sidebar-actions.ts)
-// finds out this happened, so it can quarantine whatever ST's reload boot
-// materializes there as a draft instead of a permanent history entry.
+// finds out this happened, so it can queue the landing credential that carries
+// the reader across the forced reload. Whatever ST's boot materializes at that
+// name is simply this character's conversation — the file is not the problem;
+// getting the reader back to it is.
 test("deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back so the caller can queue the landing credential", async () => {
     const host = await createFakeStHost();
     try {
