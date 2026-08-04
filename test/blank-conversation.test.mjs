@@ -27,8 +27,9 @@ test('an empty conversation is blank whether or not the character has a greeting
 });
 
 test('one message means the greeting alone for a character who has one, and the reader\'s own line for one who does not', () => {
-    // ST pushed first_mes (or the first non-empty alternate) into a fresh chat.
-    // Nothing the reader wrote can be message one — theirs would be message two.
+    // ST pushed the greeting into a fresh chat — first_mes, or the first
+    // alternate when first_mes is empty (test/character-greeting.test.mjs pins
+    // which). Nothing the reader wrote can be message one: theirs would be two.
     assert.equal(isBlankConversation({ messageCount: 1, hasGreeting: true }), true);
 
     // No greeting to push, so ST left the chat empty and the single message is
@@ -48,7 +49,12 @@ test('a count the listing could not supply is read as "not blank" rather than gu
     // The dashed border is a claim about the file. Absent evidence, the honest
     // answer is the one that claims nothing — and it is also the safe one,
     // since the alternative marks real history as unwritten.
-    for (const messageCount of [undefined, null, NaN, Infinity, -1, '1']) {
+    //
+    // `null` leads the list because it is the one the adapter can actually
+    // produce: mapChatEntry ends `?? null` precisely so this branch is
+    // reachable from a real listing row rather than only from a hand-written
+    // test input (adapter/chats/queries.ts). The others are belt and braces.
+    for (const messageCount of [null, undefined, NaN, Infinity, -1, '1']) {
         assert.equal(
             isBlankConversation({ messageCount, hasGreeting: true }),
             false,
