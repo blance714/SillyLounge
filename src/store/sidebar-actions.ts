@@ -370,8 +370,10 @@ async function _completePendingChatTransactionLanding(avatar: string): Promise<v
  *    the reader's own action rather than a preference override, and why it goes
  *    through the shared host lane.
  *
- * Arming is what bounds the credential to the load it belongs to: an un-armed
- * one would survive into some far later boot and seat somebody a page late.
+ * Reading it is what spends it (`armPendingCharacterChatLanding` clears the
+ * slot as it answers), and that is what bounds the credential to the load it
+ * belongs to: a credential that survived unspent would seat somebody on some
+ * far later boot, which is a surprise rather than a repair.
  *
  * `completeLanding: false` keeps the ledger entry and drops only the seating,
  * for the one caller that must not make that move: bootstrap mode, where

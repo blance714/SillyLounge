@@ -1,14 +1,19 @@
 // test/sidebar-actions.test.mjs
 //
 // Covers dist/runtime/store/sidebar-actions.js's own orchestration on top of
-// the chat adapter — specifically the draft-quarantine handoff added for
-// DESIGN §3 / evaluation §5 3.6 ("delete a character's only chat -> land on
-// a recoverable draft, never on a bare 'character selected, no conversation'
-// state"). adapter-chats.test.mjs already covers the adapter-layer pieces
+// the chat adapter — specifically the landing handoff DESIGN §3 / evaluation
+// §5 3.6 requires ("delete a character's only chat -> come back on that
+// character holding a usable conversation, never on a bare 'character
+// selected, no conversation' state, and never on nobody at all").
+// adapter-chats.test.mjs already covers the adapter-layer pieces
 // (delete-transaction.js's fallbackChatFileName, deletion-finalization.js's
 // queue/take pair) in isolation; this file drives the store-layer glue that
-// connects them to the temp-chat quarantine store, end to end through the
-// fake ST host.
+// spends the credential on the session ledger and, on a stock host, on the
+// seating — end to end through the fake ST host.
+//
+// The quarantine this handoff used to feed (a persisted lease set that kept
+// the fallback file out of ordinary history) was retired on 2026-08-02; what
+// the tests below pin is what replaced it.
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -381,7 +386,7 @@ test('with ChatUI switched off the boot still spends the credential, but never s
     }
 });
 
-test('a credential the bootstrap page owned but never redeemed expires on the next boot instead of selecting somebody a page later', async () => {
+test('a credential the bootstrap page spent is dead on the next boot, not waiting to seat somebody a page late', async () => {
     const host = await createFakeStHost();
     try {
         configureHost(host, { avatar: 'bob.png', cardChatName: 'chat-a' });
