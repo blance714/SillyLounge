@@ -1386,7 +1386,7 @@ test('deleting the current chat persists the replacement pointer before deleting
 // `fallbackChatFileName` on the result is how the caller (sidebar-actions.ts)
 // finds out this happened, so it can quarantine whatever ST's reload boot
 // materializes there as a draft instead of a permanent history entry.
-test("deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back for draft quarantine", async () => {
+test("deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back so the caller can queue the landing credential", async () => {
     const host = await createFakeStHost();
     try {
         configureBaseHost(host, { avatar: 'bob.png', cardChatName: 'chat-a', characterName: 'Bob' });

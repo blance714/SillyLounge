@@ -235,8 +235,8 @@ function ChatuiApp(): ComponentChild {
         setIsSidebarMobileOpen(false);
     }, [settingsOpen, state.chat.chatKey]);
 
-    // The reader switching chats (spine, playbill, temp-chat navigation — any
-    // of them) while the topbar rename input is still open must not leave a
+    // The reader switching chats (from the spine or the playbill, either one)
+    // while the topbar rename input is still open must not leave a
     // stale rename box floating over the *new* chat's title, and must never
     // let a later Enter rename the chat that is no longer on screen.
     useEffect(() => {
