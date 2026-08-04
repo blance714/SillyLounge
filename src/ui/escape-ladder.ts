@@ -2,9 +2,10 @@
  * SillyTavern-ChatUI · what one Escape keystroke means
  *
  * DESIGN §6 already states a precedence for this key — 「`Escape` 优先退出编辑，
- * 其次停止生成」 — and adding 「Escape 关闭当前菜单」 puts a third rung on the
- * same ladder. The point of this module is that the ladder is *one* decision
- * with an order, not several independent listeners that happen to agree.
+ * 其次停止生成」 — and 「Escape 关闭当前菜单」 and 「退出设置」 have since been
+ * added above the second of those, so the ladder is four rungs deep. The point
+ * of this module is that it is *one* decision with an order, not several
+ * independent listeners that happen to agree.
  *
  * ── Why not simply add another window listener ──
  *
@@ -20,8 +21,11 @@
  * rather than in what the app means. That is exactly the "works because of
  * timing luck" shape this project refuses.
  *
- * So the two rungs that are both global — close the menu, stop the generation —
- * are resolved here, by value, and dispatched by a single listener.
+ * So the three rungs that are global — close the menu, leave settings, stop the
+ * generation — are resolved here, by value, and dispatched by a single
+ * listener. 「退出设置」 arrived here the long way round: it *was* that second
+ * listener, in SettingsContent.tsx, and it did cost a reader their generation
+ * exactly as described above (fixed 2026-08-05).
  *
  * The rung this module deliberately does *not* know about is 「退出编辑」.
  * MessageEditor (and the two in-place rename inputs) handle Escape on their own

@@ -66,22 +66,25 @@ rather than being fetched), and any unscoped `::-webkit-scrollbar`.
 
 ## Current Branch Stack
 
-**Nothing is stacked any more.** The corridor-theater restyle — 49 commits across
-nine review-sized branches — landed on `main` in `b3d3bdb` on 2026-08-01, and
-`main` has moved on past it since. The branches are kept as review records, in
-the order the chapters were *written* (which is not their numbering: pr7 was
-written last and sat on pr9; there is no `pr8`):
+**Nothing is stacked any more.** The corridor-theater restyle arrived on `main` in
+two goes, and `main` has moved on past both since. All nine branches are kept as
+review records; the numbering is the order the chapters were *planned*, not the
+order they landed (pr7 was written last and sat on pr9; there is no `pr8`):
 
 ```text
-refactor/pr0-design-tokens        tokens + type scale
-refactor/pr1-token-conformance    every consumer reads a token
-refactor/pr2-paper-popover        the shared .cui-paper popover
-refactor/pr3-paper-confirm        the paper confirm dialog
-refactor/pr4-stage-skin           19  stage / message / composer / topbar skin
-refactor/pr5-actions-ia           +4  one action bar for every turn
-refactor/pr6-swipe-segments       +5  swipe versions as segment ticks
-refactor/pr9-spine-playbill      +13  sidebar → spine + playbill
-refactor/pr7-topbar-trio          +8  topbar rename + the ⋯ trio
+already in main at 86995df, as ordinary parents:
+  refactor/pr0-design-tokens        tokens + type scale
+  refactor/pr1-token-conformance    every consumer reads a token
+  refactor/pr2-paper-popover        the shared .cui-paper popover
+  refactor/pr3-paper-confirm        the paper confirm dialog
+
+landed together in b3d3bdb (2026-08-01), 50 commits over 86995df:
+  refactor/pr4-stage-skin           19  stage / message / composer / topbar skin
+  refactor/pr5-actions-ia           +4  one action bar for every turn
+  refactor/pr6-swipe-segments       +5  swipe versions as segment ticks
+  refactor/pr9-spine-playbill      +13  sidebar → spine + playbill
+  refactor/pr7-topbar-trio          +8  topbar rename + the ⋯ trio
+  df83b22                           +1  the owner's first feedback round
 ```
 
 They are behind `main` and are not rebase targets. Branching off one lands in the
@@ -184,7 +187,8 @@ src/
       settings/ SettingsNav SettingsContent ChatUiSettingsContent StDrawerHost
       config/   ConfigSelect PlusPinEditor
       message/  ActionButton MenuItem MessageActions MessageAvatar
-                MessageEditor MessageMedia MessageReasoning SwipeSegments
+                MessageEditor MessageMedia MessageMenuHost MessageReasoning
+                SwipeSegments
   types/st-externals.d.ts SillyTavern host-module declarations
 scripts/                  build / dev / validated atomic-runtime tooling
   e2e/                    dataRoot / host / Playwright / performance harnesses

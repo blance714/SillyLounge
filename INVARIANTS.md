@@ -182,7 +182,7 @@ adapter 层只读判定，真正写台账的动作留给 store 层，符合分�
 | 已经有人占台（读者 autoload 回来的角色，含下标 0；或群聊）时一律不抢，且什么都不持久化 | `test/adapter-chats.test.mjs :: a pending chat transaction never steals a stage somebody already holds — not a character ST autoloaded, not a group` |
 | 角色卡已不存在、或 ST 拒绝这次选择时如实上报且不持久化，绝不假定落地 | `test/adapter-chats.test.mjs :: a pending chat transaction whose character is gone, or whose selection ST refuses, reports it and persists nothing` |
 | 启动落在别的角色上时绝不抢台，但凭证**照样在这一次启动被花掉**：花在会话台账上（读者仍能自己走到那个角色），而不是留着等一个不会再来的信号 | `test/sidebar-actions.test.mjs :: a boot that landed on somebody else keeps its stage, and the credential is spent on the ledger instead` |
-| 「关扩展→刷新→再开扩展」：bootstrap 页认领却没兑现的凭证由下一次启动过期丢弃，绝不在一页之后才选中某人，之后才上台的同名文件是普通历史而非被追认的草稿 | `test/sidebar-actions.test.mjs :: a credential the bootstrap page owned but never redeemed expires on the next boot instead of selecting somebody a page later` |
+| 「关扩展→刷新→再开扩展」：bootstrap 页照样把凭证花掉（只是不落座），所以再开扩展的那一页手里什么都没有——绝不在一页之后才替读者选中某人 | `test/sidebar-actions.test.mjs :: a credential the bootstrap page spent is dead on the next boot, not waiting to seat somebody a page late` |
 | 这次落地走共享串行通道：通道里已有宿主工作时必须排队等它做完才进 ST，入队不影响兑现（凭证在入队之前就已被消费，所以排队只可能推迟这次 `selectCharacterById`，不可能让它落空） | `test/sidebar-actions.test.mjs :: the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it` |
 
 pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时
