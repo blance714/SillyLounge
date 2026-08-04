@@ -2,7 +2,7 @@ import React, { useState } from 'preact/compat';
 import type { ComponentChild } from 'preact';
 import { openChatuiChatForCharacter, deleteChatuiChat, renameChatuiChat } from '../../actions.js';
 import { isBlankConversation } from '../../blank-conversation.js';
-import { formatConversationMeta } from '../../format.js';
+import { formatConversationMeta, toPlainConversationPreview } from '../../format.js';
 import { useCaretOnMount } from '../../hooks.js';
 import { ConfirmDialog } from '../ConfirmDialog.js';
 import type { CharConversationGroup, ChatListItem, ChatuiSidebarState } from '../../types.js';
@@ -50,6 +50,9 @@ function ConversationCard({
     };
 
     const meta = formatConversationMeta(chat.messageCount, chat.lastMesLabel);
+    // The listing hands over the message's *source*; the card is a line of
+    // prose (ROADMAP B2, format.ts's toPlainConversationPreview).
+    const preview = toPlainConversationPreview(chat.preview);
 
     return (
         <li
@@ -86,7 +89,7 @@ function ConversationCard({
                 ) : (
                     <span className="cui-root-nested-chat-row-name">{chat.displayName}</span>
                 )}
-                {chat.preview && <span className="cui-root-nested-chat-row-preview">{chat.preview}</span>}
+                {preview && <span className="cui-root-nested-chat-row-preview">{preview}</span>}
                 {meta && <span className="cui-root-playbill-card-meta">{meta}</span>}
             </div>
             <div className="cui-root-playbill-card-dock">

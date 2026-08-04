@@ -308,13 +308,17 @@ README §7:「身份(persona)chip……弹 200px 宣纸菜单『以谁的身份�
 (`ui/blank-conversation.ts`),而它本来就是**按对话、按列**的呈现,不是一份需要全局
 入口的清单。
 
-**B2 卡片预览是原始 markdown。**
-`adapter/chats/queries.ts` 的 `preview` 取 `entry.preview_message || entry.mes`,
-原样印在场刊卡上,`**粗体**`、`<thinking>` 之类标记会直接露出来。落点:一
-个纯文本 reducer。注意**不能**在这里调 ST formatter:formatter 每次调用都会重解
-非确定宏(pr5 的「复制」正是为此改成对已缓存的渲染 HTML 做 DOMParser 归约),而侧
-栏这条路径连那份缓存都没有。可行方案是一个只认 markdown 标记的纯函数,和
-`spine-cast.ts` 同一档:无依赖、可单测。
+**~~B2 卡片预览是原始 markdown~~ 已做(2026-08-05)。**
+`ui/format.ts` 的 `toPlainConversationPreview` 是那个纯函数,在卡片渲染处调用
+(`CharacterConversationList.tsx`),没有碰 adapter 的 DTO——`preview` 仍是宿主的原文,
+「怎么显示」归 ui 管。按本条原来的约束办:不调 ST formatter(每次调用都会重解非确定宏,
+pr5 的「复制」正是为此改成归约已缓存的渲染 HTML,而侧栏连那份缓存都没有)。
+**实现时才发现的三件事**,都写进了函数注释与单测:① 输入是**尾巴**——ST 的
+`getPreviewMessage()` 只留最后 400 字并补 `...`,所以字符串经常从语法中间开始,只处理
+配对分隔符会在读者最先看的位置留下残渣;② 卡片只有一行,换行必须变空格而不是消失,
+否则两句话黏成一个词;③ 反向的错更贵——`2 * 3`、`snake_case`、`5 < 7`、`他说 5 > 3`
+都是散文,第一版「删到第一个 `>`」「从最后一个 `<` 删起」的断标签规则会把整句吃掉,
+改成要求属性赋值/标签名才动手。表格竖线**故意不动**:`|` 在散文里是普通字符。
 
 **~~B3 草稿卡标题的截断方式与普通卡不一致~~ 已被反向解决(`df83b22`)。**
 本条原本的落点是把草稿卡并进普通卡的两行 clamp。owner review 第一轮反馈
