@@ -1,6 +1,5 @@
 import {
     getCurrentChatDetails,
-    getPastCharacterChats,
     getRequestHeaders,
     getThumbnailUrl,
 } from '@st/script';
@@ -13,7 +12,6 @@ import {
 import {
     type CharacterChatsOptions,
     type CharacterSummaryDto,
-    type CharConversationGroupDto,
     type ChatListItemDto,
     getCharacters,
     getCurrentCharacterId,
@@ -21,7 +19,6 @@ import {
     stripChatExt,
     type StContext,
 } from './state.js';
-import { listRawCharacterChatNames } from './selection-protocol.js';
 
 function chatTimestamp(lastMes: unknown): { ts: number; label: string } {
     const moment = timestampToMoment(lastMes);
@@ -77,19 +74,6 @@ function getCurrentChatMatch(
     return { currentChatName, currentAvatar };
 }
 
-export async function listCharacterChats(): Promise<ChatListItemDto[]> {
-    const ctx = getStContext();
-    if (ctx.groupId) return [];
-    const characterId = ctx.characterId;
-    if (characterId === undefined || characterId === null || characterId === '') return [];
-
-    const raw = await getPastCharacterChats(Number(characterId)) as unknown;
-    const currentName = stripChatExt(getCurrentChatDetails()?.sessionName);
-    const items = parseChatRows(raw).map(chat => mapChatEntry(chat, currentName, true));
-    items.sort((a, b) => b.lastMesTs - a.lastMesTs);
-    return items;
-}
-
 /**
  * Whether ST would seed a new chat for this character with a greeting — i.e.
  * whether `getFirstMessage()` (script.js:7651) produces a message with any text
@@ -119,37 +103,6 @@ function characterHasGreeting(entry: StCharacter): boolean {
     if (entry.first_mes !== '') return true;
     const alternates = entry.data?.alternate_greetings;
     return Array.isArray(alternates) && alternates.length > 0 && alternates[0] !== '';
-}
-
-export function listCharacterConversationHeaders(): CharConversationGroupDto[] {
-    const ctx = getStContext();
-    const rawChars = getCharacters(ctx);
-    const currentCharId = !ctx.groupId ? getCurrentCharacterId(ctx) : null;
-
-    return rawChars
-        .map((entry, index): CharConversationGroupDto => {
-            const avatar = entry.avatar;
-            const name = entry.name;
-            const chatSize = entry.chat_size;
-            const dateLastChatTs = entry.date_last_chat;
-            return {
-                charId: index,
-                avatar,
-                name,
-                thumbnailUrl: avatar && avatar !== 'none' ? getThumbnailUrl('avatar', avatar) : '',
-                isCurrent: currentCharId !== null && index === currentCharId,
-                dateLastChatTs,
-                chatSize,
-                hasGreeting: characterHasGreeting(entry),
-                chats: [],
-                visibleCount: 0,
-                chatsLoaded: false,
-                fullyLoaded: false,
-                pending: null,
-            };
-        })
-        .filter(group => group.name && group.avatar && group.chatSize > 0)
-        .sort((a, b) => b.dateLastChatTs - a.dateLastChatTs);
 }
 
 export async function listRecentCharacterChatRows(

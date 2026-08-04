@@ -335,23 +335,27 @@ pr5 把一个动作拆成两个:「复制」= 这一行真正渲染出来的文�
 
 ### C · 死代码与查询清理(低风险,落点明确)
 
-**C1 `ChatuiSidebarState` 四个死字段。**
-`src/ui/types.ts` 与 `src/ui/hooks.ts` 的 `useSidebarData()` 仍产出 `chats`、
-`loading`、`error`、`charGroupsLoading`,全 UI 无人读(`sidebar.chats` 从未被取用;
-组件读的是 `group.chats`,是另一回事)。三栏化之后这几个字段的语义也已经不对——
-「整列加载中」在一列一个角色的场刊里由 `group.pending` 回答。落点:删字段 + 顺手
-删掉只为它们存在的计算。
+**~~C1 `ChatuiSidebarState` 四个死字段~~ 已删(2026-08-05)。** `chats`、`loading`、
+`error`、`charGroupsLoading` 连同只为 `chats` 存在的 `currentGroup` 计算一起退场。
 
-**C2 `MessageSnapshotDto` 的 `canShowCharActions` / `canShowUserMenu`。**
-`src/store/chat-store.ts:309-310` 仍在算这两个布尔,pr5 把两种消息统一成同一条
-四钮操作条之后没有消费者。落点:删两个字段与其判定;`schema`/DTO 契约测试要同步。
+**~~C2 `MessageSnapshotDto` 的 `canShowCharActions` / `canShowUserMenu`~~ 已删
+(2026-08-05)。** 两个字段与其判定一并移除;本条原来写的「`schema`/DTO 契约测试要同步」
+落空了——没有任何测试钉过这两个字段,这正是它们能白算这么久的原因。
+
+**~~C1.5 五个只剩门面的 adapter 导出~~ 已删(2026-08-05,本轮夜审补出)。**
+`listCharacterChats` 与 `listCharacterConversationHeaders` 自侧栏迁到 TanStack Query
+之后就没有任何消费者(实现共 40 余行,还各自复制了一份 `hasGreeting` 判定);
+`clearAttachmentPickerRestore` 与 `triggerWandAction` 只在 `adapter/menu.ts` 内部被调用,
+挂在冻结门面上白白放宽了 adapter 的对外契约;`--noUnusedLocals` 另照出三处拆除遗留的
+死导入/死类型。**注意**:`openDeleteMessageMode` 虽然同样零调用,**故意保留**——它是
+「阻塞项」那条模拟点击迁移的落点,退役它等于悄悄取消那件事。
 
 **C3 recents 查询是否还值一次请求。**
 场刊现在只有一列,并且**无条件**拉当前角色的完整列表(`hooks.ts` 的注释解释了为
-什么);`recents`(每角色封顶 5 条)只剩「首屏先画几行」的价值,同时还喂着 C1 那
-三个死字段。落点:`sidebar-queries.ts` + `hooks.ts` + `use-st-query-bridge.ts` 的
-失效表。**先量再删**:退役会让首屏在完整列表回来前空一拍,那一拍有多长要在真机
-上看,别凭感觉。
+什么);`recents`(每角色封顶 5 条)只剩「首屏先画几行」的价值。落点:
+`sidebar-queries.ts` + `hooks.ts` + `use-st-query-bridge.ts` 的失效表。**先量再删**:
+退役会让首屏在完整列表回来前空一拍,那一拍有多长要在真机上看,别凭感觉。
+(C1 已删,所以本条不再连带喂着死字段,只剩首屏那一拍这一个理由。)
 
 ### D · 交互状态机与可访问性
 

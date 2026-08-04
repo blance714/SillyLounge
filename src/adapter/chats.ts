@@ -22,8 +22,6 @@ export {
 } from './chats/state.js';
 
 export {
-    listCharacterChats,
-    listCharacterConversationHeaders,
     listRecentCharacterChatRows,
     listChatsForCharacterAvatar,
     listCharacters,

@@ -31,11 +31,7 @@ export type ChatuiSidebarState = {
         isGroup: boolean;
     };
     characters: CharacterSummary[];
-    chats: ChatListItem[];
-    loading: boolean;
-    error: string | null;
     charGroups: CharConversationGroup[];
-    charGroupsLoading: boolean;
     charGroupsError: string | null;
     loadMoreCharacterChats: (avatar: string) => Promise<void>;
     retryCharacterChats: (avatar: string) => Promise<void>;
