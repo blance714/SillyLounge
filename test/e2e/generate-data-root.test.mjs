@@ -440,6 +440,44 @@ test('the API-key scan reads shape, not the bare prefix that ordinary prose keep
     assert.doesNotMatch('sk-short', apiKeyShape);
 });
 
+test('generator refuses a checkout whose public/ already carries this extension, because that copy would be served instead', async t => {
+    // SillyTavern mounts express.static(public/) before its per-user extension
+    // route, so a same-named folder there answers every file request the
+    // browser makes and the fixture's copy is never read. The gate still boots,
+    // still mounts, and still asserts — against whatever build happens to be
+    // installed. Found on 2026-08-05, after a card assertion could not be made
+    // to pass while the tree on disk was demonstrably correct.
+    const inputs = await makeInputs(t);
+    const shadow = path.join(
+        inputs.stRoot, 'public', 'scripts', 'extensions', 'third-party', 'SillyLounge-dist',
+    );
+    await fs.mkdir(shadow, { recursive: true });
+    await fs.writeFile(path.join(shadow, 'manifest.json'), '{}', 'utf8');
+
+    await assert.rejects(
+        generateStDataRoot({
+            targetRoot: path.join(inputs.tempRoot, 'data-shadowed'),
+            stRoot: inputs.stRoot,
+            runtimeRoot: inputs.runtimeRoot,
+        }),
+        /installed globally in the SillyTavern checkout/,
+    );
+
+    // A *different* extension in the same folder is somebody else's business
+    // and must not stop the run — the suite deliberately boots with the
+    // maintainer's other third-party extensions present (and disabled).
+    await fs.rm(shadow, { recursive: true, force: true });
+    const neighbour = path.join(
+        inputs.stRoot, 'public', 'scripts', 'extensions', 'third-party', 'some-other-extension',
+    );
+    await fs.mkdir(neighbour, { recursive: true });
+    await assert.doesNotReject(generateStDataRoot({
+        targetRoot: path.join(inputs.tempRoot, 'data-neighbour'),
+        stRoot: inputs.stRoot,
+        runtimeRoot: inputs.runtimeRoot,
+    }));
+});
+
 test('generator rejects a non-empty target instead of touching existing data', async t => {
     const inputs = await makeInputs(t);
     const targetRoot = path.join(inputs.tempRoot, 'existing-data');

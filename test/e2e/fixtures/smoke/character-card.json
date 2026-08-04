@@ -6,7 +6,7 @@
         "description": "用于 SillyLounge 自动化测试的固定角色。",
         "personality": "稳定、简洁、可预测。",
         "scenario": "这是一个不连接模型的本地测试场景。",
-        "first_mes": "测试角色已就绪。",
+        "first_mes": "**测试角色**已就绪。",
         "mes_example": "<START>\nTest User: 测试消息\nLounge Test Character: 测试回复",
         "creator_notes": "Synthetic fixture. Contains no private user data.",
         "system_prompt": "",
