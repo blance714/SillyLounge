@@ -22,6 +22,21 @@ const USER_HANDLE = 'default-user';
 // install has.
 const EXTENSION_FOLDER = 'SillyLounge-dist';
 const FIXTURE_MANIFEST_FILE = '_sillylounge-fixture.json';
+/**
+ * Added to the copied extension's `manifest.json`, and read back through
+ * SillyTavern's own `getExtensionManifest()` by e2e/smoke.spec.mjs. Its whole
+ * job is to make 「the browser is being served the build we just made」 an
+ * assertion rather than an assumption — see `assertExtensionIsNotShadowed` for
+ * the failure that made it necessary. SillyTavern ignores keys it does not
+ * know, so the copy stays a working extension.
+ *
+ * The value is a digest of the copied tree rather than a per-run id, for two
+ * reasons. Identical inputs must still generate byte-identical data roots (the
+ * determinism this file is tested for), and 「the served extension is *this
+ * build*」 is a more useful claim than 「is this object」: a shadow that happens
+ * to be byte-equal is harmless, and one that is not says so.
+ */
+const EXTENSION_STAMP_KEY = 'sillylounge_e2e_stamp';
 const EXTENSION_MODES = new Set(['disabled', 'bootstrap', 'active']);
 const REGEX_MODES = new Set(['active', 'disabled']);
 /**
@@ -196,6 +211,23 @@ function conversationRows(fixture, characterName, messages) {
         rows.push(row);
     });
     return rows;
+}
+
+/** A content digest of a directory tree: sorted relative paths plus bytes. */
+async function hashDirectory(root) {
+    const digest = crypto.createHash('sha256');
+    const walk = async (dir) => {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        entries.sort((left, right) => left.name.localeCompare(right.name));
+        for (const entry of entries) {
+            const entryPath = path.join(dir, entry.name);
+            digest.update(path.relative(root, entryPath).split(path.sep).join('/'));
+            if (entry.isDirectory()) await walk(entryPath);
+            else digest.update(await fs.readFile(entryPath));
+        }
+    };
+    await walk(root);
+    return digest.digest('hex');
 }
 
 async function discoverGlobalExtensionNames(stRoot) {
@@ -819,11 +851,32 @@ export async function generateStDataRoot({
         dereference: true,
         errorOnExist: true,
     });
+    // A per-run marker *inside* the copied extension, so a spec can prove from
+    // the browser that the files it is being served are the ones this run put
+    // on disk. `assertExtensionIsNotShadowed` above rules out the one shadow
+    // mechanism we know about; this rules out the rest, by asking the question
+    // the gate actually cares about — is the tree under test the tree being
+    // served — instead of enumerating ways it might not be.
+    // Into `manifest.json` specifically, and not a file of its own: the point is
+    // to detect a *shadow*, and `express.static` only shadows paths that exist
+    // in it. A marker file unique to the fixture is never shadowed — it falls
+    // through to the per-user route and answers correctly while every real file
+    // still comes from the installed copy. The manifest is the one file both
+    // copies always have, and it is the file SillyTavern itself fetches through
+    // the same route before loading anything.
+    const stamp = await hashDirectory(extensionPath);
+    const stampedManifestPath = fixturePath(extensionPath, 'manifest.json');
+    await writeJson(stampedManifestPath, {
+        ...await readJson(stampedManifestPath),
+        [EXTENSION_STAMP_KEY]: stamp,
+    });
 
     const primaryConversation = generatedConversations[0];
     const manifest = {
         schemaVersion: pin.fixtureSchema,
         fixture: fixture.id,
+        /** Identifies this run's copy of the extension; see EXTENSION_STAMP_FILE. */
+        stamp,
         st: {
             repository: pin.repository,
             version: pin.version,
