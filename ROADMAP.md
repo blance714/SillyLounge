@@ -552,6 +552,13 @@ ChatUI 自有设置面第一版:桌面**贴边推开列**(`Sidebar | ConfigPanel
   想做得更好，得让固件那份拷贝落在 `express.static` 够不到的地方，而那要么改 ST，要么
   给固件换一个不会撞名的安装目录——后者会让门禁不再复现真实安装的目录名，而目录名正是
   2026-08-03 咬过一次的东西。
+- **两个 workflow 有约 100 行完全重复的门禁步骤。** `pr-checks.yml` 与
+  `publish-dist.yml` 从「装依赖」到「跑三个真机验收」逐字相同,只有末尾的发布步骤不同。
+  加一道门禁就得记得改两处——`verify-last-chat-delete` 那次就是这么加的。抽成
+  `workflow_call` 可以去重,但**有取舍**:发布步骤要拿到被验证的那棵树,而 job 之间不共享
+  文件系统,于是要么在发布 job 里重新构建(那就不再是「过了门禁的那棵树就是发出去的那棵
+  树」),要么走 artifact 上传/下载(多一层,也多一个可以出错的地方)。今天这条不变量是白拿
+  的,值不值得用它换整齐,是 owner 的判断。
 - **`scripts/e2e/*.mjs` 仍是 Chromium 独占。** 引擎矩阵目前只覆盖 `e2e/*.spec.mjs`;
   `measure-chat-switch` / `verify-truncation-guard` / `measure-long-chat` 都直接
   `chromium.launch()`。前者是性能基线,换引擎会让数字失去可比性,先不动;但**截断
