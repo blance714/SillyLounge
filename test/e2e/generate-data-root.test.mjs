@@ -42,6 +42,13 @@ async function makeInputs(t) {
     await fs.mkdir(path.join(stRoot, 'public', 'scripts', 'extensions', 'third-party', 'ExistingGlobal'), {
         recursive: true,
     });
+    // A real SillyLounge installed on the host for the maintainer's own use.
+    // The fixture installs under a different name, so this one is an ordinary
+    // third-party extension as far as a run is concerned — and must be switched
+    // off like any other, or the host loads two SillyLounges at once.
+    await fs.mkdir(path.join(stRoot, 'public', 'scripts', 'extensions', 'third-party', 'SillyLounge-dist'), {
+        recursive: true,
+    });
 
     // validateRuntimeTree checks the assembled build tree before it is copied
     // into ST's dataRoot; generateStDataRoot separately verifies that copy.
@@ -110,9 +117,10 @@ test('generated single-user settings select the fixture and enable SillyLounge',
     assert.equal(settings.power_user.personas['test-user.png'], 'Test User');
     assert.equal(settings.extension_settings.chatui_composer.enabled, true);
     assert.deepEqual(settings.extension_settings.disabledExtensions, [
+        'third-party/SillyLounge-dist',
         'other-extension',
         'third-party/ExistingGlobal',
-    ]);
+    ], 'every extension the host has is off, including a real SillyLounge install; only the fixture runs');
 });
 
 test('extension modes isolate native, bootstrap, and active performance baselines', async t => {
@@ -121,7 +129,7 @@ test('extension modes isolate native, bootstrap, and active performance baseline
     assert.equal(disabled.manifest.extensionMode, 'disabled');
     assert.equal(disabledSettings.extension_settings.chatui_composer.enabled, false);
     assert.equal(
-        disabledSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-dist'),
+        disabledSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-e2e'),
         true,
     );
 
@@ -130,7 +138,7 @@ test('extension modes isolate native, bootstrap, and active performance baseline
     assert.equal(bootstrap.manifest.extensionMode, 'bootstrap');
     assert.equal(bootstrapSettings.extension_settings.chatui_composer.enabled, false);
     assert.equal(
-        bootstrapSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-dist'),
+        bootstrapSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-e2e'),
         false,
     );
 });
@@ -449,7 +457,7 @@ test('generator refuses a checkout whose public/ already carries this extension,
     // to pass while the tree on disk was demonstrably correct.
     const inputs = await makeInputs(t);
     const shadow = path.join(
-        inputs.stRoot, 'public', 'scripts', 'extensions', 'third-party', 'SillyLounge-dist',
+        inputs.stRoot, 'public', 'scripts', 'extensions', 'third-party', 'SillyLounge-e2e',
     );
     await fs.mkdir(shadow, { recursive: true });
     await fs.writeFile(path.join(shadow, 'manifest.json'), '{}', 'utf8');
@@ -460,12 +468,13 @@ test('generator refuses a checkout whose public/ already carries this extension,
             stRoot: inputs.stRoot,
             runtimeRoot: inputs.runtimeRoot,
         }),
-        /installed globally in the SillyTavern checkout/,
+        /also exists in the\n?SillyTavern checkout's own public/,
     );
 
     // A *different* extension in the same folder is somebody else's business
-    // and must not stop the run — the suite deliberately boots with the
-    // maintainer's other third-party extensions present (and disabled).
+    // and must not stop the run — makeInputs already puts two there, including
+    // a real SillyLounge install, and the suite boots with them present and
+    // disabled.
     await fs.rm(shadow, { recursive: true, force: true });
     const neighbour = path.join(
         inputs.stRoot, 'public', 'scripts', 'extensions', 'third-party', 'some-other-extension',

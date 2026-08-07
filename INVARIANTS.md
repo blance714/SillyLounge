@@ -789,7 +789,8 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 | 10 楼对照固件保持富文本画像 | `test/e2e/generate-data-root.test.mjs :: long-rich 10-floor switch fixture preserves the rich profile for a small control pair` |
 | 生成的扩展是已验证运行时的完整拷贝 | `test/e2e/generate-data-root.test.mjs :: generated extension is a complete copy of the validated runtime` |
 | 生成的扩展在 `manifest.json` 里带一枚**内容摘要**，`smoke.spec.mjs` 经 ST 自己的 `getExtensionManifest()` 读回来比对——闸门断言的必须是这一次构建出来的那棵树，而不是碰巧被服务出去的另一棵；摘要而非随机 id，因为同样输入必须仍生成逐字节相同的 dataRoot | `test/e2e/generate-data-root.test.mjs :: same fixture inputs generate byte-identical data roots` |
-| **宿主 checkout 的 `public/` 里已装同名扩展时直接拒跑**：ST 的 `express.static(public/)` 挂在 per-user 扩展路由**之前**，那份拷贝会顶掉固件的拷贝去应答浏览器的每一次文件请求，而门禁照样启动、照样断言——断的是维护者机器上装着的那个版本 | `test/e2e/generate-data-root.test.mjs :: generator refuses a checkout whose public/ already carries this extension, because that copy would be served instead` |
+| 固件装扩展用的目录名**不得与任何真实安装同名**：ST 的 `express.static(public/)` 挂在 per-user 扩展路由**之前**，同名就意味着宿主 checkout 里那份会顶掉固件的拷贝去应答浏览器的每一次文件请求，门禁照样启动、照样断言，断的却是维护者机器上装着的那个版本；真撞上了就停在这里，而不是去动读者的安装 | `test/e2e/generate-data-root.test.mjs :: generator refuses a checkout whose public/ already carries this extension, because that copy would be served instead` |
+| 宿主上的其它扩展**一律关掉，包括维护者自己装的那份真 SillyLounge**——固件换名之后它对一次运行来说就是一个普通第三方扩展，不关掉就会有两个 SillyLounge 同时在跑 | `test/e2e/generate-data-root.test.mjs :: generated single-user settings select the fixture and enable SillyLounge` |
 | 生成文件不含私有路径、密钥或真实用户标识 | `test/e2e/generate-data-root.test.mjs :: generated files contain no private paths, secrets, or real-user identifiers` |
 | 密钥按**形状**匹配而不是只看 `sk-` 前缀：裸子串会被 `disk-backed` / `risk-free` 这类英文散文命中，一个会对散文狂叫的守卫最后会被人删掉 | `test/e2e/generate-data-root.test.mjs :: the API-key scan reads shape, not the bare prefix that ordinary prose keeps hitting` |
 | 生成器拒绝写入非空目标 | `test/e2e/generate-data-root.test.mjs :: generator rejects a non-empty target instead of touching existing data` |

@@ -55,11 +55,14 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
             globalExtensions: discoveredExtensions
                 .filter(extension => extension.type === 'global')
                 .map(extension => extension.name),
-            // Keyed by the *install directory*, which SillyTavern names after
-            // the repo it cloned — blance714/SillyLounge-dist. Not a cosmetic
-            // string: this lookup returned null the moment the fixture folder
-            // was renamed and this assertion was the only thing that noticed.
-            manifest: context.getExtensionManifest('SillyLounge-dist'),
+            // Keyed by the *install directory*. The fixture's is deliberately
+            // not the name a real install uses — see EXTENSION_FOLDER in
+            // scripts/e2e/generate-data-root.mjs for why sharing it made the
+            // whole suite test the maintainer's installed build instead of this
+            // one. Not a cosmetic string either way: this lookup returns null
+            // the moment the two disagree, and it is the only thing that
+            // notices.
+            manifest: context.getExtensionManifest('SillyLounge-e2e'),
         };
     });
     await testInfo.attach('sillytavern-host-state', {
@@ -99,7 +102,7 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
         ],
         manifest: { display_name: 'SillyLounge 🍸' },
     });
-    expect(hostState.disabledExtensions).not.toContain('third-party/SillyLounge-dist');
+    expect(hostState.disabledExtensions).not.toContain('third-party/SillyLounge-e2e');
     expect(hostState.disabledExtensions).not.toContain('SillyLounge');
     for (const extensionName of hostState.globalExtensions) {
         expect(hostState.disabledExtensions).toContain(extensionName);
