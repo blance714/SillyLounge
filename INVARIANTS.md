@@ -80,16 +80,22 @@
 | 回滚撞上文件名冲突时整体报 uncertain，绝不出现虚假的 renamed+reconciled | `test/adapter-chats.test.mjs :: a rename rollback that lands in a file conflict is reported uncertain, never a false clean success` |
 | 正向重命名在回读持续失败耗尽预算后报 uncertain+reloadRequired | `test/adapter-chats.test.mjs :: a current-chat forward rename gives up and reports uncertain+reloadRequired once the retry budget is exhausted by a sustained readback outage` |
 | 重命名安全对账在持续故障下最终放弃并要求刷新，不永久占用串行通道 | `test/adapter-chats.test.mjs :: reconcileCurrentRenameSafety gives up and reports uncertain+reloadRequired once the retry budget is exhausted by a sustained outage` |
+| **当前会话**重命名的三个「结果不可判定」出口必须一致要求刷新：文件已干净移动而指针写入判不出时同样强制刷新，绝不只弹一句「请自行刷新」——活缓冲仍叫着一个盘上已不存在的名字，下一次保存会把它当第二个文件写回来 | `test/adapter-chats.test.mjs :: a current-chat rename whose pointer write cannot be resolved forces the reload, like every other ambiguous exit` |
+| 同一格若改的不是读者正站着的会话则**不**刷新：没有活缓冲被叫错名字，强制刷新只会白白丢掉读者手上那场无关的对话 | `test/adapter-chats.test.mjs :: the same unresolved pointer write on a chat nobody is standing in does not force a reload` |
+| 冲突态（新旧两个名字都在盘上）同样不刷新：活记录叫的那个名字仍指向一个真实文件，没有可修的分歧 | `test/adapter-chats.test.mjs :: a conflict leaves both names on disk, so the same unresolved pointer write needs no reload` |
+| store 层必须**先看 `reloadRequired` 再看 `renamed`**：文件没能改名不代表活缓冲没事——adapter 的「前向改名判不出」那支正是 `renamed: false` 配 `reloadRequired: true`，把它当普通失败弹一句「请刷新」等于把事务能做的修复推给读者 | `test/sidebar-actions.test.mjs :: a rename that could not move the file still reloads when the adapter says the live buffer is at risk` |
+| 真正只是失败、活缓冲无风险的那一格绝不刷新：为一次普通失败丢掉读者整页是反向的错 | `test/sidebar-actions.test.mjs :: a rename that simply failed, with nothing live at risk, reloads nothing` |
 | 删除请求缺参时不发任何网络请求，直接返回未变更 | `test/adapter-chats.test.mjs :: deleting with a missing avatar or filename resolves unchanged without contacting the host at all` |
-| 待删文件不存在时只做一次存在性检查、绝不发出破坏性请求，并如实上报 `absent`（供调用方清掉自己那条已无文件可指的租约） | `test/adapter-chats.test.mjs :: deleting a chat absent from the raw directory listing reports it as absent after one existence check, without issuing the destructive request` |
-| 目录读取失败绝不冒充「文件不存在」：读不到不等于不在，否则会丢掉仍持有真实文件的隔离租约 | `test/adapter-chats.test.mjs :: a directory listing that could not be read is never reported as absence` |
-| 「没有文件」不等于「没有这场对话」：待删名字正是运行时当前所在的会话时绝不上报 `absent`（它只是还没落盘，下一次保存就会写回来；报 absent 会让调用方丢掉活草稿的租约，落盘后变成无人认领的永久历史） | `test/adapter-chats.test.mjs :: a missing file that is still the live chat is not absence: the conversation is alive and unsaved, so the lease must survive` |
+| 待删文件不存在时只做一次存在性检查、绝不发出破坏性请求，并如实上报 `absent`（读者的意图已经达成，剩下的是调用方自己的账：清掉输入框草稿、广播该对话已消失） | `test/adapter-chats.test.mjs :: deleting a chat absent from the raw directory listing reports it as absent after one existence check, without issuing the destructive request` |
+| 目录读取失败绝不冒充「文件不存在」：读不到不等于不在，否则会把一场文件还在、点开就能读的对话广播成已消失、从场刊里抹掉 | `test/adapter-chats.test.mjs :: a directory listing that could not be read is never reported as absence` |
+| 「没有文件」不等于「没有这场对话」：待删名字正是运行时当前所在的会话时绝不上报 `absent`（它只是还没落盘，下一次保存就会写回来；报 absent 等于把读者正在读的这场对话广播成已消失，而它一秒后就会重新出现在盘上） | `test/adapter-chats.test.mjs :: a missing file that is still the live chat is not absence: the conversation is alive and unsaved, and the next save writes it back` |
 | 结算这条「文件已不存在」的删除同时必须广播该对话已消失：宿主什么都没删，就不会有 CHAT_DELETED，而侧栏缓存的角色列表仍握着这个文件名——不广播的话草稿卡不是消失，而是**转成**一条指向不存在文件的普通历史行（真机 danglinglease 格实测） | `test/sidebar-actions.test.mjs :: settling a delete against a file that is not there announces the vanished conversation, so the cached listing cannot go on serving it as ordinary history` |
 | 删除非当前、非指针会话时干净成功并广播 CHAT_DELETED | `test/adapter-chats.test.mjs :: deleting a non-current chat that is not the character-card pointer resolves cleanly and emits CHAT_DELETED` |
 | 删除后核实读取暂时性失败时有界重试，直到确认文件消失才报 deleted | `test/adapter-chats.test.mjs :: the post-delete existence check retries through transient read failures and resolves deleted once the listing confirms removal` |
 | 核实读取成功但文件仍在时立即如实报 deleted:false，不进入轮询 | `test/adapter-chats.test.mjs :: a listing that successfully reads back but still shows the file resolves deleted:false immediately, without polling` |
 | 删除当前会话必须先持久化替换指针、要求刷新，且绝不向将失效的运行时广播 CHAT_DELETED | `test/adapter-chats.test.mjs :: deleting the current chat persists the replacement pointer before deleting and always requires a reload, never emitting CHAT_DELETED` |
 | 删除后轮询耗尽预算时只能报 uncertain，绝不回滚指针（防止指向已不存在的文件） | `test/adapter-chats.test.mjs :: the post-delete existence poll gives up and reports uncertain, without rolling back the pointer, once the retry budget is exhausted` |
+| 同一格若删的是该角色**仅剩**的一条对话，仍要如实上报兜底名：这正是「判不出删没删成」的那一支，而删成了的话读者就需要那张落地凭证；没删成时凭证也不花钱（记的是本来就在书脊上的角色，坐的是读者本来就在的角色） | `test/adapter-chats.test.mjs :: an ambiguous delete of a character's only chat still reports the fallback, because this is the branch that cannot rule out needing it` |
 | 重命名响应体不可解析时，目录差集唯一新增匹配目标即判定成功 | `test/adapter-chats.test.mjs :: a rename response with an unparseable body infers a clean success from a single matching directory addition` |
 | 响应体不可解析且旧名仍在时判定冲突（uncertain），不谎报干净成功 | `test/adapter-chats.test.mjs :: a rename response with an unparseable body infers a conflict when the old name and a single addition coexist` |
 | 目录差集含多个新增无法唯一定位时诚实报 unknown，不臆测文件名 | `test/adapter-chats.test.mjs :: a rename response with an unparseable body honestly reports unknown when the directory diff is ambiguous, without guessing a filename` |
@@ -104,62 +110,44 @@
 | 删除非当前会话时竞态失利，跟随胜者对齐本地指针后仍安全继续删除 | `test/adapter-chats.test.mjs :: deleting a non-current chat that loses the character-card pointer race still safely proceeds with the destructive request and follows the winner locally` |
 | 指针已持久化到发出 DELETE 的间隙内生成开始，必须回滚指针并放弃删除 | `test/adapter-chats.test.mjs :: deleting the current chat rolls the pointer back and abandons the delete when generation starts in the gap between persisting the replacement and issuing DELETE` |
 | 同一间隙内聊天保存开始，同样回滚指针并放弃删除（覆盖两个析取分支） | `test/adapter-chats.test.mjs :: deleting the current chat rolls the pointer back and abandons the delete when chat saving begins in the gap between persisting the replacement and issuing DELETE` |
-| 删除角色仅剩的一条对话时，指针被移到一个尚不存在的兜底文件名，并把该文件名如实上报（供调用方在下次启动时纳入草稿隔离） | `test/adapter-chats.test.mjs :: deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back for draft quarantine` |
+| 删除角色仅剩的一条对话时，指针被移到一个尚不存在的兜底文件名，并把该文件名如实上报（供调用方据此排一张落地凭证，好让下次启动把读者送回这个角色） | `test/adapter-chats.test.mjs :: deleting a character's only remaining chat persists a fabricated fallback pointer and reports it back so the caller can queue the landing credential` |
 
-pr9 第 3 棒新增、第 4 棒收尾时重写的兜底规则（DESIGN §3、评估 §5 3.6）：删除当前
-对话后绝不能停在「角色已选中、没有任何对话」的中间态。同角色还有其它对话时沿用上面
-已有的替换指针逻辑；角色的对话被删空时，`delete-transaction.ts` 把指针指向一个尚未
-写入磁盘的兜底文件名并通过 `fallbackChatFileName` 上报，`sidebar-actions.ts` 在强制
-刷新前排下一张 `sessionStorage` 凭证（`queueCharacterChatDraftQuarantine`），下次
-启动把那个文件折进 `temp-chat-store.ts` 的隔离集——和 ＋新对话走同一条路径，而不是
-悄悄变成一条没人要求保留的永久历史记录。
+pr9 第 3 棒新增、第 4 棒收尾、2026-08-02 随隔离区退场彻底重写的兜底规则（DESIGN §3、
+评估 §5 3.6）：删除当前对话后绝不能停在「角色已选中、没有任何对话」的中间态。同角色
+还有其它对话时沿用上面已有的替换指针逻辑；角色的对话被删空时，`delete-transaction.ts`
+把指针指向一个尚未写入磁盘的兜底文件名并通过 `fallbackChatFileName` 上报，
+`sidebar-actions.ts` 在强制刷新前排下一张 `sessionStorage` 凭证
+（`queueCharacterChatLanding`）。
 
-**观察时机是这条规则的全部难点**，第一版就是在这里必输：它挂在 APP_READY 上、去查
-目录里有没有那个文件。ST 的 `initRossMods()`（script.js:772）不 await
-`RA_autoloadchat()`（RossAscends-mods.js:697），APP_READY 由另一条 async 链在
-script.js:788 发出，所以物化那个文件的 `saveChatConditional()` **永远**排在
-APP_READY 之后（真机 1.18.0 实测：目录读取 848ms 完成、凭证 855ms 被清、
-`POST /api/chats/save` 949ms 才发出）。那道磁盘核验问的是「ST 保证会发生、但保证发生
-在我们唯一的观察点之后」的事，本就不是本仓库该守的不变量。
+**这张凭证如今只带一件事：读者当时在谁身上。** 刷新之后接手的是 ST 自己的启动：
+`getChatResult()` 无条件 `saveChatConditional()`，那个名字上一定会被物化出一个文件
+（有开场白就是开场白，没有就是空的）。那个文件就是这个角色的一场普通对话——和 ST 自己
+从头做一遍的结果完全一样。既然不再有任何东西要被扣住不给读者看，也就没有什么需要比对、
+需要等、需要守身份：文件名、身份守卫、resolve/waiting/settled 协议和那个 CHAT_CHANGED
+监听全部随隔离区一起退场，它们文档里「接受」的那个 ~142ms 竞态窗口也一并消失。
 
-现在磁盘核验连同这条链路上的全部网络请求一起去掉了，只留**身份核验**——「该角色此刻的
-当前对话就是我们捏出来的那个文件名」。观察点也随之从 APP_READY 移到「兜底文件成为当前
-对话的那一刻」：启动时若 ST 的 autoload 已经先到就当场成立，没到就等本页后续的
-CHAT_CHANGED（autoload 关掉、读者自己点开该角色，或由下面那条事务收尾把角色选上，
-同样成立）。
+启动把这张凭证花在两件事上（`finalizeChatuiChatTransaction`）：
 
-**这道核验能证明什么，两条分支并不相同**，早先这里把强的那条写成了两条都成立，现按
-实测订正：走 **CHAT_CHANGED** 时文件确实已在盘上（`getChatResult()`，script.js:7625，
-先 await `saveChatConditional()` 才发事件，事件不可能早于落盘）；而真机上实际走的是
-**立即判定**那条（autoload 早于 APP_READY 完成），它读的
-`getCurrentChatDetails().sessionName` 就是 `characters[this_chid].chat`
-（script.js:8478）——正是我们自己在强制刷新前写进去的那个指针，与磁盘无关。真机 1.18.0
-字节级记录：租约在 t=843ms 建立，`POST /api/chats/save` 到 t=985ms 才发出，隔离比文件
-早约 142ms。两条已知边界如实记在这里，并且是**接受**而不是遗漏：
+1. **书脊要显示得出这个角色。** ST 的 `chat_size` 是一次开机期的磁盘快照
+   （`calculateChatSize`，src/endpoints/characters.js），而这个兜底文件是那次快照
+   *之后*、由同一次启动写出来的，所以快照仍然报 0，朴素的入列规则会正好把读者想走回去
+   的那个角色丢掉。记进会话台账（`store/session-characters.ts`）就是让书脊还答得上来。
+2. **默认宿主上还要把人坐下。** ST 的 `power_user.auto_load_chat` **默认是 false**
+   （power-user.js:335；本仓库 e2e 固件把它强制为 true，这也是先前全部真机证据都产自
+   非默认设置的原因）。默认设置下那次强制刷新落在「一个角色都没选中」——比这整条规则要防
+   的「角色已选中、没有对话」更糟。所以凭证仍在、且**没有任何人占台**时，ChatUI 主动选上
+   凭证指向的角色。这是读者已经发起的删除事务的收尾（刷新本就是 ChatUI 自己强制的），不是
+   替读者改 autoload 偏好：只要 ST 落在了任何地方（角色或群聊），adapter 一律拒绝
+   （`adapter/chats/navigation.ts` 的 `selectCharacterIfNobodyIsOnStage`）。落不下去不
+   重试、不弹 toast。
 
-- 若那次 `saveChatConditional()` 直接失败，会留下一条指向永不出现的文件的草稿租约。
-  这是可恢复态而非坏态，而且恢复刻意走**读者离开之后那一条**而不是活着的那一条：读者还站在这场
-  对话里时，它只是「没落盘」而不是「不存在」，删除事务因此拒绝把它判成 `absent`，好
-  让租约撑过下一次把文件写回来的保存；读者离开之后，恢复它会先查原始目录并清掉租约
-  （`openChatuiChatForCharacter`），丢弃它会拿到 `absent` 同样清掉租约
-  （`delete-transaction.ts`），两条路都不卡住。
-- 那约 142ms 窗口内点「删除」，DELETE 会跑在 ST 的 CREATE 前面，文件随后被创建却不再
-  被租约持有——正是这条规则要防的「兜底文件变普通历史」。接受的理由是这个窗口人手
-  不可达：那张卡要渲染出来、被找到、被点开、确认框还要被按下，全部发生在页面出现后的
-  十分之一秒内。真要封死它，只能把立即判定挪到一个保证晚于落盘的信号上——那就是
-  CHAT_CHANGED，而真机上那一次在本段代码首次运行前就已经发过了；改等下一次会让所有
-  正常 autoload 启动全部落空。
-
-ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本仓库 e2e
-固件把它强制为 true，这也是先前全部真机证据都产自非默认设置的原因）。默认设置下那次
-强制刷新会落在「一个角色都没选中」：ST 不会去载入该角色、兜底文件永不写出、凭证等一个
-永远不来的信号，读者被留在比「角色已选中、没有对话」更糟的空台上。所以
-`finalizeChatuiDraftQuarantine` 在凭证仍在等待、且**没有任何人占台**时，主动
-`selectCharacterById` 凭证指向的那个角色——这是读者已经发起的删除事务的收尾（刷新本就
-是 ChatUI 自己强制的），不是替读者改 autoload 偏好：只要 ST 落在了任何地方（角色或
-群聊），adapter 一律拒绝
-（`adapter/chats/navigation.ts` 的 `selectCharacterIfNobodyIsOnStage`），凭证按既有
-语义继续等待。每次页面加载至多一次（认领盖章天然保证），落不下去不重试、不弹 toast。
+**凭证在读到的那一刻就被消费，不论这一次启动落在谁身上。** 没有后续信号要等了，所以
+「留着以后兑现」既无处兑现也无人兑现；ST 落在别的角色上时，第 1 件事照做（台账照记，
+读者可以自己走过去），第 2 件事不做。过期策略因此按**页数**而不是毫秒算：凭证属于
+`deleteChatuiChat` 强制的那一次刷新，诚实的界限就是「它排给的那一页，不能更晚」，而
+上一版写下的、已经盖过章的旧记录由这一次启动直接过期丢弃。存储键刻意沿用旧名
+`chatui:pendingDraftQuarantine`——升级当口正在事务里的读者，凭证是上一个版本写的（多一个
+这一版根本不读的 `fileName` 字段），改键名会正好把唯一一个需要它的读者扔掉。
 
 这一次落地和本模块其它宿主变更一样走**共享串行通道**（`enqueueHostTask`）：
 `selectCharacterById` 动的就是那个唯一的实时会话上下文，「它是启动工作」不构成豁免。
@@ -167,25 +155,17 @@ ST 的 `power_user.auto_load_chat` **默认是 false**（power-user.js:335；本
 让入队时捕获的 epoch 作废的 `resetHostOperationQueueLifecycle` 只有 UI 拆卸与终局刷新
 封印两个调用方——`index.ts` 紧接着做的挂载不是其中之一，所以挂载不会取消这次落地；
 读者在这几百毫秒里关掉 ChatUI 则**会**取消它，而那正是应有的结果（不入队的旧写法会
-在扩展已经关掉之后仍替他选中一个角色）。入队只可能推迟、不可能提前这次调用，所以
-「CHAT_CHANGED 监听必须先于落地注册」这条时序约束只会更牢。
+在扩展已经关掉之后仍替他选中一个角色）。入队只可能推迟、不可能提前这次调用，而凭证
+在入队之前就已被消费，所以排队不会让它落空。
 
 bootstrap 模式（`settings.enabled === false`）下唯一被摘掉的就是这一步落地
-（`finalizeChatuiDraftQuarantine({ completeLanding: false })`）：此时屏幕上只有 ST 自己
+（`finalizeChatuiChatTransaction({ completeLanding: false })`）：此时屏幕上只有 ST 自己
 的界面，一个被读者关掉的扩展不该在那上面替他选角色，而且没有 ChatUI 界面也就无人被
-「空台」困住——空台就是 ST 自己的行为。其余全部照跑，且理由都超出本页：**认领**是把
-凭证限死在它所属的那一次加载（不认领的话它会活到很久以后的某次启动，把读者早已当成
-普通历史的文件追认成草稿），**监听**则保证 ST 真写出兜底文件时它仍进隔离集（租约是持
-久化的，ChatUI 回来时它仍是草稿而不是无人认领的永久历史）。「关扩展→刷新→再开扩展」
-的归宿即由此确定：重新打开扩展只是挂载、不重跑本函数，也不需要重跑——凭证已为本页认
-领；文件已上台则租约在隔离集里等着，无人占台则凭证仍在等待且 spine 会把该角色摆出来
-（`peek`），读者可以自己走过去收尾；再刷新一次就按既有过期规则丢弃。
+「空台」困住——空台就是 ST 自己的行为。台账照记、凭证照消费，因为读者本页把 ChatUI
+打开时书脊仍要显示得出那个角色。
 
-凭证因此在不匹配时**保留**而不是销毁——它的语义是「这个文件名若成为当前对话即隔离」，
-一次落在别的角色/别的对话上并不是反证。有界性不靠任何时间常数：`sessionStorage` 本身
-已把它限定在本标签页内，`armPendingCharacterChatDraftQuarantine` 再给「拥有它的那一次
-页面加载」盖章，该页没有兑现的意图由下一次启动直接过期丢弃。adapter 层只读判定，真正
-写隔离集的动作留给 store 层，符合分层边界（`check-boundaries.mjs`）。
+adapter 层只读判定，真正写台账的动作留给 store 层，符合分层边界
+（`check-boundaries.mjs`）。
 
 | 不变量 | 验证 |
 | --- | --- |
@@ -204,9 +184,9 @@ bootstrap 模式（`settings.enabled === false`）下唯一被摘掉的就是这
 | ST 默认设置（不 autoload）下启动落在「没有角色」时，凭证指向的角色被主动选上，落地后按常规持久化 active_character | `test/adapter-chats.test.mjs :: a pending chat transaction lands on its character when ST's boot chose nobody, persisting the selection like any other landing` |
 | 已经有人占台（读者 autoload 回来的角色，含下标 0；或群聊）时一律不抢，且什么都不持久化 | `test/adapter-chats.test.mjs :: a pending chat transaction never steals a stage somebody already holds — not a character ST autoloaded, not a group` |
 | 角色卡已不存在、或 ST 拒绝这次选择时如实上报且不持久化，绝不假定落地 | `test/adapter-chats.test.mjs :: a pending chat transaction whose character is gone, or whose selection ST refuses, reports it and persists nothing` |
-| 启动落在别的角色上时绝不改动，凭证继续等待；读者之后走到该角色仍照常兑现 | `test/sidebar-actions.test.mjs :: a boot that landed on somebody else is never overridden: the credential simply keeps waiting` |
-| 「关扩展→刷新→再开扩展」：bootstrap 页认领却没兑现的凭证由下一次启动过期丢弃，绝不在一页之后才选中某人，之后才上台的同名文件是普通历史而非被追认的草稿 | `test/sidebar-actions.test.mjs :: a credential the bootstrap page owned but never redeemed expires on the next boot instead of selecting somebody a page later` |
-| 这次落地走共享串行通道：通道里已有宿主工作时必须排队等它做完才进 ST，且排队期间 CHAT_CHANGED 监听已经注册（解析凭证的那个事件正是从落地内部发出的），入队不影响兑现 | `test/sidebar-actions.test.mjs :: the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it` |
+| 启动落在别的角色上时绝不抢台，但凭证**照样在这一次启动被花掉**：花在会话台账上（读者仍能自己走到那个角色），而不是留着等一个不会再来的信号 | `test/sidebar-actions.test.mjs :: a boot that landed on somebody else keeps its stage, and the credential is spent on the ledger instead` |
+| 「关扩展→刷新→再开扩展」：bootstrap 页照样把凭证花掉（只是不落座），所以再开扩展的那一页手里什么都没有——绝不在一页之后才替读者选中某人 | `test/sidebar-actions.test.mjs :: a credential the bootstrap page spent is dead on the next boot, not waiting to seat somebody a page late` |
+| 这次落地走共享串行通道：通道里已有宿主工作时必须排队等它做完才进 ST，入队不影响兑现（凭证在入队之前就已被消费，所以排队只可能推迟这次 `selectCharacterById`，不可能让它落空） | `test/sidebar-actions.test.mjs :: the boot landing enters ST through the same serialized lane as the reader's own clicks, never beside it` |
 
 pr9 第 4 棒同时补上的另一条：ChatUI 换角色走 `selectCharacterById()`，它只动实时
 选择（`this_chid`）；ST 把持久化的 `active_character` 写在自己
@@ -540,6 +520,13 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 标头时间戳把 ST 写过的每种 `send_date`（ISO 8601 / `humanizedDateTime` / epoch 毫秒数与数字串）都渲染成时钟时间，无法辨认的原样透出而不臆造 | `test/format.test.mjs :: formatTimestamp renders every send_date shape SillyTavern writes as a clock time, and never invents one it cannot read` |
 | 时长与体积格式化保持中文口径，且「没有数值」不被四舍五入成「零」 | `test/format.test.mjs :: formatDuration and formatBytes stay in the language the rest of the UI speaks and refuse to round a non-quantity into one` |
 | 场刊卡片元信息按「N 条」计消息数、绝不写成「N 楼」（楼＝用户回合，会话列表只有 `chat_items` 总条数，写成楼就与楼层轨自相矛盾），缺失的一半连同分隔点一起消失 | `test/format.test.mjs :: the playbill card meta line counts messages under the name 「条」, never under 「楼」, and drops an absent half with its separator` |
+| 场刊卡片的预览行印散文而不是源码：markdown 强调/标题/引用/列表/围栏、链接与图片的地址、HTML 标签与实体一律归约掉 | `test/format.test.mjs :: the preview line prints prose, not the markdown the model wrote` |
+| 链接只留读者本来会读到的那几个字，地址不上卡 | `test/format.test.mjs :: a link keeps the words the reader would have read, and drops the address` |
+| HTML 按标记删掉，实体按文本读出来（先删标签再解实体，否则解出来的 `&lt;` 会被当成标签把后半行吃掉） | `test/format.test.mjs :: HTML is removed as markup and its entities are read as text` |
+| 预览是**尾巴不是开头**（ST 只留最后 400 字），所以从语法中间断开的输入不得留下残渣 | `test/format.test.mjs :: a preview cut mid-syntax leaves no debris, because the input is a tail and not a head` |
+| 卡片只有一行：换行一律变空格而不是消失，否则两句话会黏成一个词 | `test/format.test.mjs :: the line is one line: every newline becomes a space rather than vanishing` |
+| **不是标记的分隔符原样保留**——`2 * 3`、`snake_case`、`5 < 7`、`他说 5 > 3` 都不能被吃掉；这是本函数唯一不可接受的方向：删掉作者真写的字 | `test/format.test.mjs :: a delimiter that is not markup is left where it is` |
+| 读不出的预览归约成空串，不编占位符 | `test/format.test.mjs :: an unusable preview reduces to the empty string rather than to a placeholder` |
 | 只剥 ST 自己写的那个精确前缀「角色名 + 空格短横空格」，形近串（无空格短横、串中出现、空角色名下的裸「 - 」）一律不动 | `test/format.test.mjs :: stripChatNameCharacterPrefix drops the host-repeated cast name and nothing that merely resembles it` |
 | 顶栏题名的回退判据是「这名字是宿主起的还是读者起的」而非「是否为空」：剥完只剩裸 `humanizedDateTime()` 戳（单聊「角色名 - 戳」、群聊裸戳）即视为无名，回退到角色/群名，再回退 `ChatUI`；读者起的名（含检查点后缀）原样呈现，且宿主戳绝不出现在题名里 | `test/format.test.mjs :: resolveConversationTitle treats a name ST generated as no name at all, and never repeats the eyebrow` |
 
@@ -576,11 +563,15 @@ system-messages.js），只需要在既有 `@st/script` 映射里补声明，不
 | 同一行再次按 ⋯ 并带来新 rect 是一次更新而非无操作——两次按之间行可能已经移动 | `test/menu-store.test.mjs :: re-pressing the message ⋯ on the same row with a fresh rect is an update, not a no-op — the row may have moved under the reader` |
 | teardown 清空槽位，重挂载后不会留着上一世的菜单 | `test/menu-store.test.mjs :: resetChatuiMenuStore empties the slot so teardown cannot leave a menu open across a remount` |
 
-### 9.2 Escape 三级梯（ui/escape-ladder.ts）
+### 9.2 Escape 四级梯（ui/escape-ladder.ts）
 
-Escape 在本应用有三种含义，分三处结算：获焦的编辑器/改名框在**自己的元素上**
+Escape 在本应用有四种含义，分两处结算：获焦的编辑器/改名框在**自己的元素上**
 `stopPropagation` 抢先（这一级由焦点在哪里决定，是对「这次 Escape 是干什么的」的真回
-答）；剩下两级都是全局的，因此由同一个纯函数按值决出、同一个 window 监听器派发。
+答）；剩下三级都是全局的，因此由同一个纯函数按值决出、同一个 window 监听器派发。
+
+次序按「读者多晚把它放上屏幕」排：**关菜单 → 退设置 → 停生成**。菜单是最后被放上来的
+那层，也最便宜（关早了再开一次就是）；退设置同样是读者自己开的、离开完全可逆；停生成
+排最后，因为它是三者里唯一**再按一次也回不来**的。
 
 不能改成「再加一个 window 监听器」：同一个 target 上的两个监听器按注册顺序跑，彼此之间
 `stopPropagation()` 不起作用（它拦的是事件在树上的上下行，而两者都已在树顶）。于是生成
@@ -588,11 +579,17 @@ Escape 在本应用有三种含义，分三处结算：获焦的编辑器/改名
 `stopImmediatePropagation` 加一个有保证的注册顺序、或捕获阶段拦截——两者都把优先级编码
 进「监听器碰巧何时安装」，正是本项目拒绝的那种靠时序运气的写法。
 
+**这条不是假想**：`SettingsContent.tsx` 直到 2026-08-05 一直挂着第二个 window keydown
+监听器无条件 `closeChatuiSettings()`，正是上面那段禁止的形状。生成中开着设置时，一次
+Escape 既退出设置又中断回复；「退设置」因此从一个独立监听器变成本梯的一级。
+
 | 不变量 | 验证 |
 | --- | --- |
 | 菜单开着时 Escape 只关菜单：与生成中重叠的那一格必须解出**唯一**意图，关菜单绝不顺带中断回复 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: an open menu answers the key before a running generation does, and answers it alone` |
-| 无菜单时才落到停止生成 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with no menu on stage the key falls through to stopping the generation` |
-| 两者都没有时判 `ignore`，调用方据此**不**调用 preventDefault——Escape 仍属于宿主与浏览器 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with nothing of ChatUI's on screen the keystroke is not ours to take` |
+| 设置模式里开的菜单同样归菜单：它才是读者最后放上屏幕的那层，不能连带把设置也退掉 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: a menu opened inside settings mode is still what the key answers` |
+| 无菜单但在设置模式时判「退设置」，且**只**退设置——生成绝不被顺带中断 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: settings mode answers the key before a running generation does` |
+| 菜单与设置都没有时才落到停止生成 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with no menu and no settings on stage the key falls through to stopping the generation` |
+| 三者都没有时判 `ignore`，调用方据此**不**调用 preventDefault——Escape 仍属于宿主与浏览器 | `test/escape-ladder.test.mjs :: resolveEscapeIntent: with nothing of ChatUI's on screen the keystroke is not ours to take` |
 
 ### 9.3 消息 ⋯ 菜单的行清单（ui/message-menu-rows.ts）
 
@@ -613,10 +610,12 @@ spine 是 ChatUI 唯一的换角色入口（ST 原生列表在遮罩之下），
 「在 ChatUI 里走不到」。原规则只看 `chat_size > 0`，而 `chat_size` 是 ST 每次启动枚举
 角色 chats 目录得到的**磁盘快照**（`calculateChatSize`，src/endpoints/characters.js），
 本页内不再刷新——于是删空某角色最后一条对话并重载后，正站在台上的那个角色当场从轨上
-消失，且再也回不去。入列改为四类来源的并集：磁盘上有对话 ∪ 当前在台 ∪ 持有 temp-chat
-隔离租约 ∪ pending 草稿隔离凭证指向；「从未用过的角色不上 spine」这个原始目的保留。
+消失，且再也回不去。入列改为**三类来源**的并集：磁盘上有对话 ∪ 当前在台 ∪ 本会话角色
+台账（`store/session-characters.ts`）；「从未用过的角色不上 spine」这个原始目的保留。
+（后两类曾经是四类里的后三类——temp-chat 隔离租约与 pending 草稿隔离凭证。它们都是在
+回答别的问题时**顺带**答对了这一个，2026-08-02 隔离区退场后由台账专职回答，见 §5。）
 
-排序是两段：第一段是「ChatUI 知道它此刻活着、而磁盘快照还报零」的（即仅靠后三类来源
+排序是两段：第一段是「ChatUI 知道它此刻活着、而磁盘快照还报零」的（即仅靠后两类来源
 入列的），第二段是其余；段内一律按 `dateLastChatTs` 降序，也就是 spine 一直用的那个
 键。第一段之所以存在，是因为对这些条目而言那个键不是「旧」而是「没有」——同一次目录
 扫描报 `chat_size: 0` 的角色，`date_last_chat` 同样是 0——按它排会把这条规则本要救的
@@ -631,7 +630,7 @@ spine 是 ChatUI 唯一的换角色入口（ST 原生列表在遮罩之下），
 | 没有任何会话内来源时，spine 恰好等于「磁盘上有对话」那一批（原始过滤目的保留） | `test/spine-cast.test.mjs :: with no session sources at all the spine is exactly the characters that have conversations on disk` |
 | 缺 avatar 或缺名字的条目任何来源都无法让它入列 | `test/spine-cast.test.mjs :: entries with no usable identity are refused no matter which source names them` |
 | 仅靠会话内来源入列的角色排在最前（其 recency 键是「没有」而不是「旧」） | `test/spine-cast.test.mjs :: a character ChatUI knows is live leads the rail, because its recency key is absent rather than old` |
-| 磁盘快照已能为其发言的角色保持原有 recency 位次，在台/持租约/被凭证指向都不改变它 | `test/spine-cast.test.mjs :: a character the disk snapshot already accounts for keeps its recency seat, on stage or not` |
+| 磁盘快照已能为其发言的角色保持原有 recency 位次，在台或被台账记着都不改变它 | `test/spine-cast.test.mjs :: a character the disk snapshot already accounts for keeps its recency seat, on stage or not` |
 | 并列时退回入册顺序（ST 的 characters 数组序），而不是任何从 avatar 推出来的次序 | `test/spine-cast.test.mjs :: ties fall back to the incoming cast order, so two session-known characters keep ST's own sequence` |
 | 畸形的 size/recency 值一律读作 0，不污染排序 | `test/spine-cast.test.mjs :: malformed recency and size values are read as zero instead of poisoning the order` |
 | 绝不就地改动传入的 cast 数组（它属于查询缓存，原地排序会改掉所有读者看到的顺序） | `test/spine-cast.test.mjs :: the source list is never mutated` |
@@ -657,8 +656,26 @@ src/endpoints/chats.js）只报消息**条数**、最后一条正文、时间戳
 （`chats/queries.ts`，紧挨 `chat_size`）——宿主字段是什么意思归 adapter 管，卡片长什么
 样归 ui 管。
 
-唯一能骗过它的状态只能手工构造：把某条对话里的开场白删掉，再写恰好一句且从未收到
-回复。代价是一个边框样式，直到回复落地为止——这是**接受**，不是遗漏。
+「有开场白」必须**照抄** `getFirstMessage()` 而不是转述它，两者差在两处，每一处都反着
+标错一张真卡（2026-08-05 订正）：ST 在 `first_mes` 为假值时**盲取
+`alternate_greetings[0]`**（`swipes.shift()` 之后 `swipes[0]`，不看内容），所以首条
+alternate 为空的角色其实**一条都不播**，问「有没有某条 alternate 非空」会答反；ST 又用
+的是**真值判断而非非空白判断**，所以纯空格的开场白照样被推进对话、照样被列表数进去，
+在这里 `trim()` 会把一场真正没人写过的新对话说成写过了。
+
+两个能骗过它的状态，都是**接受**而不是遗漏：
+
+- 把某条对话里的开场白删掉，再写恰好一句且从未收到回复——只能手工构造，代价是一个
+  边框样式直到回复落地。
+- 用 AI_OUTPUT 位置的正则脚本把开场白改成空：`getFirstMessage()` 先过
+  `getRegexedString()` 再由 `getChatResult()` 决定推不推，于是角色卡上写着开场白、实际
+  一条都不播。角色卡本身读不出这件事，而在这里跑一遍正则正是「复制」当初改成归约缓存
+  HTML 所要躲开的非确定宏问题。
+
+`hasGreeting` 读的还是角色卡**此刻**的样子，而判据问的是那个文件**当初**是怎么被播种
+的：读者改角色卡（加/删开场白）会连带把已存在的 1 条对话重新标一遍。这条同样是接受
+——修它要么每行一个请求，要么拿列表的 `preview` 去比对开场白，而后者在正则脚本、
+alternate 变 swipe、读者改过首条消息这三种情况下都会答错。
 
 | 不变量 | 验证 |
 | --- | --- |
@@ -666,6 +683,13 @@ src/endpoints/chats.js）只报消息**条数**、最后一条正文、时间戳
 | 恰好 1 条：有开场白的角色算未落笔（那条只能是开场白），没开场白的角色**不算**（那条只能是读者写的） | `test/blank-conversation.test.mjs :: one message means the greeting alone for a character who has one, and the reader's own line for one who does not` |
 | 已经有回复的对话任何情况下都不算未落笔 | `test/blank-conversation.test.mjs :: a conversation with a reply in it is never blank` |
 | 列表没给出可用条数时判为「不是未落笔」，绝不猜——虚线是对文件的一个断言，没证据就不断言，且反过来会把真实历史标成未写过 | `test/blank-conversation.test.mjs :: a count the listing could not supply is read as "not blank" rather than guessed` |
+| 该判据只有在 adapter 如实把「列表没说」传上来时才成立：缺条数的行报 `null` 而**不是** `0`（`0` 不是「没有证据」，恰恰是「没人写过」的最强证据） | `test/adapter-chat-listing.test.mjs :: a listing row that names no message count reports null, not zero` |
+| 两个端点对条数字段命名不同，只有一个字段有值时用有值的那个，不被另一个的空值压掉 | `test/adapter-chat-listing.test.mjs :: a row that names one count field and blanks the other still uses the one it has` |
+| `first_mes` 非空即算有开场白，此时根本不看 alternates | `test/adapter-chat-listing.test.mjs :: a character with any first_mes greets, whatever its alternates say` |
+| 没有任何可播内容的角色不算有开场白（无字段、空数组、首条为空串） | `test/adapter-chat-listing.test.mjs :: a character with nothing to greet with does not greet` |
+| **首条 alternate 为空即算没有开场白**，哪怕后面某条有字——ST 盲取第 0 条 | `test/adapter-chat-listing.test.mjs :: an empty first alternate means ST seeds nothing, even with a later alternate full of text` |
+| **纯空格的开场白仍算开场白**——ST 用真值判断，它会被推进对话也会被数进条数 | `test/adapter-chat-listing.test.mjs :: a greeting of only spaces is still a greeting, because ST pushes it and the listing counts it` |
+| 开场白字段缺失或类型不对时一律算没有开场白（schema 先兜住，判据再取安全答案） | `test/adapter-chat-listing.test.mjs :: a card whose greeting fields are missing or malformed is read as not greeting` |
 
 ### 会话角色台账（store/session-characters.ts）
 
@@ -731,6 +755,8 @@ TopbarTitle.tsx/TopbarMenu.tsx 两处渲染分别单测。`resolveTopbarRenameCo
 | 运行时 Zod 门面覆盖 adapter schema 用到的每个值级 z 成员 | `test/check-runtime.test.mjs :: runtime Zod facade covers every value-level z member used by adapter schema` |
 | style.css 里不存在提前闭合的注释：注释终止符只能出现在注释里，否则其后的整条规则块会被 CSS 解析器静默丢弃 | `test/stylesheet-integrity.test.mjs :: style.css has no comment terminator that lands in code, so no rule block is silently dropped` |
 | 该扫描确实能识别它要防的那次真实回归（pr4 topbar 规则被注释吃掉），修好后不再误报 | `test/stylesheet-integrity.test.mjs :: the stray-terminator scan actually detects the pr4 topbar regression it exists to prevent` |
+| 不带兜底的 `var(--cui-…)` 引用的 token 必须在本文件里有声明——引用一个没人声明的 token 是**合法语法**，不在解析期出错，而在计算值阶段把整条声明丢掉、回落到 inherit/initial（边框因此画成 `currentColor`，看起来就像一次设计回归）；本调色板已经出过两次 | `test/stylesheet-integrity.test.mjs :: every --cui token style.css reads without a fallback is a token style.css declares` |
+| 该扫描能识别「声明改名、引用没跟着改」，且不误报两种不是缺陷的写法：自带兜底的引用、只在注释里被提到的 token | `test/stylesheet-integrity.test.mjs :: the undeclared-token scan catches a renamed token and ignores the two cases that are not bugs` |
 
 另有两个源码级静态校验（无对应测试文件，由脚本直接接入 `verify`）：
 `scripts/check-boundaries.mjs`（分层规则：`@st/*` 仅 adapter 与 index.ts 可导入、
@@ -762,7 +788,11 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
 | 切换固件生成两个相互隔离的 400 楼会话 | `test/e2e/generate-data-root.test.mjs :: long-rich switch fixture generates two isolated 400-floor conversations` |
 | 10 楼对照固件保持富文本画像 | `test/e2e/generate-data-root.test.mjs :: long-rich 10-floor switch fixture preserves the rich profile for a small control pair` |
 | 生成的扩展是已验证运行时的完整拷贝 | `test/e2e/generate-data-root.test.mjs :: generated extension is a complete copy of the validated runtime` |
+| 生成的扩展在 `manifest.json` 里带一枚**内容摘要**，`smoke.spec.mjs` 经 ST 自己的 `getExtensionManifest()` 读回来比对——闸门断言的必须是这一次构建出来的那棵树，而不是碰巧被服务出去的另一棵；摘要而非随机 id，因为同样输入必须仍生成逐字节相同的 dataRoot | `test/e2e/generate-data-root.test.mjs :: same fixture inputs generate byte-identical data roots` |
+| 固件装扩展用的目录名**不得与任何真实安装同名**：ST 的 `express.static(public/)` 挂在 per-user 扩展路由**之前**，同名就意味着宿主 checkout 里那份会顶掉固件的拷贝去应答浏览器的每一次文件请求，门禁照样启动、照样断言，断的却是维护者机器上装着的那个版本；真撞上了就停在这里，而不是去动读者的安装 | `test/e2e/generate-data-root.test.mjs :: generator refuses a checkout whose public/ already carries this extension, because that copy would be served instead` |
+| 宿主上的其它扩展**一律关掉，包括维护者自己装的那份真 SillyLounge**——固件换名之后它对一次运行来说就是一个普通第三方扩展，不关掉就会有两个 SillyLounge 同时在跑 | `test/e2e/generate-data-root.test.mjs :: generated single-user settings select the fixture and enable SillyLounge` |
 | 生成文件不含私有路径、密钥或真实用户标识 | `test/e2e/generate-data-root.test.mjs :: generated files contain no private paths, secrets, or real-user identifiers` |
+| 密钥按**形状**匹配而不是只看 `sk-` 前缀：裸子串会被 `disk-backed` / `risk-free` 这类英文散文命中，一个会对散文狂叫的守卫最后会被人删掉 | `test/e2e/generate-data-root.test.mjs :: the API-key scan reads shape, not the bare prefix that ordinary prose keeps hitting` |
 | 生成器拒绝写入非空目标 | `test/e2e/generate-data-root.test.mjs :: generator rejects a non-empty target instead of touching existing data` |
 | 生成器在写出前拒绝固件路径穿越 | `test/e2e/generate-data-root.test.mjs :: generator rejects fixture path traversal before writing output` |
 | 生成器拒绝版本不符的 SillyTavern checkout | `test/e2e/generate-data-root.test.mjs :: generator rejects a SillyTavern checkout at the wrong version` |
@@ -813,6 +843,14 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   自己存在的理由，同时让舞台钻到剩下的轨底下。**必须写成关系式**，因为原缺陷正是两个
   引擎对同一份 CSS 算出不同像素（Gecko 58+133，Blink 58+300）——钉死像素只会把其中
   一个引擎的答案固化成"正确答案"。
+- **`e2e/layout-integrity.spec.mjs`**（CI 门禁，两个引擎各跑一遍）：`rails-geometry`
+  钉死的是那次真出过事的**一条**关系，本条罩的是它**周围**那一整类——1280（设计基线）
+  / 976（ST 自己 1000px 断点的走廊）/ 889（维护者真实窗宽）三档宽度 × 聊天与设置两种
+  模式，断言整个应用无横向溢出、rails 贴左、舞台左沿落在 rails 右沿之后、两者宽度之和
+  填满窗口。**只写关系与边界、不写像素**：写死像素等于把某一个引擎算出的答案封为标准，
+  而这类缺陷的成因恰恰是两个引擎对同一份 CSS 算出不同像素。对宿主零改动（视口尺寸与
+  设置模式都是本页自己的状态）。首跑 Gecko 全绿，说明 55af8f1 之后这三档宽度上没有其它
+  撕裂。
 - **`e2e/settings-embed-width.spec.mjs`**（CI 门禁，两个引擎各跑一遍）：在 **976px**
   视口（ST 自己 `mobile-styles.css` 的 1000px 断点之下、而套件其余视口 1280/768/390
   都不巡的走廊）打开设置 → AI 配置，断言嵌入的 ST 抽屉面板只填满内容列而非整个视口、
@@ -833,6 +871,12 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   `--cui-color-border`），且 `--cui-color-border-hover` 解析出的色与前两者都不同。写成
   token 恒等而不是字面色值，是因为这套调色板已经两次发出引用未定义变量的颜色声明——那种
   声明在计算值阶段被静默丢弃，表现得和设计回归一模一样，而 code review 看不出来。
+  **「与前两者都不同」本身抓不到那件事**（2026-08-05 补）：`var()` 引用一个没人声明的
+  token 时，整条声明在计算值阶段作废，非继承属性回落到 initial，边框色于是变成
+  `currentColor`——一个既不等于 strong 也不等于 faint 的第三种颜色，两条 `not.toBe` 全部
+  照过。所以这里另读一次 `--cui-color-border-hover` 这个自定义属性**本身**在
+  `document.documentElement` 上解析出的值、断言它非空；这是唯一不含糊的答案。整类问题的
+  根治在 `test/stylesheet-integrity.test.mjs`（静态扫全表），本条只钉这一个 token。
   **对共享宿主幂等**：结束前先切回固件会话（好让两次
   删除都不是「删当前对话」——那条路会强制整页刷新，是另一个场景），再把自己建的两条
   逐一删掉并断言列表回到固件原状；已用 `--repeat-each=3` 实测连跑不互相污染。
@@ -840,7 +884,12 @@ store）与 `scripts/check-invariants.mjs`（本清单的双向一致性）。
   显式步骤）：**删掉某角色唯一一条对话**这条路，端到端跑在真宿主上——读者从场刊删除 →
   `delete-transaction.ts` 把角色的持久指针挪到一个尚未写出的兜底名 → 排队落地凭证 →
   强制整页刷新 → ST 启动写出该文件 → 断言读者回到**同一个角色**、手里有一场**能写的**
-  对话、被删的那条不在列表里且恰好有一条替代、角色仍在书脊上、全程零 page error。
+  对话、被删的那条不在列表里且恰好有一条替代、**该角色自己那个书脊座位**还在、全程零
+  page error。「书脊座位」这条 2026-08-05 才真正成立：先前断的是
+  `.cui-root-spine-slot` 计数 `>= 1`，而书脊常驻的「角色管理」＋ 按钮也带这个类
+  （`Spine.tsx`），计数的下限本就是 1，这条断言**永远不可能变红**——正是它要守的那次
+  回归也不能。现在读的是 `.cui-root-spine-char` 各自的 `aria-label`，断言里面有这个
+  角色的名字。
   它**自带一次性数据根与一次性 ST**（照 `verify-truncation-guard.mjs` 的样子），不跑在
   共享宿主上——因为它对固件是不可逆破坏性的：删掉的正是固件唯一那条对话，替代它的是 ST
   在刷新里新写的文件，放进共享套件会让其后每个 spec 面对一个和它们所写时不同的宿主。

@@ -55,17 +55,35 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
             globalExtensions: discoveredExtensions
                 .filter(extension => extension.type === 'global')
                 .map(extension => extension.name),
-            // Keyed by the *install directory*, which SillyTavern names after
-            // the repo it cloned — blance714/SillyLounge-dist. Not a cosmetic
-            // string: this lookup returned null the moment the fixture folder
-            // was renamed and this assertion was the only thing that noticed.
-            manifest: context.getExtensionManifest('SillyLounge-dist'),
+            // Keyed by the *install directory*. The fixture's is deliberately
+            // not the name a real install uses — see EXTENSION_FOLDER in
+            // scripts/e2e/generate-data-root.mjs for why sharing it made the
+            // whole suite test the maintainer's installed build instead of this
+            // one. Not a cosmetic string either way: this lookup returns null
+            // the moment the two disagree, and it is the only thing that
+            // notices.
+            manifest: context.getExtensionManifest('SillyLounge-e2e'),
         };
     });
     await testInfo.attach('sillytavern-host-state', {
         body: Buffer.from(`${JSON.stringify(hostState, null, 4)}\n`),
         contentType: 'application/json',
     });
+
+    // Before any of the rest means anything: the extension the browser loaded
+    // has to be the one this run built. It was not, on the maintainer's own
+    // machine, for as long as a same-named folder sat in the checkout's
+    // `public/` — SillyTavern's static mount answers before its per-user
+    // extension route, so the entire suite went green against an installed
+    // build while the tree under test was never read
+    // (scripts/e2e/generate-data-root.mjs's assertExtensionIsNotShadowed).
+    // That guard rules out the one mechanism; this rules out the outcome, and
+    // it reads the stamp back through `getExtensionManifest` — the same fetch
+    // SillyTavern itself makes, down the same shadowed route.
+    expect(
+        hostState.manifest?.sillylounge_e2e_stamp,
+        'the loaded extension is this run\'s copy, not one that shadowed it',
+    ).toBe(process.env.SILLYLOUNGE_E2E_STAMP);
 
     expect(hostState).toMatchObject({
         characterName: 'Lounge Test Character',
@@ -84,12 +102,20 @@ test('real SillyTavern projects the smoke conversation into SillyLounge', async 
         ],
         manifest: { display_name: 'SillyLounge 🍸' },
     });
-    expect(hostState.disabledExtensions).not.toContain('third-party/SillyLounge-dist');
+    expect(hostState.disabledExtensions).not.toContain('third-party/SillyLounge-e2e');
     expect(hostState.disabledExtensions).not.toContain('SillyLounge');
     for (const extensionName of hostState.globalExtensions) {
         expect(hostState.disabledExtensions).toContain(extensionName);
     }
 
+    // Before anything else: the files the browser is being served have to be
+    // the ones this run put on disk. They were not, on the maintainer's own
+    // machine, for as long as a same-named extension sat in the checkout's
+    // `public/` — SillyTavern's static mount answers before its per-user
+    // extension route, so the whole suite went green against an installed
+    // build while the tree under test was never read
+    // (scripts/e2e/generate-data-root.mjs's assertExtensionIsNotShadowed).
+    // That guard rules out the mechanism; this rules out the outcome.
     const root = page.locator('#chatui-root[data-cui-root-mounted="1"]');
     await expect(root).toBeVisible();
     await expect(page.locator('body')).toHaveClass(/\bchatui-active\b/);

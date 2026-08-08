@@ -102,6 +102,25 @@ test('＋新对话 lands an ordinary card in the playbill, dashed while empty, a
     expect(created, 'the two new chats are distinct files').toHaveLength(2);
     expect(new Set(created).size).toBe(2);
 
+    // ── The preview line reads as prose, not as source ───────────────────────
+    // The fixture character's greeting carries `**` on purpose, and each of
+    // these new chats holds exactly that one message — so the card's preview
+    // is the one place in the app where a raw-markdown regression would be
+    // visible. format.ts's unit tests pin the reduction itself; this is the
+    // only thing that proves the card is actually calling it (ROADMAP B2).
+    const previews = root.locator('.cui-root-nested-chat-row-preview');
+    for (const name of created) {
+        const preview = root
+            .locator('.cui-root-nested-chat-row', { hasText: name })
+            .locator('.cui-root-nested-chat-row-preview');
+        await expect(preview, `${name}'s preview is the greeting, de-marked`)
+            .toHaveText('测试角色已就绪。');
+    }
+    expect(
+        (await previews.allTextContents()).join(''),
+        'no card anywhere is printing markdown at the reader',
+    ).not.toContain('**');
+
     // ── Blank conversations are drawn dashed, and only that ──────────────────
     // The fixture character has a first_mes, so each of these holds exactly one
     // message — the greeting — which is what ui/blank-conversation.ts reads as
@@ -132,10 +151,22 @@ test('＋新对话 lands an ordinary card in the playbill, dashed while empty, a
             probe.style.borderColor = value;
             return getComputedStyle(probe).borderTopColor;
         };
+        const declared = (name) => getComputedStyle(document.documentElement)
+            .getPropertyValue(name)
+            .trim();
         const out = {
             faint: resolve('var(--cui-color-border)'),
             strong: resolve('var(--cui-color-border-strong)'),
             hover: resolve('var(--cui-color-border-hover)'),
+            // The custom property as such. `resolve()` above cannot answer
+            // this: a `var()` naming an undefined property is invalid at
+            // computed-value time, and a non-inherited property that is
+            // invalid there falls back to its initial value — `currentColor`
+            // for a border. So a dropped token resolves to the ivory text
+            // colour, which is neither `strong` nor `faint` and sails through
+            // both distinctness checks below. Reading the declaration itself
+            // is the only unambiguous answer.
+            hoverDeclared: declared('--cui-color-border-hover'),
             resting: getComputedStyle(
                 document.querySelector('.cui-root-nested-chat-row:not(.is-current)'),
             ).borderTopColor,
@@ -145,9 +176,11 @@ test('＋新对话 lands an ordinary card in the playbill, dashed while empty, a
     });
     expect(palette.resting, 'a resting card edge is border-strong, not the faint hairline')
         .toBe(palette.strong);
+    expect(palette.hoverDeclared, '--cui-color-border-hover is declared at all')
+        .not.toBe('');
     expect(palette.hover, 'and hover keeps a step of its own above it')
         .not.toBe(palette.strong);
-    expect(palette.hover, 'which has to be a real colour, not a dropped declaration')
+    expect(palette.hover, 'a step above the faint hairline too')
         .not.toBe(palette.faint);
 
     // Evidence, the same way smoke.spec.mjs keeps one: the assertions above say

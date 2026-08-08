@@ -96,10 +96,104 @@ export function formatDuration(duration: string | number | null): string {
  * listing row has not arrived), and neither placeholder is invented: an absent
  * half drops itself and the separator with it.
  */
-export function formatConversationMeta(messageCount: number, timeLabel: string): string {
-    const count = Number.isFinite(messageCount) && messageCount > 0 ? `${messageCount} 条` : '';
+export function formatConversationMeta(messageCount: number | null, timeLabel: string): string {
+    const count = messageCount !== null && Number.isFinite(messageCount) && messageCount > 0
+        ? `${messageCount} 条`
+        : '';
     const time = typeof timeLabel === 'string' ? timeLabel.trim() : '';
     return [count, time].filter(Boolean).join(' · ');
+}
+
+const HTML_ENTITIES: Readonly<Record<string, string>> = Object.freeze({
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+    nbsp: ' ',
+});
+
+/**
+ * The playbill card's preview line, as prose rather than as source
+ * (ROADMAP B2).
+ *
+ * ST's listing hands over the last message's *stored* text — markdown, HTML,
+ * whatever the model wrote — and the card printed it verbatim, so `**粗体**`,
+ * `<div>` and fence backticks all showed up as themselves on a line that is
+ * meant to read like a sentence.
+ *
+ * The reduction has to be a pure function over that string. Calling ST's own
+ * `messageFormatting()` is not available to this path and would be wrong even
+ * if it were: every call re-evaluates non-deterministic macros, which is the
+ * same reason 「复制」 reduces already-rendered HTML instead of re-running the
+ * formatter (pr5). The sidebar has no rendered copy to reduce, so this reads
+ * the source and removes what is unambiguously markup.
+ *
+ * Three properties of the input shape the rules, and the first two are easy to
+ * forget:
+ *
+ * - **It is a tail, not a head.** `getPreviewMessage()` (ST's
+ *   src/endpoints/chats.js) keeps the last 400 characters and prefixes `...`
+ *   when it cut. So the string routinely begins mid-syntax: an opening `**`
+ *   with no closer in view, a `<div>` whose tag was cut in half. Anything that
+ *   only handles balanced pairs leaves debris exactly where the reader looks
+ *   first.
+ * - **It is one line on screen.** The card clamps to a single line with an
+ *   ellipsis, so every newline has to become a space rather than disappear —
+ *   otherwise two sentences fuse into one word.
+ * - **Not every delimiter is markup.** `snake_case_names`, `2 * 3` and
+ *   `5 < 7` are prose. `_` is therefore only stripped as a matched pair at
+ *   word boundaries, and a lone one is left where it is; `**` and `~~` have no
+ *   plausible literal reading and go unconditionally.
+ *
+ * Table pipes are deliberately left alone. A row like `| a | b |` reads
+ * awkwardly on a card, but `|` is an ordinary character in prose and a rule
+ * that removed it would be the one kind of mistake this function must not make
+ * — eating something the writer meant.
+ */
+export function toPlainConversationPreview(preview: string): string {
+    if (typeof preview !== 'string' || preview === '') return '';
+
+    return preview
+        // Fences first: their info string (```js) is not prose, and the code
+        // inside them is still what was said.
+        .replace(/^[ \t]*(?:```|~~~).*$/gm, ' ')
+        // Tags before entities, so a decoded `&lt;` can never become one.
+        .replace(/<\/?[A-Za-z][^>]*>/g, '')
+        // A tag the 400-character cut severed: `class="mes">…` left at the
+        // head, `…<spa` left at the tail. Both rules demand evidence that the
+        // fragment really is tag innards, because the naive versions — strip
+        // to the first `>`, strip from the last `<` — eat 「他说 5 > 3」 and
+        // 「他说 5 < 7」 whole. The head needs an attribute assignment before
+        // its `>`; the tail needs a tag name right after its `<`.
+        .replace(/^[^<>]*=\s*["'][^<>]*>/, '')
+        .replace(/<\/?[A-Za-z][^<>]*$/, '')
+        .replace(/&(amp|lt|gt|quot|apos|nbsp);/g, (whole, name: string) => HTML_ENTITIES[name] ?? whole)
+        // Line-leading structure. Blockquotes nest, so the marker repeats.
+        .replace(/^[ \t]*>[ \t]?/gm, '')
+        .replace(/^[ \t]*#{1,6}[ \t]+/gm, '')
+        .replace(/^[ \t]*(?:[-*+]|\d+[.)])[ \t]+/gm, '')
+        .replace(/^[ \t]*([-*_])(?:[ \t]*\1){2,}[ \t]*$/gm, ' ')
+        // Images before links: `![alt](src)` is a link whose text is the alt.
+        .replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/`+/g, '')
+        .replace(/~~/g, '')
+        .replace(/\*\*/g, '')
+        // A single `*` only where emphasis can open or close: after a
+        // boundary and before a non-space, or after a non-space and before a
+        // boundary. Written as negated classes rather than a list of
+        // punctuation, because the list would have to know 。、！ and the rest
+        // of CJK — the first draft stopped at ASCII and left the closer
+        // standing in 「*再见*。」. `2 * 3` keeps its asterisk either way: both
+        // rules need a non-space on the inner side.
+        .replace(/(^|[^\w*])\*(?=[^\s*])/g, '$1')
+        .replace(/([^\s*])\*(?=$|[^\w*])/g, '$1')
+        // `_` only as a matched pair around a run with no underscore in it,
+        // and only at word boundaries — `snake_case` is not emphasis.
+        .replace(/(^|[^\w`])_([^_\n]+)_(?=$|[^\w`])/g, '$1$2')
+        .replace(/\s+/g, ' ')
+        .trim();
 }
 
 /**

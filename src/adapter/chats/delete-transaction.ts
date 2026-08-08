@@ -52,29 +52,27 @@ export async function deleteCharacterChat(
     } catch (error) {
         // Deliberately not `absent`: a directory we could not read says
         // nothing about whether the file is in it, and treating that as
-        // absence would drop a quarantine lease still holding a real file.
+        // absence would announce a vanished conversation whose file is still
+        // there, taking the row out of the playbill for a chat that opens fine.
         console.error('[ChatUI] failed to verify chat before deletion', error);
         return unchanged;
     }
     if (!chatNames.includes(bareName)) {
         // Nothing to delete, and nothing failed. Reporting this as an ordinary
-        // failure was a dead end for the caller: a quarantined draft whose file
-        // had gone could never be discarded, because discarding *is* this call,
-        // so the card and its lease stayed on the shelf forever.
+        // failure was a dead end for the caller: a row whose file had gone
+        // could never be got rid of, because getting rid of it *is* this call.
         //
         // But 「no file」 is not 「no conversation」, and the difference is the
         // whole of this guard. When the missing name is the chat the runtime is
         // *standing in*, that conversation is very much alive — it is simply
         // unsaved — and the next `saveChatConditional()` (a message, a swipe, an
         // edit, walking away) writes the file straight back. Telling the caller
-        // 「absent, settle it as a real deletion」 there makes it drop the
-        // quarantine lease off a live draft, and the file ST re-materializes a
-        // moment later is then permanent history nobody is holding — the exact
-        // outcome the whole draft-quarantine handoff exists to prevent
-        // (deletion-finalization.ts). So absence is asserted only about files
-        // nothing live is claiming; a live one falls back to the plain 「nothing
-        // was deleted」 result, which keeps the lease and stays retryable the
-        // moment the file exists again.
+        // 「absent, settle it as a real deletion」 there makes it announce a
+        // vanished conversation the reader is currently reading, and the file ST
+        // re-materializes a moment later has already been taken out of the
+        // listing. So absence is asserted only about files nothing live is
+        // claiming; a live one falls back to the plain 「nothing was deleted」
+        // result, which stays retryable the moment the file exists again.
         const liveNow = getCurrentChatIdentity();
         const deletingLive = liveNow?.avatar === avatar && liveNow.fileName === bareName;
         return { ...unchanged, absent: !deletingLive };
@@ -224,16 +222,28 @@ export async function deleteCharacterChat(
         // Attempting the usual rollback below would be actively wrong if the
         // delete actually committed: it would durably repoint the character
         // card at a file that no longer exists. Leave any already-moved
-        // pointer exactly where it is (it was moved to a real replacement
-        // file before DELETE was even sent, so it stays valid either way) and
-        // report the honest uncertain outcome instead of guessing.
+        // pointer exactly where it is and report the honest uncertain outcome
+        // instead of guessing.
+        //
+        // The fallback name is still reported, because the reader has to be
+        // carried across the reload in exactly the case where nobody can say
+        // whether they need carrying. When `nextName` is the fabricated name,
+        // this character had no other conversation to fall back to: if the
+        // DELETE did commit, the boot lands on a character whose `chat_size`
+        // snapshot reads zero and — on a stock host, where `auto_load_chat` is
+        // false — on nobody at all, which is the exact state the landing
+        // credential exists to prevent. If it did not commit, the credential
+        // costs nothing: it records a character who is on the spine anyway and
+        // seats the reader on the character they were already in. Withholding
+        // it is only right if the delete definitely failed, and that is the one
+        // thing this branch knows it cannot say.
         return {
             deleted: false,
             reconciled: false,
             uncertain: true,
             reloadRequired: deletingCurrent,
             absent: false,
-            fallbackChatFileName: null,
+            fallbackChatFileName: deletingCurrent && nextName === fallbackName ? nextName : null,
         };
     }
 
@@ -267,10 +277,11 @@ export async function deleteCharacterChat(
             absent: false,
             // nextName is the fabricated fallback exactly when no real chat
             // (preferred or otherwise) survived to replace the one just
-            // deleted — i.e. this character's history is now empty. Report
-            // it so the caller can quarantine whatever ST's reload boot
-            // materializes there, instead of it becoming the character's
-            // one permanent chat by accident.
+            // deleted — i.e. this character's history is now empty. Report it
+            // so the caller can carry the reader across the reload: whatever
+            // ST's boot writes there is this character's conversation, and the
+            // only thing at risk is the reader's ability to get back to it
+            // (deletion-finalization.ts's landing credential).
             fallbackChatFileName: nextName === fallbackName ? nextName : null,
         };
     }

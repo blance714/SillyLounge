@@ -34,6 +34,7 @@ import {
     formatTimestamp,
     resolveConversationTitle,
     stripChatNameCharacterPrefix,
+    toPlainConversationPreview,
 } from '../dist/runtime/ui/format.js';
 
 /** 2026-01-04T00:00:02.000Z, expressed every way ST has ever stored it. */
@@ -218,4 +219,76 @@ test('resolveConversationTitle treats a name ST generated as no name at all, and
     const generated = resolveConversationTitle({ sessionName: `${CHARACTER} - ${STAMP}`, characterName: CHARACTER });
     assert.ok(!generated.includes(STAMP), 'a host-generated stamp must never reach the title page');
     assert.ok(generated === CHARACTER, 'and the fallback is the cast name itself, which the eyebrow then yields to');
+});
+
+// ---------------------------------------------------------------------
+// toPlainConversationPreview — the card's preview line as prose (ROADMAP B2)
+//
+// The input is ST's stored message text, tail-truncated to the last 400
+// characters by getPreviewMessage() (src/endpoints/chats.js). So the cases
+// below are written around three properties of that string rather than around
+// a markdown grammar: it starts mid-syntax, it renders on one line, and not
+// every delimiter in it is markup.
+// ---------------------------------------------------------------------
+
+test('the preview line prints prose, not the markdown the model wrote', () => {
+    assert.equal(
+        toPlainConversationPreview('她**没有**回头，只说了一句 *再见*。'),
+        '她没有回头，只说了一句 再见。',
+    );
+    assert.equal(toPlainConversationPreview('~~算了~~ 走吧'), '算了 走吧');
+    assert.equal(toPlainConversationPreview('用 `git rebase` 就行'), '用 git rebase 就行');
+    assert.equal(toPlainConversationPreview('# 第三章\n雨停了。'), '第三章 雨停了。');
+    assert.equal(toPlainConversationPreview('> 他说：别走。'), '他说：别走。');
+    assert.equal(toPlainConversationPreview('- 一杯咖啡\n- 一把伞'), '一杯咖啡 一把伞');
+    assert.equal(toPlainConversationPreview('1. 先开门\n2. 再关灯'), '先开门 再关灯');
+});
+
+test('a link keeps the words the reader would have read, and drops the address', () => {
+    assert.equal(toPlainConversationPreview('见 [长廊剧场](https://example.com/a?b=c) 一章'), '见 长廊剧场 一章');
+    assert.equal(toPlainConversationPreview('![一张旧照片](img/photo.png)'), '一张旧照片');
+});
+
+test('HTML is removed as markup and its entities are read as text', () => {
+    assert.equal(toPlainConversationPreview('<div class="x">她笑了</div>'), '她笑了');
+    assert.equal(toPlainConversationPreview('a &amp; b &lt;c&gt;'), 'a & b <c>');
+    // Entities are decoded *after* tags, so a decoded `&lt;` can never be
+    // mistaken for a tag and eat the rest of the line.
+    assert.equal(toPlainConversationPreview('&lt;div&gt; 只是字面量'), '<div> 只是字面量');
+});
+
+test('a preview cut mid-syntax leaves no debris, because the input is a tail and not a head', () => {
+    // getPreviewMessage() keeps the last 400 characters, so the string
+    // routinely begins inside something. These are the shapes that produced
+    // visible junk on the card.
+    assert.equal(toPlainConversationPreview('...里说的那句 **话'), '...里说的那句 话');
+    assert.equal(toPlainConversationPreview('class="mes">她转过身'), '她转过身');
+    assert.equal(toPlainConversationPreview('她转过身 <spa'), '她转过身');
+    assert.equal(toPlainConversationPreview('```js\nconst a = 1;\n```'), 'const a = 1;');
+});
+
+test('the line is one line: every newline becomes a space rather than vanishing', () => {
+    // Fusing two sentences into one word is worse than the markup was.
+    assert.equal(toPlainConversationPreview('第一句。\n第二句。'), '第一句。 第二句。');
+    assert.equal(toPlainConversationPreview('  留白  \n\n  很多  '), '留白 很多');
+});
+
+test('a delimiter that is not markup is left where it is', () => {
+    // The one direction that would be a regression rather than a leftover:
+    // eating a character the writer meant.
+    assert.equal(toPlainConversationPreview('2 * 3 = 6'), '2 * 3 = 6');
+    assert.equal(toPlainConversationPreview('文件叫 snake_case_name'), '文件叫 snake_case_name');
+    assert.equal(toPlainConversationPreview('_强调_ 与 a_b_c'), '强调 与 a_b_c');
+    assert.equal(toPlainConversationPreview('5 < 7 且 9 > 2'), '5 < 7 且 9 > 2');
+    // Each comparison on its own, which is what breaks a severed-tag rule
+    // written as 「strip to the first `>`」 or 「strip from the last `<`」: with
+    // no second angle bracket to stop it, such a rule eats the sentence.
+    assert.equal(toPlainConversationPreview('他说 5 > 3'), '他说 5 > 3');
+    assert.equal(toPlainConversationPreview('他说 5 < 7'), '他说 5 < 7');
+});
+
+test('an unusable preview reduces to the empty string rather than to a placeholder', () => {
+    for (const value of ['', '   ', undefined, null, 42]) {
+        assert.equal(toPlainConversationPreview(value), '', String(value));
+    }
 });

@@ -22,7 +22,6 @@ import { rememberCharacterConversation } from './session-characters.js';
 import { pushToast } from './toast-store.js';
 import { publishVanishedChat } from './vanished-chat-store.js';
 
-type ChatIdentity = { avatar: string; fileName: string } | null | undefined;
 type RecentRowsOptions = { max?: number; signal?: AbortSignal };
 type CharacterChatsOptions = { limit?: number | null; signal?: AbortSignal };
 
@@ -188,6 +187,19 @@ export function renameChatuiChat(avatar: string, oldFileName: string, newName: s
                 newName,
             );
             if (!result.renamed) {
+                // A rename that did not move the file can still leave the live
+                // buffer at risk, and the adapter says so: its forward-rename
+                // 「outcome unknowable」 branch reports `renamed: false` with
+                // `reloadRequired` set, because the file *may* have moved while
+                // the live record still names the old one. `reloadRequired` is
+                // a statement about the runtime, not about whether the rename
+                // succeeded, so it has to be answered before this bail — the
+                // toast below asks the reader to do the very repair this branch
+                // can perform, and the other two ambiguous exits do not ask.
+                if (result.reloadRequired) {
+                    await _reloadForChatTransaction();
+                    return;
+                }
                 pushToast('error', result.uncertain
                     ? '无法确认重命名结果；请刷新页面后再操作'
                     : '重命名失败');
@@ -290,9 +302,9 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
  *
  * `power_user.auto_load_chat` is false by default, so a stock install answers
  * the mandatory reload with an empty stage: the fallback file ST was going to
- * write is never written, the credential above waits forever, and the reader
- * is left in the "character selected, no conversation" state pr9 exists to
- * abolish — one worse, in fact, with no character selected either.
+ * write is never written, and the reader is left in the "character selected,
+ * no conversation" state pr9 exists to abolish — one worse, in fact, with no
+ * character selected either.
  *
  * So when — and only when — a credential is still pending and nothing at all
  * holds the stage, ChatUI selects the character that credential names. This is
@@ -301,12 +313,12 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
  * preference: the adapter refuses the moment ST landed anywhere, group or
  * character (adapter/chats/navigation.ts's selectCharacterIfNobodyIsOnStage).
  *
- * Exactly once per page: `armPendingCharacterChatDraftQuarantine` stamps the
- * credential, so a second `finalizeChatuiDraftQuarantine` in the same load
- * finds nothing to arm and never reaches here. A landing that does not happen
- * is not retried and never toasts — the credential simply keeps its ordinary
- * meaning and the reader can now walk to the character by hand, because the
- * spine shows it (ui/spine-cast.ts).
+ * Exactly once per page: `armPendingCharacterChatLanding` consumes the
+ * credential as it reads it, so a second `finalizeChatuiChatTransaction` in the
+ * same load finds nothing and never reaches here. A landing that does not
+ * happen is not retried and never toasts — the reader can walk to the character
+ * by hand, because the session ledger the same credential fed keeps the spine
+ * able to show it (ui/spine-cast.ts).
  *
  * Runs on the shared serialized lane like every other host mutation in this
  * module — `selectCharacterById` mutates the one live chat context, so being
@@ -325,11 +337,15 @@ export function deleteChatuiChat(avatar: string, fileName: string): Promise<void
  *    teardown *would* cancel it — correctly: a reader who switched ChatUI off
  *    in that window must not have a character selected for them afterwards,
  *    which is exactly what the un-queued version did.
- * 3. Queueing can only delay this call, never advance it, so the one ordering
- *    constraint the handoff has — the CHAT_CHANGED watch is registered before
- *    the landing, because the event that resolves the credential is emitted
- *    from inside `selectCharacterById` — is strengthened rather than lost. The
- *    watch is registered synchronously below, before this is enqueued.
+ * 3. Queueing can only delay this call, never advance it, and there is no
+ *    longer anything for a delay to miss. The handoff used to have an ordering
+ *    constraint — a CHAT_CHANGED watch had to be registered before the landing,
+ *    because the event that resolved the credential came from inside
+ *    `selectCharacterById` — and that watch went with the quarantine. The
+ *    credential is spent synchronously by the caller before this is ever
+ *    enqueued, so the queue can only move *when* the reader is seated, never
+ *    whether. index.ts's own comment carries the current version of this
+ *    argument, which is about the mount rather than about a listener.
  */
 async function _completePendingChatTransactionLanding(avatar: string): Promise<void> {
     try {
@@ -367,8 +383,10 @@ async function _completePendingChatTransactionLanding(avatar: string): Promise<v
  *    the reader's own action rather than a preference override, and why it goes
  *    through the shared host lane.
  *
- * Arming is what bounds the credential to the load it belongs to: an un-armed
- * one would survive into some far later boot and seat somebody a page late.
+ * Reading it is what spends it (`armPendingCharacterChatLanding` clears the
+ * slot as it answers), and that is what bounds the credential to the load it
+ * belongs to: a credential that survived unspent would seat somebody on some
+ * far later boot, which is a surprise rather than a repair.
  *
  * `completeLanding: false` keeps the ledger entry and drops only the seating,
  * for the one caller that must not make that move: bootstrap mode, where

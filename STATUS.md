@@ -1,16 +1,18 @@
 # SillyTavern-ChatUI · Current Status
 
-Last updated: 2026-07-31
+Last updated: 2026-08-05
 
 This document is the short operational snapshot. `ARCHITECTURE.md` remains the
 long-form design record. `DESIGN.md` is the product spec / north star.
 `ROADMAP.md` is the live completeness map + priority backlog.
 
-Current development branch: `main`, plus one unmerged corridor-theater stack of
-five branches on top of it. The 2026-07-10/11 architecture hardening, visual
-restoration, and desktop floor navigation described below are kept as reviewable
-semantic batches; the stack follows the same rule. See Current Branch Stack for
-the topology and Current Visual Identity for what it renders.
+Current development branch: `main`, and everything below is *on* it. The
+corridor-theater stack of five branches merged on 2026-08-01 (`b3d3bdb`); the
+2026-07-10/11 architecture hardening, visual restoration and desktop floor
+navigation are kept as reviewable semantic batches, and the stack's branches are
+kept for the same reason — as review-sized records, not as work in flight. See
+Current Branch Stack for the topology and Current Visual Identity for what
+`main` renders.
 
 ## Current Visual Identity
 
@@ -22,10 +24,10 @@ was the honest reading of this document's previous revision; it is out of date.
 The correct reading today is "new palette, new layout, four surfaces still
 speaking the old dialect" — see the chapter table below.
 
-Only the foundation is on `main` (tokens, type scale, the shared `.cui-paper`
-popover, the paper confirm dialog). The stage, action bar, swipe ticks, spine,
-playbill and topbar all sit on the unmerged stack, so a checkout of `main` still
-shows the two-pane Manuscript Flow surface.
+All of it is on `main`: tokens and the type scale, the shared `.cui-paper`
+popover, the paper confirm dialog, and then the stage, the action bar, the swipe
+ticks, the spine, the playbill and the topbar. A checkout of `main` is the
+corridor theater; there is no branch left to look at for it.
 
 Chapter by chapter against the handoff's ten Screens/Views
 (`~/Developer/design_handoff_corridor_theater/README.md`):
@@ -64,29 +66,30 @@ rather than being fetched), and any unscoped `::-webkit-scrollbar`.
 
 ## Current Branch Stack
 
-`main` (`86995df`) carries the corridor-theater foundation: design tokens and the
-type scale, token conformance, the shared xuan-paper popover, the paper confirm
-dialog, the PR gate, and the design decisions. `refactor/pr0-design-tokens`,
-`refactor/pr1-token-conformance`, `refactor/pr2-paper-popover` and
-`refactor/pr3-paper-confirm` are all ancestors of `main` now and are kept only as
-review-sized records.
-
-Everything else is stacked, each branch on the previous one's head:
+**Nothing is stacked any more.** The corridor-theater restyle arrived on `main` in
+two goes, and `main` has moved on past both since. All nine branches are kept as
+review records; the numbering is the order the chapters were *planned*, not the
+order they landed (pr7 was written last and sat on pr9; there is no `pr8`):
 
 ```text
-main 86995df
- └─ refactor/pr4-stage-skin        c44a0b8  19 commits  stage / message / composer / topbar skin
-     └─ refactor/pr5-actions-ia    7b3ea04  +4          one action bar for every turn
-         └─ refactor/pr6-swipe-segments 184f4d1  +5     swipe versions as segment ticks
-             └─ refactor/pr9-spine-playbill 207d8a4 +13 sidebar → spine + playbill
-                 └─ refactor/pr7-topbar-trio        +8  topbar rename + the ⋯ trio, then the
-                                                        final-gate focus fix (last code commit
-                                                        2054c94) and the doc passes  ← HEAD
+already in main at 86995df, as ordinary parents:
+  refactor/pr0-design-tokens        tokens + type scale
+  refactor/pr1-token-conformance    every consumer reads a token
+  refactor/pr2-paper-popover        the shared .cui-paper popover
+  refactor/pr3-paper-confirm        the paper confirm dialog
+
+landed together in b3d3bdb (2026-08-01), 50 commits over 86995df:
+  refactor/pr4-stage-skin           19  stage / message / composer / topbar skin
+  refactor/pr5-actions-ia           +4  one action bar for every turn
+  refactor/pr6-swipe-segments       +5  swipe versions as segment ticks
+  refactor/pr9-spine-playbill      +13  sidebar → spine + playbill
+  refactor/pr7-topbar-trio          +8  topbar rename + the ⋯ trio
+  df83b22                           +1  the owner's first feedback round
 ```
 
-49 commits since `main`. The numbers are the order the chapters were *planned*,
-not the order they are stacked (pr7 was written last and sits on pr9; there is no
-`pr8` branch), so the diagram is the authority on what rebases onto what.
+They are behind `main` and are not rebase targets. Branching off one lands in the
+pre-teardown world — the temp-chat quarantine is still there — so start from
+`main` unless you are reading history on purpose.
 
 ---
 
@@ -116,7 +119,7 @@ src/index.ts -> index.js
   |     chats · qr · config · settings submodules; returns immutable DTOs
   |
   +-- src/store/ -> store/  (ST-free observable view-model, createStore factory)
-  |     chat/config/ui/toast/temp/composer stores + named action facades;
+  |     chat/config/ui/toast/menu/confirm/composer stores + named action facades;
   |     host-operation-queue serializes mutable active-chat operations
   |
   +-- src/ui/root.ts -> ui/root.js -> dist/root-app.mjs
@@ -156,6 +159,10 @@ src/
     composer-draft-store.ts per-chatKey drafts + send-token CAS gate
     config-store.ts       persisted per-feature config (via adapter/config.ts)
     ui-store.ts           ephemeral session UI state (settings mode / drawer selection)
+    menu-store.ts         the single open-menu slot (mutual exclusion as state)
+    confirm-store.ts      confirm-dialog request slot + its keyboard decision table
+    message-edit-draft-store.ts per chatKey+messageId edit drafts
+    bounded-work-coordinator.ts caps concurrent work and runs one dirty follow-up
     toast-store.ts        ChatUI feedback layer
     vanished-chat-store.ts announces a conversation proved absent (no ST event exists)
   shield/
@@ -168,19 +175,20 @@ src/
     use-st-query-bridge.ts  ST event / vanished-chat → Query invalidation table
     card-embed.ts         HTML fenced card iframe host
     spine-cast.ts  floor-rail-math.ts  follow-scroll-math.ts
-    swipe-segment-math.ts  topbar-menu-logic.ts
+    swipe-segment-math.ts  topbar-menu-logic.ts  menu-placement.ts
+    escape-ladder.ts  blank-conversation.ts  message-menu-rows.ts
                           dependency-free decision modules, unit-tested directly
     components/
       Composer  PlusMenu  QRBar  SelectorChip  AttachmentChips
       MessageItem  MessageFloorRail  TopbarTitle  TopbarMenu
       ConfirmDialog  ConfirmDialogHost  Toaster
-      composer/ NewChatCharacterPicker
-      sidebar/  Spine Sidebar CharacterConversationList QuarantinedDrafts
+      sidebar/  Spine Sidebar CharacterConversationList
                 NewChatButton SettingsEntry
       settings/ SettingsNav SettingsContent ChatUiSettingsContent StDrawerHost
       config/   ConfigSelect PlusPinEditor
       message/  ActionButton MenuItem MessageActions MessageAvatar
-                MessageEditor MessageMedia MessageReasoning SwipeSegments
+                MessageEditor MessageMedia MessageMenuHost MessageReasoning
+                SwipeSegments
   types/st-externals.d.ts SillyTavern host-module declarations
 scripts/                  build / dev / validated atomic-runtime tooling
   e2e/                    dataRoot / host / Playwright / performance harnesses
@@ -249,10 +257,10 @@ simulated clicks. The old three-form sidebar cycle and third settings column hav
 been replaced by the Codex-app-style two-pane model: `Sidebar | chat`, with
 settings as a mode swap that shows ChatUI-owned nav on the left and either
 ChatUI-native settings or a live ST drawer host on the right. That two-pane shell
-is what `main` still ships; on the unmerged stack `DESIGN.md` §3's
-`Spine | Playbill | Stage` is what actually renders (pr9), with settings still a
-mode swap — the nav takes the playbill's slot and the spine stays mounted beside
-it, which is why picking a character from a settings pane also leaves settings.
+was the shape until pr9; `DESIGN.md` §3's `Spine | Playbill | Stage` is what
+`main` renders now, with settings still a mode swap — the nav takes the
+playbill's slot and the spine stays mounted beside it, which is why picking a
+character from a settings pane also leaves settings.
 
 Desktop long conversations now expose a left-spine user-turn navigator beside a
 shared bounded reading column. One `2px` hairline represents one user message, with a

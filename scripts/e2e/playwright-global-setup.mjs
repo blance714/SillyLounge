@@ -54,9 +54,13 @@ export default async function globalSetup() {
     let server = null;
 
     try {
-        await generateStDataRoot({ targetRoot: dataRoot, stRoot, runtimeRoot: RUNTIME_ROOT });
+        const generated = await generateStDataRoot({ targetRoot: dataRoot, stRoot, runtimeRoot: RUNTIME_ROOT });
         server = await startStServer({ stRoot, runRoot, dataRoot });
         process.env.SILLYLOUNGE_E2E_URL = server.url;
+        // What smoke.spec.mjs checks the served extension against, so that
+        // 「these assertions describe the build under test」 is something the
+        // suite proves rather than assumes.
+        process.env.SILLYLOUNGE_E2E_STAMP = generated.manifest.stamp;
         await preserveHostEvidence(server, runRoot, { phase: 'ready' });
     } catch (error) {
         await preserveHostEvidence(server, runRoot, {

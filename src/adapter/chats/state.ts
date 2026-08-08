@@ -10,7 +10,17 @@ import {
 export type ChatListItemDto = {
     fileName: string;
     displayName: string;
-    messageCount: number;
+    /**
+     * How many messages the listing counted, or null when it did not say.
+     *
+     * Null is not decoration. Both consumers treat a count as evidence about
+     * the file — the card meta prints 「N 条」, and ui/blank-conversation.ts
+     * draws a dashed border on the strength of it — and `0` is not the absence
+     * of that evidence, it is the strongest possible form of it (「nobody has
+     * written here」). Collapsing an unanswered count into `0` therefore does
+     * not lose information, it fabricates the opposite of it.
+     */
+    messageCount: number | null;
     preview: string;
     fileSize: string;
     lastMesTs: number;
@@ -71,16 +81,18 @@ export type DeleteCharacterChatResultDto = Readonly<{
      * either. So there was nothing to delete and nothing failed. Distinct from
      * every other `deleted: false` outcome — those mean the delete was
      * attempted or abandoned and the file is (or may still be) on disk —
-     * because ChatUI's own state may still name it: a quarantine lease for a
-     * draft whose file vanished is otherwise unremovable, since its only
-     * removal path is the delete this reports on.
+     * because the caller still has bookkeeping to settle either way: the
+     * reader's intent ("this conversation should not exist") is satisfied, and
+     * the sidebar's cached listing is still serving a row for a file nobody
+     * will ever open (sidebar-actions.ts answers it with a composer-draft
+     * delete plus `publishVanishedChat`).
      *
      * Two things it is deliberately never true for:
      * - a listing that could not be read — an unreadable directory is not
      *   evidence of absence;
      * - the chat the runtime is *standing in* — that conversation is alive and
-     *   merely unsaved, and the next save writes its file back, so settling it
-     *   as a real deletion would strand the re-materialized file with no lease
+     *   merely unsaved, and the next save writes its file back, so calling it
+     *   absent would announce a vanished conversation the reader is looking at
      *   (delete-transaction.ts has the full argument).
      */
     absent: boolean;
@@ -90,12 +102,18 @@ export type DeleteCharacterChatResultDto = Readonly<{
      * a fabricated name (delete-transaction.ts's `fallbackName`) that does
      * not exist yet. ST's own post-reload boot always materializes some file
      * there (greeting or empty, via getChatResult()'s unconditional
-     * saveChatConditional()) — this is the name of that file, so the caller
-     * can fold it into the same draft quarantine every other new chat goes
-     * through instead of leaving it as an unlabelled permanent history entry
-     * (DESIGN §3 / evaluation §5 3.6: never stop at "character selected, no
-     * conversation"). Null whenever a real remaining/preferred chat was used
-     * instead, or the deletion did not target the live current chat.
+     * saveChatConditional()), and that file is simply this character's
+     * conversation — which is what ST would have produced on its own.
+     *
+     * The caller reads this as a *boolean*: a non-null value means "this
+     * character's history just became empty", which is the one condition under
+     * which the reader has to be carried across the reload (a landing
+     * credential naming the character, so the next boot can put them back and
+     * the spine can still show someone whose `chat_size` snapshot predates that
+     * boot's own write). DESIGN §3 / evaluation §5 3.6: never stop at
+     * "character selected, no conversation". Null whenever a real
+     * remaining/preferred chat was used instead, or the deletion did not target
+     * the live current chat.
      */
     fallbackChatFileName: string | null;
 }>;
@@ -181,7 +199,19 @@ export function getCurrentChatHeader(): CurrentChatHeaderDto {
     };
 }
 
-/** Current single-character chat identity, or null when no character chat is active. */
+/**
+ * Current single-character chat identity, or null when no character chat is
+ * active.
+ *
+ * The `fileName` half is **never read from disk**, and every caller reasoning
+ * about whether a file exists has to know that:
+ * `getCurrentChatDetails().sessionName`
+ * returns `characters[this_chid].chat` verbatim (script.js:8478), i.e. the
+ * character card's own pointer. So this answers 「what does the runtime call
+ * the conversation it is in」, never 「what is on disk」 — a name this reports
+ * may have been written a moment ago and not yet saved, which is exactly why
+ * delete-transaction.ts refuses to call the live chat `absent`.
+ */
 export function getCurrentChatIdentity(): CurrentChatIdentityDto | null {
     const ctx = getStContext();
     if (ctx.groupId) return null;

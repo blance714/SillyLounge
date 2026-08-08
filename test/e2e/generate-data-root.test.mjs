@@ -42,6 +42,13 @@ async function makeInputs(t) {
     await fs.mkdir(path.join(stRoot, 'public', 'scripts', 'extensions', 'third-party', 'ExistingGlobal'), {
         recursive: true,
     });
+    // A real SillyLounge installed on the host for the maintainer's own use.
+    // The fixture installs under a different name, so this one is an ordinary
+    // third-party extension as far as a run is concerned — and must be switched
+    // off like any other, or the host loads two SillyLounges at once.
+    await fs.mkdir(path.join(stRoot, 'public', 'scripts', 'extensions', 'third-party', 'SillyLounge-dist'), {
+        recursive: true,
+    });
 
     // validateRuntimeTree checks the assembled build tree before it is copied
     // into ST's dataRoot; generateStDataRoot separately verifies that copy.
@@ -110,9 +117,10 @@ test('generated single-user settings select the fixture and enable SillyLounge',
     assert.equal(settings.power_user.personas['test-user.png'], 'Test User');
     assert.equal(settings.extension_settings.chatui_composer.enabled, true);
     assert.deepEqual(settings.extension_settings.disabledExtensions, [
+        'third-party/SillyLounge-dist',
         'other-extension',
         'third-party/ExistingGlobal',
-    ]);
+    ], 'every extension the host has is off, including a real SillyLounge install; only the fixture runs');
 });
 
 test('extension modes isolate native, bootstrap, and active performance baselines', async t => {
@@ -121,7 +129,7 @@ test('extension modes isolate native, bootstrap, and active performance baseline
     assert.equal(disabled.manifest.extensionMode, 'disabled');
     assert.equal(disabledSettings.extension_settings.chatui_composer.enabled, false);
     assert.equal(
-        disabledSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-dist'),
+        disabledSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-e2e'),
         true,
     );
 
@@ -130,7 +138,7 @@ test('extension modes isolate native, bootstrap, and active performance baseline
     assert.equal(bootstrap.manifest.extensionMode, 'bootstrap');
     assert.equal(bootstrapSettings.extension_settings.chatui_composer.enabled, false);
     assert.equal(
-        bootstrapSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-dist'),
+        bootstrapSettings.extension_settings.disabledExtensions.includes('third-party/SillyLounge-e2e'),
         false,
     );
 });
@@ -406,14 +414,77 @@ test('generated files contain no private paths, secrets, or real-user identifier
         '/home/',
         '\\Users\\',
         'blance_714@',
-        'sk-',
     ];
+    // API keys are matched by shape rather than by their `sk-` prefix alone.
+    // A bare substring scan fires on any English word ending in "sk" before a
+    // hyphen — "disk-backed", "risk-free", "task-based" — and a guard that
+    // cries wolf on prose is a guard somebody eventually deletes. Real keys
+    // are a long run of key characters after the prefix; nothing this repo
+    // writes looks like that.
+    const apiKeyShape = /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}/;
     for (const filePath of await walkFiles(result.targetRoot)) {
         const content = (await fs.readFile(filePath)).toString('utf8');
         for (const marker of forbidden) {
             assert.equal(content.includes(marker), false, `${path.relative(result.targetRoot, filePath)} contains ${marker}`);
         }
+        const key = apiKeyShape.exec(content);
+        assert.equal(
+            key,
+            null,
+            `${path.relative(result.targetRoot, filePath)} contains something shaped like an API key`,
+        );
     }
+});
+
+test('the API-key scan reads shape, not the bare prefix that ordinary prose keeps hitting', () => {
+    // Written as its own case because the scan above can only ever prove the
+    // absence of keys in one generated tree; this proves it would still find
+    // one, and that the wording change it forced is not a hole.
+    const apiKeyShape = /\b(?:sk|pk|rk)-[A-Za-z0-9_-]{20,}/;
+    assert.match('OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz012345', apiKeyShape);
+    assert.match('pk-0123456789012345678901234567890123', apiKeyShape);
+    assert.doesNotMatch('the fileName half is not disk-backed, it is the card pointer', apiKeyShape);
+    assert.doesNotMatch('a risk-free refactor of the task-based queue', apiKeyShape);
+    assert.doesNotMatch('sk-short', apiKeyShape);
+});
+
+test('generator refuses a checkout whose public/ already carries this extension, because that copy would be served instead', async t => {
+    // SillyTavern mounts express.static(public/) before its per-user extension
+    // route, so a same-named folder there answers every file request the
+    // browser makes and the fixture's copy is never read. The gate still boots,
+    // still mounts, and still asserts — against whatever build happens to be
+    // installed. Found on 2026-08-05, after a card assertion could not be made
+    // to pass while the tree on disk was demonstrably correct.
+    const inputs = await makeInputs(t);
+    const shadow = path.join(
+        inputs.stRoot, 'public', 'scripts', 'extensions', 'third-party', 'SillyLounge-e2e',
+    );
+    await fs.mkdir(shadow, { recursive: true });
+    await fs.writeFile(path.join(shadow, 'manifest.json'), '{}', 'utf8');
+
+    await assert.rejects(
+        generateStDataRoot({
+            targetRoot: path.join(inputs.tempRoot, 'data-shadowed'),
+            stRoot: inputs.stRoot,
+            runtimeRoot: inputs.runtimeRoot,
+        }),
+        /also exists in the\n?SillyTavern checkout's own public/,
+    );
+
+    // A *different* extension in the same folder is somebody else's business
+    // and must not stop the run — makeInputs already puts two there, including
+    // a real SillyLounge install, and the suite boots with them present and
+    // disabled.
+    await fs.rm(shadow, { recursive: true, force: true });
+    const neighbour = path.join(
+        inputs.stRoot, 'public', 'scripts', 'extensions', 'third-party', 'some-other-extension',
+    );
+    await fs.mkdir(neighbour, { recursive: true });
+    await assert.doesNotReject(generateStDataRoot({
+        targetRoot: path.join(inputs.tempRoot, 'data-neighbour'),
+        stRoot: inputs.stRoot,
+        runtimeRoot: inputs.runtimeRoot,
+    }));
 });
 
 test('generator rejects a non-empty target instead of touching existing data', async t => {

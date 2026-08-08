@@ -751,10 +751,15 @@ SillyTavern-ChatUI/
       chat-actions.ts
       sidebar-actions.ts
       host-operation-queue.ts
-      temp-chat-store.ts
+      bounded-work-coordinator.ts
+      session-characters.ts   # characters ChatUI gave a conversation this session
+      vanished-chat-store.ts  # a conversation proved absent (ST emits nothing)
       composer-draft-store.ts
+      message-edit-draft-store.ts
       config-store.ts
       ui-store.ts
+      menu-store.ts           # the single open-menu slot
+      confirm-store.ts
       toast-store.ts
     shield/
       st-dom-shield.ts
@@ -765,6 +770,10 @@ SillyTavern-ChatUI/
       hooks.ts
       format.ts
       types.ts
+      # dependency-free decision modules, unit-tested without a renderer:
+      spine-cast.ts  blank-conversation.ts  escape-ladder.ts
+      floor-rail-math.ts  follow-scroll-math.ts  swipe-segment-math.ts
+      menu-placement.ts  topbar-menu-logic.ts  message-menu-rows.ts
       components/
     types/
       st-externals.d.ts

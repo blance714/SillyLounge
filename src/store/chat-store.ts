@@ -85,8 +85,6 @@ export type ChatuiMessageDto = {
     };
     ui: {
         isLast: boolean;
-        canShowCharActions: boolean;
-        canShowUserMenu: boolean;
         canShowSwipe: boolean;
         needsGenerate: boolean;
     };
@@ -296,8 +294,6 @@ function _projectChatuiMessage(
         },
         ui: {
             isLast,
-            canShowCharActions: isChar && !isSmallSys && !isToolCall,
-            canShowUserMenu: isUser && !isSmallSys && !isToolCall,
             // Show swipe controls on the last character message even with a
             // single swipe, so the user can generate alternatives (the ‹›/counter
             // visibility within the group is decided per-button in the UI).

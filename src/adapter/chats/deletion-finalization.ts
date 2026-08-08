@@ -7,7 +7,7 @@ import {
     stringValue,
 } from '../schema.js';
 import { listRawCharacterChatNames } from './selection-protocol.js';
-import { getCurrentChatIdentity, stripChatExt } from './state.js';
+import { stripChatExt } from './state.js';
 
 const PENDING_CHAT_DELETED_KEY = 'chatui:pendingChatDeleted';
 
@@ -220,16 +220,25 @@ export function queueCharacterChatLanding(avatar: string): void {
 }
 
 /**
- * Claim the pending landing for this page load, and expire one a previous page
- * load already claimed. Call exactly once per boot.
+ * Take the pending landing, if there is one. Call exactly once per boot.
  *
- * The arm stamp is the whole expiry policy, and it is deliberately counted in
- * page loads rather than milliseconds: the intent belongs to the reload that
- * `deleteChatuiChat` forced, so the honest bound is "the page it was queued
- * for, and no later". A page that ends without redeeming it (the reader
- * reloaded again, went somewhere else, never came back) must not have a
- * character selected for them on some much later boot — that would be a
+ * Expiry is counted in page loads rather than milliseconds, because the intent
+ * belongs to the reload `deleteChatuiChat` forced: the honest bound is "the
+ * page it was queued for, and no later". A page that ends without redeeming it
+ * (the reader reloaded again, went somewhere else, never came back) must not
+ * have a character selected for them on some much later boot — that would be a
  * surprise, not a repair.
+ *
+ * **Consumed on sight** is what enforces that now. Nothing is left to wait for
+ * once the credential carries only a name, so the boot that reads it is the
+ * boot that spends it, and one page is exactly one chance.
+ *
+ * The `armed` stamp is therefore not part of today's policy; it is read only so
+ * that a record written by the *previous* build — which armed in one step and
+ * redeemed in another, and could leave a claimed-but-unredeemed credential
+ * behind — expires here instead of seating somebody a page late. Nothing in
+ * this version ever writes `armed: true`. The field goes when the upgrade
+ * window is safely past.
  *
  * @returns the character to land on, or null when there is nothing to do.
  */

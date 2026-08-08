@@ -23,8 +23,8 @@
  * place (script.js's getChatResult):
  *
  *     if (chat.length === 0) {
- *         const message = getFirstMessage();      // first_mes, or the first
- *         if (message.mes) chat.push(message);    // non-empty alternate
+ *         const message = getFirstMessage();      // first_mes, or — when that
+ *         if (message.mes) chat.push(message);    // is empty — alternate[0]
  *     }
  *
  * A character with a greeting therefore *always* starts a chat at one
@@ -34,10 +34,24 @@
  * reader's line. Both branches are exact, and both are answered from data the
  * page already holds.
  *
- * The one state that fools it is reachable only by hand: delete the greeting
- * out of a chat, then write exactly one line and never get a reply. It costs a
- * border style until the reply lands, which is why it is accepted rather than
- * paid for with a request per row.
+ * 「Has a greeting」 means precisely what `getFirstMessage()` does with the
+ * character record, down to its truthiness tests and its blind use of the
+ * first alternate greeting; adapter/chats/queries.ts's `characterHasGreeting`
+ * mirrors it and says why each of those details changes the answer.
+ *
+ * Two states fool it, both accepted rather than paid for with a request per
+ * row:
+ *
+ * - Delete the greeting out of a chat by hand, write exactly one line, and
+ *   never get a reply. Reachable only deliberately, and it costs a border
+ *   style until the reply lands.
+ * - Run a regex script with AI_OUTPUT placement that empties the greeting.
+ *   `getFirstMessage()` passes the greeting through `getRegexedString()` before
+ *   `getChatResult()` decides whether to push it, so such a character seeds
+ *   nothing while its record still carries the greeting. Nothing readable from
+ *   the character card can tell us that, and running the scripts here to find
+ *   out is exactly the non-deterministic-macro problem that made 「复制」
+ *   reduce cached HTML instead of re-invoking the formatter.
  *
  * `hasGreeting` itself is computed where ST's raw character record is read
  * (adapter/chats/queries.ts, beside `chat_size`), because what a host field
@@ -49,15 +63,22 @@
  */
 
 export type BlankConversationInput = {
-    /** Messages ST's listing counted in the file. */
-    messageCount: number;
+    /**
+     * Messages ST's listing counted in the file, or null when it did not say.
+     *
+     * The adapter passes the absence through rather than filling it in
+     * (adapter/chats/state.ts's ChatListItemDto), because the dashed border is
+     * an assertion about a file and 「no count」 is not evidence for it — while
+     * `0`, the obvious stand-in, is the *strongest* evidence for it.
+     */
+    messageCount: number | null;
     /** Whether ST would seed a new chat for this character with a greeting. */
     hasGreeting: boolean;
 };
 
 /** True when nobody has written in this conversation yet. */
 export function isBlankConversation({ messageCount, hasGreeting }: BlankConversationInput): boolean {
-    if (!Number.isFinite(messageCount) || messageCount < 0) return false;
+    if (messageCount === null || !Number.isFinite(messageCount) || messageCount < 0) return false;
     if (messageCount === 0) return true;
     return messageCount === 1 && hasGreeting;
 }

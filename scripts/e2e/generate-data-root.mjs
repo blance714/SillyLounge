@@ -14,14 +14,54 @@ const DEFAULT_FIXTURE_PATH = path.join(PROJECT_ROOT, 'test', 'e2e', 'fixtures', 
 const DEFAULT_RUNTIME_ROOT = path.join(PROJECT_ROOT, '.runtime', 'SillyTavern-ChatUI');
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 const USER_HANDLE = 'default-user';
-// The directory a real install lands in, which SillyTavern names after the
-// *repo* it cloned from (`sanitize(path.basename(parsedUrl.pathname, '.git'))`,
-// its endpoints/extensions.js) — so this tracks the installable repo,
-// blance714/SillyLounge-dist, not the source repo this file lives in. A fixture
-// that used the source repo's name would be simulating a directory no real
-// install has.
-const EXTENSION_FOLDER = 'SillyLounge-dist';
+/**
+ * The directory the fixture installs its copy of the extension into.
+ *
+ * It must **not** be the name a real install lands in. SillyTavern names that
+ * one after the repo it cloned (`sanitize(path.basename(parsedUrl.pathname,
+ * '.git'))`, its endpoints/extensions.js), i.e. `SillyLounge-dist`, and this
+ * constant used to match it so the fixture would reproduce a real install
+ * exactly. That turned out to be the opposite of reproducing one.
+ *
+ * SillyTavern mounts `express.static(public/)` (src/server-main.js:242) ahead
+ * of its per-user extension route (src/users.js:1219). Both resolve the same
+ * URL — `/scripts/extensions/third-party/<name>/…` — and static wins. So on any
+ * machine where the maintainer has SillyLounge installed for their own use,
+ * that install answered every file request the browser made, and the freshly
+ * built copy this generator writes into the disposable data root was never
+ * read. The suite booted, mounted and went green against yesterday's build.
+ * Disabling the global extension does not help: `disabledExtensions` decides
+ * what SillyTavern *loads*, not which directory serves a URL.
+ *
+ * A name no real install can have removes the collision outright, which is why
+ * this is the fix rather than parking the maintainer's install for the duration
+ * of a run (mutating a directory we do not own, and breaking their live
+ * SillyTavern while the run lasts) or refusing to start until they move it
+ * themselves (leaving the actual problem with them, every single time).
+ *
+ * Nothing in `src/` reads its own directory name, so the fixture loses no
+ * coverage by not matching. What the name *is* for a real install still
+ * matters — renaming blance714/SillyLounge-dist would orphan every existing
+ * install — and that is recorded in README's two-repo section, where the
+ * decision it constrains actually lives.
+ */
+const EXTENSION_FOLDER = 'SillyLounge-e2e';
 const FIXTURE_MANIFEST_FILE = '_sillylounge-fixture.json';
+/**
+ * Added to the copied extension's `manifest.json`, and read back through
+ * SillyTavern's own `getExtensionManifest()` by e2e/smoke.spec.mjs. Its whole
+ * job is to make 「the browser is being served the build we just made」 an
+ * assertion rather than an assumption — see `assertExtensionIsNotShadowed` for
+ * the failure that made it necessary. SillyTavern ignores keys it does not
+ * know, so the copy stays a working extension.
+ *
+ * The value is a digest of the copied tree rather than a per-run id, for two
+ * reasons. Identical inputs must still generate byte-identical data roots (the
+ * determinism this file is tested for), and 「the served extension is *this
+ * build*」 is a more useful claim than 「is this object」: a shadow that happens
+ * to be byte-equal is harmless, and one that is not says so.
+ */
+const EXTENSION_STAMP_KEY = 'sillylounge_e2e_stamp';
 const EXTENSION_MODES = new Set(['disabled', 'bootstrap', 'active']);
 const REGEX_MODES = new Set(['active', 'disabled']);
 /**
@@ -198,6 +238,23 @@ function conversationRows(fixture, characterName, messages) {
     return rows;
 }
 
+/** A content digest of a directory tree: sorted relative paths plus bytes. */
+async function hashDirectory(root) {
+    const digest = crypto.createHash('sha256');
+    const walk = async (dir) => {
+        const entries = await fs.readdir(dir, { withFileTypes: true });
+        entries.sort((left, right) => left.name.localeCompare(right.name));
+        for (const entry of entries) {
+            const entryPath = path.join(dir, entry.name);
+            digest.update(path.relative(root, entryPath).split(path.sep).join('/'));
+            if (entry.isDirectory()) await walk(entryPath);
+            else digest.update(await fs.readFile(entryPath));
+        }
+    };
+    await walk(root);
+    return digest.digest('hex');
+}
+
 async function discoverGlobalExtensionNames(stRoot) {
     const extensionRoot = path.join(stRoot, 'public', 'scripts', 'extensions', 'third-party');
     let entries;
@@ -214,6 +271,45 @@ async function discoverGlobalExtensionNames(stRoot) {
         if ((await fs.stat(entryPath)).isDirectory()) discovered.push(`third-party/${entry.name}`);
     }
     return discovered.sort((left, right) => left.localeCompare(right));
+}
+
+/**
+ * Refuse to run if anything in the checkout's own `public/` would answer the
+ * fixture extension's URLs.
+ *
+ * SillyTavern serves `public/` through `express.static` (src/server-main.js:242)
+ * **before** it mounts the per-user extensions route (src/users.js:1219). Both
+ * answer `/scripts/extensions/third-party/<name>/…`, and static wins — so a
+ * folder of the same name there is served to the browser while the fixture's
+ * copy sits unread on disk, and the whole suite goes green describing somebody
+ * else's build.
+ *
+ * `EXTENSION_FOLDER` is chosen so this cannot happen (its doc comment has the
+ * history: the fixture used to share a real install's name, and that is exactly
+ * what went wrong). This check is what keeps that choice honest — if a future
+ * name ever collides again, the run stops here instead of quietly measuring the
+ * wrong tree.
+ */
+async function assertExtensionIsNotShadowed(stRoot) {
+    const shadowPath = path.join(
+        stRoot, 'public', 'scripts', 'extensions', 'third-party', EXTENSION_FOLDER,
+    );
+    try {
+        await fs.stat(shadowPath);
+    } catch (error) {
+        if (error?.code === 'ENOENT') return;
+        throw error;
+    }
+    throw new Error(
+        `the fixture extension directory name (${EXTENSION_FOLDER}) also exists in the\n`
+        + `SillyTavern checkout's own public/, at\n`
+        + `  ${shadowPath}\n`
+        + 'SillyTavern serves public/ before its per-user extension route, so that copy would be\n'
+        + 'served to the browser instead of the runtime under test and every assertion would\n'
+        + 'silently describe it. Give EXTENSION_FOLDER (scripts/e2e/generate-data-root.mjs) a name\n'
+        + 'nothing installs under — do not rename or move the directory above, which may be a\n'
+        + "reader's real install.",
+    );
 }
 
 function patchSettings(baseSettings, fixture, stVersion, globalExtensions, extensionMode, regexMode, truncationGuard = {}) {
@@ -257,11 +353,18 @@ function patchSettings(baseSettings, fixture, stVersion, globalExtensions, exten
     const disabled = Array.isArray(settings.extension_settings.disabledExtensions)
         ? settings.extension_settings.disabledExtensions
         : [];
+    // Exactly one extension escapes being disabled: the fixture's own copy.
+    // Everything else the host happens to have — including a real SillyLounge
+    // the maintainer installed for their own use — is switched off, because a
+    // run must exercise the build under test and nothing else. This used to
+    // exempt the literal name `third-party/sillylounge-dist`, which was the
+    // fixture's own name at the time; once the fixture took a name of its own
+    // that exemption would have left the maintainer's install *loaded*, running
+    // a second SillyLounge beside the one under test.
+    const fixtureExtension = `third-party/${EXTENSION_FOLDER}`.toLowerCase();
     const disabledExtensions = Array.from(new Set([
-        ...disabled.filter(value => (
-            typeof value !== 'string' || !value.toLowerCase().includes('sillylounge')
-        )),
-        ...globalExtensions.filter(value => value.toLowerCase() !== 'third-party/sillylounge-dist'),
+        ...disabled.filter(value => typeof value === 'string' && value.toLowerCase() !== fixtureExtension),
+        ...globalExtensions.filter(value => value.toLowerCase() !== fixtureExtension),
     ]));
     if (extensionMode === 'disabled') disabledExtensions.push(`third-party/${EXTENSION_FOLDER}`);
     settings.extension_settings.disabledExtensions = disabledExtensions;
@@ -729,6 +832,7 @@ export async function generateStDataRoot({
     const characterCard = materializeCharacterCard(fixture, await readJson(characterCardPath));
     validateCharacterCard(characterCard);
     await validateRuntimeTree(resolvedRuntimeRoot);
+    await assertExtensionIsNotShadowed(resolvedStRoot);
     await assertEmptyTarget(resolvedTarget);
 
     const userRoot = fixturePath(resolvedTarget, USER_HANDLE);
@@ -774,11 +878,32 @@ export async function generateStDataRoot({
         dereference: true,
         errorOnExist: true,
     });
+    // A per-run marker *inside* the copied extension, so a spec can prove from
+    // the browser that the files it is being served are the ones this run put
+    // on disk. `assertExtensionIsNotShadowed` above rules out the one shadow
+    // mechanism we know about; this rules out the rest, by asking the question
+    // the gate actually cares about — is the tree under test the tree being
+    // served — instead of enumerating ways it might not be.
+    // Into `manifest.json` specifically, and not a file of its own: the point is
+    // to detect a *shadow*, and `express.static` only shadows paths that exist
+    // in it. A marker file unique to the fixture is never shadowed — it falls
+    // through to the per-user route and answers correctly while every real file
+    // still comes from the installed copy. The manifest is the one file both
+    // copies always have, and it is the file SillyTavern itself fetches through
+    // the same route before loading anything.
+    const stamp = await hashDirectory(extensionPath);
+    const stampedManifestPath = fixturePath(extensionPath, 'manifest.json');
+    await writeJson(stampedManifestPath, {
+        ...await readJson(stampedManifestPath),
+        [EXTENSION_STAMP_KEY]: stamp,
+    });
 
     const primaryConversation = generatedConversations[0];
     const manifest = {
         schemaVersion: pin.fixtureSchema,
         fixture: fixture.id,
+        /** Identifies this run's copy of the extension; see EXTENSION_STAMP_FILE. */
+        stamp,
         st: {
             repository: pin.repository,
             version: pin.version,

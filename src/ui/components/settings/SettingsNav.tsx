@@ -85,7 +85,18 @@ export function SettingsNav(): ComponentChild {
                     message="将恢复 SillyTavern 原生界面。重新开启需要到原生的「ChatUI」扩展设置里勾选。"
                     confirmLabel="关闭"
                     danger
-                    onConfirm={disableChatui}
+                    // Dismiss first, act second — the same order every other
+                    // confirm in this app uses, and here it is load-bearing
+                    // rather than tidy. Disabling is not synchronous when the
+                    // native-truncation guard is live: index.ts's
+                    // disableChatuiLayers queues the restore-save-reload behind
+                    // whatever the host lane is already doing (a running
+                    // generation, for one). A dialog left mounted holds the
+                    // whole surface `inert` for that entire wait, with no
+                    // acknowledgement that the button did anything — so the one
+                    // visible response to confirming 关闭 was the page going
+                    // dead.
+                    onConfirm={() => { setConfirmingDisable(false); disableChatui(); }}
                     onCancel={() => setConfirmingDisable(false)}
                 />
             )}
